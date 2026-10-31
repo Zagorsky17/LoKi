@@ -2,7 +2,7 @@
 
 [Русский](README.ru.md) · English
 
-> **This application is under active development.** Changes may reach `main` before the full test cycle is complete; testing and fixes continue after publication. Stability on OpenWrt and behavior during DNS/TLS failures have not yet been confirmed in laboratory tests.
+> **This application is under active development.** Development stages are checked on Linux before review and merge. Router testing follows completion of the software stages. Stability on OpenWrt and behavior during DNS/TLS failures have not yet been confirmed in laboratory tests.
 
 Rule-based traffic routing for OpenWrt, powered by sing-box. LoKi is an independently developed fork of [Forkop](https://github.com/ushan0v/forkop), starting from version 2.0.0 (`9544f3de09c62c935e1147147136234594d04f02`).
 
@@ -28,6 +28,10 @@ The development UI requires an explicit encryption mode for the entire main DNS 
 
 Bootstrap uses UDP by IP address. Outbound connections without their own resolver use bootstrap; explicit JSON and interface resolver settings are preserved. Fresh configurations retain the existing UDP default. Legacy configurations without the encryption field keep their URI protocols until an explicit mode is selected in the UI. These changes still require testing on laboratory OpenWrt.
 
+## Diagnostic reports
+
+Reports open with values masked. An unmasked report requires confirmation and starts with a warning that it contains keys and passwords. Copy and download are disabled while switching modes; afterwards they export the displayed mode. For a report to share, use the masked mode or `forkop report masked`, and review its contents before sending it: masking cannot identify every possible secret. Update the backend and LuCI packages together so their report formats agree.
+
 ## Documentation and testing
 
 The public project documentation is maintained in this README and [README.ru.md](README.ru.md). The inherited `docs/` site describes Forkop and is scheduled for removal.
@@ -42,4 +46,4 @@ LoKi retains the project's [GPL-2.0-or-later license](LICENSE). Existing copyrig
 
 When distributing modified versions or binary packages, retain the applicable notices and license, identify modified files and their change dates, and provide the corresponding source as required by the [GNU GPL version 2](https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html). The software is provided without warranty under the license terms.
 
-This README was rewritten for LoKi on October 31, 2026.
+This README was rewritten for LoKi on October 31, 2026, and updated on November 1, 2026.

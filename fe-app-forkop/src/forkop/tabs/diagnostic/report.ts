@@ -1,3 +1,4 @@
+// Modified for LoKi on 2026-11-01: put the report's privacy notice before its content.
 import type { IDiagnosticsChecksStoreItem, StoreType } from '../../services';
 import type { Forkop } from '../../types';
 import { formatDuration } from '../../helpers/formatDuration';
@@ -41,6 +42,7 @@ function section(title: string, body: string) {
 }
 
 export interface ReportInput {
+  visibility: 'masked' | 'raw';
   generatedAt: Date;
   systemInfo: StoreType['diagnosticsSystemInfo'];
   luciVersion: string;
@@ -52,6 +54,9 @@ export function reportText(
   input: ReportInput,
   attachments: Forkop.ReportAttachments,
 ) {
+  if (attachments.visibility !== input.visibility) {
+    throw new Error('Unexpected report visibility');
+  }
   const { systemInfo, service } = input;
   const versions = [`Forkop ${systemInfo.forkop_version}`];
   if (input.luciVersion && input.luciVersion !== systemInfo.forkop_version) {
@@ -78,6 +83,9 @@ export function reportText(
   }
 
   return [
+    attachments.visibility === 'raw'
+      ? _('UNMASKED REPORT: contains keys and passwords. Do not share.')
+      : _('MASKED REPORT: review before sharing.'),
     `${_('Forkop diagnostic report')} · ${timestamp(input.generatedAt)}\n`,
     section(_('System'), system.join('\n')),
     section(_('Checks'), attachments.checks),

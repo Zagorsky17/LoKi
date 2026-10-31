@@ -47,7 +47,7 @@ t.test("the report leaves out what the Forkop configuration already determines",
     seed();
     let value = report.report("raw", "");
     stub.restore();
-    t.eq(sort(keys(value)), [ "checks", "forkop_config", "ip_rules", "log", "nftables" ], "no sing-box configuration");
+    t.eq(sort(keys(value)), [ "checks", "forkop_config", "ip_rules", "log", "nftables", "notice", "visibility" ], "privacy metadata, no sing-box configuration");
     t.eq(value.nftables, "table inet ForkopTable {\n\tchain mangle {\n\t\ttype filter hook prerouting priority mangle + 1; policy accept;\n\t\tip daddr @localv4 return\n\t}\n}\n",
         "the chains without the declarations of the sets they use");
 });
@@ -72,6 +72,32 @@ t.test("a raw report is the router as it is", () => {
     t.contains(value.log, "node.example:443 (185.199.108.9)");
     t.contains(value.forkop_config, "vless://uuid-secret@node.example:443");
     t.eq(value.checks, "Main: vpn.example");
+});
+
+t.test("raw reports identify their secrets before any attachments, while other modes stay masked", () => {
+    for (let visibility in [ "raw", "masked", "RAW", "" ]) {
+        seed();
+        let value = report.report(visibility, "Main: vpn.example");
+        stub.restore();
+        t.eq(value.visibility, visibility == "raw" ? "raw" : "masked");
+        t.contains(value.notice, visibility == "raw" ? "UNMASKED REPORT" : "MASKED REPORT");
+        if (visibility == "raw")
+            t.contains(value.notice, "Do not share");
+        else
+            t.excludes(sprintf("%J", value), "uuid-secret");
+    }
+});
+
+t.test("configured credentials repeated in any masked attachment stay private", () => {
+    seed();
+    fixture.seed({ settings: { config_path: dir + "/config.json", mixed_proxy_password: "report-password" } });
+    fs.writefile(report.paths.forkop_config, "config settings 'settings'\n\toption mixed_proxy_password 'report-password'\n\toption label 'report-password at 185.199.108.9'\n");
+    stub.commands([ [ () => true, { stdout: "report-password uuid-secret 185.199.108.9\n" } ] ]);
+    let value = report.report("masked", "report-password uuid-secret 185.199.108.9\n");
+    stub.restore();
+    for (let key in [ "checks", "log", "forkop_config", "nftables", "ip_rules" ])
+        for (let secret in [ "report-password", "uuid-secret", "185.199.108.9" ])
+            t.excludes(value[key], secret, key + " must hide a repeated credential or public address");
 });
 
 t.done();

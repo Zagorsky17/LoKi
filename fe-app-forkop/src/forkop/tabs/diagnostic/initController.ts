@@ -1,3 +1,4 @@
+// Modified for LoKi on 2026-11-01: carry the requested privacy mode into report formatting.
 import { onMount } from '../../../helpers/onMount';
 import { preserveScrollForPage } from '../../../helpers/preserveScrollForPage';
 import { runServiceCheck } from './checks/service';
@@ -388,6 +389,7 @@ async function buildReport(masked: boolean) {
   }
   return reportText(
     {
+      visibility: masked ? 'masked' : 'raw',
       generatedAt: new Date(),
       systemInfo: store.get().diagnosticsSystemInfo,
       luciVersion: normalizeCompiledVersion(FORKOP_LUCI_APP_VERSION),

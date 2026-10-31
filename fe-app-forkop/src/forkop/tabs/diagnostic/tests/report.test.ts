@@ -38,6 +38,60 @@ const checks: IDiagnosticsChecksStoreItem[] = [
 ];
 
 describe('the diagnostic report', () => {
+  it.each(['masked', 'raw'] as const)(
+    'identifies the %s mode in its first line even when checks already contain MASKED',
+    (visibility) => {
+      const text = reportText(
+        {
+          visibility,
+          generatedAt: new Date(2026, 10, 1),
+          systemInfo: {} as StoreType['diagnosticsSystemInfo'],
+          luciVersion: '',
+        },
+        {
+          visibility,
+          notice:
+            visibility === 'raw'
+              ? 'UNMASKED REPORT: contains keys and passwords. Do not share.'
+              : 'MASKED REPORT: review before sharing.',
+          checks: 'DNS: https://dns.test/MASKED',
+          log: '',
+          forkop_config: '',
+          nftables: '',
+          ip_rules: '',
+        },
+      );
+      expect(text.split('\n')[0]).toBe(
+        visibility === 'raw'
+          ? 'UNMASKED REPORT: contains keys and passwords. Do not share.'
+          : 'MASKED REPORT: review before sharing.',
+      );
+    },
+  );
+
+  it('rejects a raw or missing response mode when a masked report was requested', () => {
+    for (const visibility of ['raw', undefined]) {
+      expect(() =>
+        reportText(
+          {
+            visibility: 'masked',
+            generatedAt: new Date(),
+            systemInfo: {} as StoreType['diagnosticsSystemInfo'],
+            luciVersion: '',
+          },
+          {
+            visibility,
+            checks: '',
+            log: '',
+            forkop_config: 'private data',
+            nftables: '',
+            ip_rules: '',
+          } as Parameters<typeof reportText>[1],
+        ),
+      ).toThrow('Unexpected report visibility');
+    }
+  });
+
   it('writes the checks as the page shows them, in their order', () => {
     expect(checksText(checks)).toBe(
       [
@@ -55,6 +109,7 @@ describe('the diagnostic report', () => {
   it('puts the system first and every attachment under a heading of its own', () => {
     const text = reportText(
       {
+        visibility: 'masked',
         generatedAt: new Date(2026, 9, 19, 17, 5),
         systemInfo: {
           forkop_version: '1.0.6',
@@ -84,6 +139,8 @@ describe('the diagnostic report', () => {
         },
       },
       {
+        visibility: 'masked',
+        notice: 'MASKED REPORT: review before sharing.',
         checks: '✓ Service — OK\n',
         log: 'forkop: [info] Forkop started\n',
         forkop_config: "config settings 'settings'\n",
@@ -92,7 +149,8 @@ describe('the diagnostic report', () => {
       },
     );
 
-    expect(text.split('\n').slice(0, 6)).toEqual([
+    expect(text.split('\n').slice(0, 7)).toEqual([
+      'MASKED REPORT: review before sharing.',
       'Forkop diagnostic report · 2026-10-19 17:05',
       '',
       '== System ==',

@@ -1,3 +1,4 @@
+// Modified for LoKi on 2026-11-01: hide configured credentials repeated in report text.
 // Diagnostics are pasted into issue reports, so every value identifying a subscriber or a
 // credential is masked here.
 
@@ -353,9 +354,31 @@ function names(value, host_names) {
     return value;
 }
 
-function text(value, host_names, kept) {
+function credentials(config) {
+    let result = [];
+    function collect(value, sensitive) {
+        if (type(value) == "array") {
+            for (let item in value)
+                collect(item, sensitive);
+        }
+        else if (type(value) == "object") {
+            for (let key, item in value)
+                collect(item, sensitive || match(key, /(^|_)(uuid|password|secret|token|key|psk|short_id|sid|hwid|username|header|headers)$/i) != null);
+        }
+        else if (sensitive && type(value) == "string" && value != "")
+            push(result, value);
+    }
+    collect(config, false);
+    return sort(uniq(result), (a, b) => length(b) - length(a));
+}
+
+function text(value, host_names, kept, secrets) {
+    value = as_string(value);
+    // shortcut: short credentials can hide unrelated text; refine matching if diagnostics become unreadable.
+    for (let secret in secrets ?? [])
+        value = join("MASKED", split(value, secret));
     let mask_address = (token) => index(kept ?? [], token) >= 0 ? token : address(token);
-    value = replace(as_string(value), /([a-z][a-z0-9+.-]*):\/\/([^\/?# \t\r\n'"<>]+)([^ \t\r\n'"<>]*)/g, (all, scheme, authority, rest) => {
+    value = replace(value, /([a-z][a-z0-9+.-]*):\/\/([^\/?# \t\r\n'"<>]+)([^ \t\r\n'"<>]*)/g, (all, scheme, authority, rest) => {
         let at = rindex(authority, "@");
         return scheme + "://" + (at >= 0 ? "MASKED@" + substr(authority, at + 1) : authority) + (rest == "" || rest == "/" ? rest : "/MASKED");
     });
@@ -371,5 +394,6 @@ return {
     address,
     hosts,
     names,
+    credentials,
     text
 };

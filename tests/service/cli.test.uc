@@ -81,4 +81,26 @@ t.test("the help lists the public commands and hides the package hooks", () => {
     t.excludes(help, "sing_box_crash_cleanup");
 });
 
+t.test("report defaults to masked JSON and only an explicit raw request returns secrets with a warning", () => {
+    let fixture = require("fixture");
+    let report = require("diagnostics.report");
+    let dir = stub.tmpdir();
+    report.paths.forkop_config = dir + "/report-config";
+    fixture.seed({ settings: { mixed_proxy_password: "cli-report-secret" } });
+    fs.writefile(report.paths.forkop_config, "config settings 'settings'\n\toption mixed_proxy_password 'cli-report-secret'\n");
+    for (let args in [ [ "report" ], [ "report", "masked" ], [ "report", "typo" ], [ "report", "raw" ] ]) {
+        let result = run(args);
+        let value = json(result.stdout);
+        let raw = args[1] == "raw";
+        t.eq(result.result, 0);
+        t.eq(value.visibility, raw ? "raw" : "masked");
+        if (raw) {
+            t.contains(value.notice, "UNMASKED REPORT");
+            t.contains(value.forkop_config, "cli-report-secret");
+        }
+        else
+            t.excludes(result.stdout, "cli-report-secret");
+    }
+});
+
 t.done();

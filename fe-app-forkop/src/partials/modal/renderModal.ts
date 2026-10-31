@@ -1,3 +1,4 @@
+// Modified for LoKi on 2026-11-01: confirm raw access and prevent exports during privacy transitions.
 import { renderButton } from '../button/renderButton';
 import { copyToClipboard } from '../../helpers/copyToClipboard';
 import { downloadAsTxt } from '../../helpers/downloadAsTxt';
@@ -20,6 +21,8 @@ export function renderModal(
 ) {
   let currentText = text ?? '';
   let latestRequest = 0;
+  let loading = false;
+  let currentMasked = true;
 
   const codeEl = E('code', {}, currentText) as HTMLElement;
   const contentEl = E(
@@ -28,17 +31,23 @@ export function renderModal(
     codeEl,
   ) as HTMLElement;
 
+  const downloadButton = renderButton({
+    classNames: ['cbi-button-apply'],
+    text: _('Download'),
+    onClick: () => {
+      if (!loading) downloadAsTxt(currentText, name);
+    },
+  }) as HTMLButtonElement;
+  const copyButton = renderButton({
+    classNames: ['cbi-button-apply'],
+    text: _('Copy'),
+    onClick: () => {
+      if (!loading) copyToClipboard(`\`\`\`${name}\n${currentText}\n\`\`\``);
+    },
+  }) as HTMLButtonElement;
   const footerChildren: HTMLElement[] = [
-    renderButton({
-      classNames: ['cbi-button-apply'],
-      text: _('Download'),
-      onClick: () => downloadAsTxt(currentText, name),
-    }),
-    renderButton({
-      classNames: ['cbi-button-apply'],
-      text: _('Copy'),
-      onClick: () => copyToClipboard(`\`\`\`${name}\n${currentText}\n\`\`\``),
-    }),
+    downloadButton,
+    copyButton,
     renderButton({
       classNames: ['cbi-button-remove'],
       text: _('Close'),
@@ -53,20 +62,40 @@ export function renderModal(
     maskValuesInput.className = 'cbi-input-checkbox';
     maskValuesInput.checked = true;
     maskValuesInput.addEventListener('change', async () => {
-      const request = ++latestRequest;
       const maskValues = maskValuesInput.checked;
+      if (
+        !maskValues &&
+        !window.confirm(
+          _(
+            'Show an unmasked report? It contains keys and passwords. Do not share it.',
+          ),
+        )
+      ) {
+        maskValuesInput.checked = currentMasked;
+        return;
+      }
+      const request = ++latestRequest;
+      loading = true;
+      downloadButton.disabled = copyButton.disabled = true;
 
       try {
         const nextText = await getText({ maskValues });
         if (request === latestRequest) {
           currentText = nextText ?? '';
+          currentMasked = maskValues;
+          maskValuesInput.checked = currentMasked;
           codeEl.textContent = currentText;
         }
-      } catch (error) {
-        console.warn('[renderModal] failed to load the text', error);
+      } catch {
+        console.warn('[renderModal] failed to load the text');
         if (request === latestRequest) {
-          maskValuesInput.checked = !maskValues;
+          maskValuesInput.checked = currentMasked;
           showToast(_('Failed to load diagnostics'), 'error');
+        }
+      } finally {
+        if (request === latestRequest) {
+          loading = false;
+          downloadButton.disabled = copyButton.disabled = false;
         }
       }
     });
