@@ -1,56 +1,45 @@
-# Forkop
+# LoKi
 
-Маршрутизация трафика OpenWrt по правилам.
+[Русский](README.ru.md) · English
 
-[![Релиз](https://img.shields.io/github/v/release/ushan0v/forkop?label=%D1%80%D0%B5%D0%BB%D0%B8%D0%B7&color=0d9488)](https://github.com/ushan0v/forkop/releases/latest)
-[![Документация](https://img.shields.io/badge/%D0%B4%D0%BE%D0%BA%D1%83%D0%BC%D0%B5%D0%BD%D1%82%D0%B0%D1%86%D0%B8%D1%8F-ushan0v.github.io-0d9488)](https://ushan0v.github.io/forkop/)
-[![Чат в Telegram](https://img.shields.io/badge/Telegram-%D1%87%D0%B0%D1%82-2CA5E0?logo=telegram&logoColor=white)](https://t.me/forkop_chat)
+> **This application is under active development.** Changes may reach `main` before the full test cycle is complete; testing and fixes continue after publication. Stability on OpenWrt and behavior during DNS/TLS failures have not yet been confirmed in laboratory tests.
 
-[Установка](https://ushan0v.github.io/forkop/guide/install) · [Быстрый старт](https://ushan0v.github.io/forkop/guide/quick-start) · [Руководство](https://ushan0v.github.io/forkop/sections/)
+Rule-based traffic routing for OpenWrt, powered by sing-box. LoKi is an independently developed fork of [Forkop](https://github.com/ushan0v/forkop), starting from version 2.0.0 (`9544f3de09c62c935e1147147136234594d04f02`).
 
-## Требования
+Project: [Zagorsky17/LoKi](https://github.com/Zagorsky17/LoKi). Report bugs and propose changes in [LoKi Issues](https://github.com/Zagorsky17/LoKi/issues).
 
-- OpenWrt 24.10 или новее;
-- от 128 МБ оперативной памяти, лучше 256 МБ;
-- от 18 до 38 МБ свободной флеш-памяти, в зависимости от [сборки ядра](https://ushan0v.github.io/forkop/guide/install#сборки-ядра).
+## Development status
 
-## Установка
+As of October 31, 2026, this repository has no LoKi release. The installer and application update checks use **`Zagorsky17/LoKi`**; application packages are fetched from this repository, with no fallback to Forkop releases. Installation requires a LoKi release with its package assets; publishing source to `main` alone is insufficient. The core still comes from `ushan0v/sing-box-forkop` until core compatibility work is complete. Installation and upgrade on a router remain untested.
 
-Подключитесь к роутеру по SSH и выполните:
+The source still uses the technical names `forkop`, `luci-app-forkop` and `/etc/config/forkop`. Their coordinated replacement is planned together with configuration migration.
 
-```sh
-sh <(wget -O - https://raw.githubusercontent.com/ushan0v/forkop/main/install.sh)
-```
+## Planned scope
 
-Команда устанавливает или обновляет [Forkop](https://github.com/ushan0v/forkop) и [sing-box-forkop](https://github.com/ushan0v/sing-box-forkop).
+LoKi will retain connection links, subscriptions, routing sections, DNS, monitoring and diagnostics. VPN servers, tunnels and migrations from Forkop 1.0.x are scheduled for removal; they are still present in the inherited source.
 
-## Возможности
+The target platforms are OpenWrt 24.10 and 25.12. Compatibility with the stock sing-box packages and newer versions remains to be implemented and tested. The inherited code currently requires `sing-box-forkop`.
 
-- **Секции** для точечной маршрутизации трафика по правилам и спискам.
-- **Подключения** по ссылкам VLESS, Trojan, Shadowsocks, Hysteria2 и другим.
-- **Подписки** с поддержкой всех основных форматов.
-- **Туннели** WireGuard, AmneziaWG, Cloudflare WARP, OpenVPN и Tailscale.
-- **URLTest и Fallback** сами выбирают рабочий сервер.
-- **DNS** с шифрованием и DNS Fallback.
-- **VPN-сервер** на самом роутере.
-- **Дашборд и мониторинг** соединений.
+The built-in lists from [forkop-lists](https://github.com/ushan0v/forkop-lists) and the diagnostic domains `ip.podkop.fyi` and `fakeip.podkop.fyi` are retained external dependencies.
 
-## Документация
+## DNS settings in development
 
-Вся документация на русском лежит на [ushan0v.github.io/forkop](https://ushan0v.github.io/forkop/).
+The development UI requires an explicit encryption mode for the entire main DNS list: disabled (UDP), or enabled with an explicit choice of DoH or DoT. Addresses must match: `https://dns.example/dns-query` for DoH, `tls://dns.example` for DoT, or an IP address for UDP. Replace the example name `dns.example` with your resolver. Changing the mode does not rewrite addresses or switch protocols when a server fails.
 
-## Помощь
+Bootstrap uses UDP by IP address. Outbound connections without their own resolver use bootstrap; explicit JSON and interface resolver settings are preserved. Fresh configurations retain the existing UDP default. Legacy configurations without the encryption field keep their URI protocols until an explicit mode is selected in the UI. These changes still require testing on laboratory OpenWrt.
 
-Вопросы и помощь в [чате в Telegram](https://t.me/forkop_chat). Об ошибках и предложениях пишите в [Issues](https://github.com/ushan0v/forkop/issues).
+## Documentation and testing
 
-## Поддержать проект
+The public project documentation is maintained in this README and [README.ru.md](README.ru.md). The inherited `docs/` site describes Forkop and is scheduled for removal.
 
-* 💳 **Карты РФ / СБП / Tinkoff Pay:** [Донат на CloudTips](https://pay.cloudtips.ru/p/385e5af2)
-* 💎 **USDT (сеть TON):** `UQAOCDav39WJ2gvnzs9RQ_IsF2dcGrcpw4U0j6XGO7je7uwm`
-* 🟢 **USDT (сеть TRC-20):** `TEMaZFyM8RQpkbd5LvB8CFJwxCyhHauKAe`
-* 🪙 **USDT (сети ERC-20 / BEP-20 / Polygon / Monad):** `0xe8aabb21c320240fe45b6087e68c6fe40a92d8bf`
-* 🟠 **USDT (сеть Solana):** `AhhUjTci9zDKQjUfgLacFR4LiHX9nmZud6DZ8YdbpjEB`
+Run tests and package builds on a dedicated Linux development server. DNS failures, traffic interception and installation must also be tested on a laboratory OpenWrt router before a release. Use synthetic credentials and local test endpoints for security tests.
 
-## Лицензия
+## Origin and license
 
-Forkop распространяется по лицензии [GPL-2.0-or-later](LICENSE).
+Forkop was developed by [ushan0v and its contributors](https://github.com/ushan0v/forkop/graphs/contributors). LoKi is maintained independently in [Zagorsky17/LoKi](https://github.com/Zagorsky17/LoKi); it is not an upstream Forkop release.
+
+LoKi retains the project's [GPL-2.0-or-later license](LICENSE). Existing copyright, license and attribution notices are preserved. Third-party components retain their own notices, including the [bundled font assets](luci-app-forkop/htdocs/luci-static/resources/view/forkop/fonts/LICENSE.md).
+
+When distributing modified versions or binary packages, retain the applicable notices and license, identify modified files and their change dates, and provide the corresponding source as required by the [GNU GPL version 2](https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html). The software is provided without warranty under the license terms.
+
+This README was rewritten for LoKi on October 31, 2026.

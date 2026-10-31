@@ -1,3 +1,4 @@
+# Modified for LoKi on 2026-10-31: identify the independently maintained package.
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-forkop
@@ -15,13 +16,13 @@ PKG_VERSION:=$(or $(FORKOP_HAS_RELEASE_VERSION),0.0.0)
 PKG_RELEASE:=
 PKG_PO_VERSION:=$(PKG_VERSION)
 
-LUCI_TITLE:=LuCI Forkop app
+LUCI_TITLE:=LuCI LoKi app
 LUCI_DEPENDS:=+luci-base +forkop
 LUCI_PKGARCH:=all
 LUCI_LANG.ru:=Русский (Russian)
 LUCI_LANG.en:=English
-LUCI_MAINTAINER:=ushan0v <ushan0v@users.noreply.github.com>
-LUCI_DESCRIPTION:=Web interface for Forkop
+LUCI_MAINTAINER:=Zagorsky17
+LUCI_DESCRIPTION:=Web interface for LoKi
 LUCI_MINIFY_JS:=0
 
 PKG_LICENSE:=GPL-2.0-or-later

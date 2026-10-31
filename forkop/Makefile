@@ -1,3 +1,4 @@
+# Modified for LoKi on 2026-10-31: use the project release repository.
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=forkop
@@ -14,7 +15,7 @@ endif
 PKG_VERSION:=$(or $(FORKOP_HAS_RELEASE_VERSION),0.0.0)
 PKG_RELEASE:=
 
-PKG_MAINTAINER:=ushan0v <ushan0v@users.noreply.github.com>
+PKG_MAINTAINER:=Zagorsky17
 PKG_LICENSE:=GPL-2.0-or-later
 
 include $(INCLUDE_DIR)/package.mk
@@ -23,8 +24,8 @@ define Package/forkop
 	SECTION:=net
 	CATEGORY:=Network
 	DEPENDS:=+ca-bundle +ucode +ucode-mod-fs +ucode-mod-resolv +ucode-mod-socket +ucode-mod-ubus +ucode-mod-uloop +ucode-mod-uci +uclient-fetch +kmod-nft-tproxy +nftables +kmod-nft-nat +ip-tiny +sing-box-forkop
-	TITLE:=Forkop backend service
-	URL:=https://github.com/ushan0v/forkop
+	TITLE:=LoKi backend service
+	URL:=https://github.com/Zagorsky17/LoKi
 	PKGARCH:=all
 endef
 

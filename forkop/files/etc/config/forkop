@@ -1,5 +1,7 @@
+# Modified for LoKi on 2026-10-31: keep the default UDP mode explicit.
 config settings 'settings'
         option config_version '2.0.0'
+        option dns_encryption '0'
         list dns_server '77.88.8.8'
         list bootstrap_dns_server '77.88.8.8'
         option dns_rewrite_ttl '60'

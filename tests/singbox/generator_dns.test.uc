@@ -1,3 +1,4 @@
+// Modified for LoKi on 2026-10-31: cover independent outbound bootstrap resolution.
 let t = require("t");
 let fixture = require("fixture");
 let q = require("sbconfig");
@@ -57,6 +58,56 @@ t.test("several DNS servers become native fallback groups with their own query m
         t.eq([ candidate.detour, candidate.domain_resolver ], [ "proxy", "bootstrap-dns-server" ]);
     }
     t.eq(multi.route.default_domain_resolver, "bootstrap-dns-server", "a detoured DNS resolves endpoints through the bootstrap");
+});
+
+t.test("outbound hosts use bootstrap regardless of the main DNS detour", () => {
+    for (let detour in [ "0", "1" ]) {
+        let config = build({
+            settings: {
+                dns_server: [ "https://dns.example/dns-query" ],
+                bootstrap_dns_server: [ "192.0.2.53", "198.51.100.53" ],
+                dns_bootstrap_fallback_strategy: "sequential",
+                dns_detour_enabled: detour, dns_detour_section: "proxy"
+            },
+            section: [ {
+                ".name": "proxy", enabled: "1", action: "connection", destinations: "target.example",
+                outbound_jsons: [ '{"type":"socks","tag":"Node","server":"proxy.example","server_port":1080}' ]
+            } ]
+        });
+        t.eq(config.route.default_domain_resolver, "bootstrap-dns-server",
+            "a proxy without its own resolver must not depend on the main DNS");
+        t.eq(q.outbound(config, "proxy/Node").server, "proxy.example");
+        t.eq(q.outbound(config, "proxy/Node").domain_resolver, null);
+        t.eq(config.dns.final, "dns-server", "client DNS keeps its configured resolver");
+        t.eq(q.dns_server_tag(config, "dns-server").detour, detour == "1" ? "proxy" : null);
+        let bootstrap = q.dns_server_tag(config, "bootstrap-dns-server");
+        t.eq([ bootstrap.type, bootstrap.strategy ], [ "fallback", "sequential" ]);
+        for (let tag in bootstrap.servers)
+            t.eq(q.dns_server_tag(config, tag).detour, null, "bootstrap must not depend on a proxy");
+    }
+});
+
+t.test("an explicit outbound resolver is preserved", () => {
+    let config = build({
+        settings: { dns_server: [ "https://dns.example/dns-query" ], bootstrap_dns_server: [ "192.0.2.53" ] },
+        section: [ {
+            ".name": "proxy", enabled: "1", action: "connection",
+            outbound_jsons: [
+                '{"type":"socks","tag":"String","server":"proxy.example","server_port":1080,"domain_resolver":"dns-server"}',
+                '{"type":"socks","tag":"Object","server":"proxy.example","server_port":1081,"domain_resolver":{"server":"dns-server","strategy":"ipv4_only"}}'
+            ]
+        } ]
+    });
+    t.eq(q.outbound(config, "proxy/String").domain_resolver, "dns-server");
+    t.eq(q.outbound(config, "proxy/Object").domain_resolver, { server: "dns-server", strategy: "ipv4_only" });
+});
+
+t.test("a bootstrap hostname is refused instead of depending on another resolver", () => {
+    let error = t.throws(() => build({
+        settings: { dns_server: [ "https://dns.example/dns-query" ], bootstrap_dns_server: [ "bootstrap.example" ] },
+        section: [ { ".name": "direct", enabled: "1", action: "bypass", destinations: "target.example" } ]
+    }));
+    t.contains(error.message, "Bootstrap DNS server must use an IP address");
 });
 
 t.test("static records answer from a hosts server after the sections and before the local resolver", () => {

@@ -1,3 +1,4 @@
+// Modified for LoKi on 2026-10-31: use the project release repository.
 let t = require("t");
 let stub = require("stub");
 let fs = require("fs");
@@ -125,18 +126,18 @@ t.test("a read hands over whole UTF-8 characters only", () => {
 });
 
 t.test("the latest release comes through GitHub's API, or from a mirror at github.com's release paths", () => {
-    t.eq(installer.listing_url(), "https://api.github.com/repos/ushan0v/forkop/releases/latest");
-    let listing = "{\"assets\":[{\"name\":\"release.json\",\"url\":\"https://api.github.com/repos/ushan0v/forkop/releases/assets/2\"}," +
-        "{\"name\":\"install.sh\",\"url\":\"https://api.github.com/repos/ushan0v/forkop/releases/assets/1\"}]}";
-    t.eq(installer.asset_url(listing, "install.sh"), "https://api.github.com/repos/ushan0v/forkop/releases/assets/1");
+    t.eq(installer.listing_url(), "https://api.github.com/repos/Zagorsky17/LoKi/releases/latest");
+    let listing = "{\"assets\":[{\"name\":\"release.json\",\"url\":\"https://api.github.com/repos/Zagorsky17/LoKi/releases/assets/2\"}," +
+        "{\"name\":\"install.sh\",\"url\":\"https://api.github.com/repos/Zagorsky17/LoKi/releases/assets/1\"}]}";
+    t.eq(installer.asset_url(listing, "install.sh"), "https://api.github.com/repos/Zagorsky17/LoKi/releases/assets/1");
     t.eq(installer.asset_url(listing, "SHA256SUMS"), null, "a file the release has not got");
     t.eq([ installer.asset_url("{\"message\":\"Not Found\"}", "install.sh"), installer.asset_url(null, "install.sh") ], [ null, null ]);
     t.eq([ installer.rate_limited("{\"resources\":{\"core\":{\"remaining\":0}}}"),
         installer.rate_limited("{\"resources\":{\"core\":{\"remaining\":12}}}"), installer.rate_limited(null) ], [ true, false, false ]);
     stub.env({ FORKOP_DOWNLOAD_URL: MIRROR });
-    t.eq(installer.release_url("release.json"), MIRROR + "/ushan0v/forkop/releases/latest/download/release.json");
+    t.eq(installer.release_url("release.json"), MIRROR + "/Zagorsky17/LoKi/releases/latest/download/release.json");
     stub.restore();
-    t.eq(installer.url_host(MIRROR + "/ushan0v/forkop"), "10.0.2.2");
+    t.eq(installer.url_host(MIRROR + "/Zagorsky17/LoKi"), "10.0.2.2");
     t.eq(installer.url_host("https://api.github.com"), "api.github.com");
 });
 
@@ -281,7 +282,7 @@ t.test("the runner downloads install.sh, runs it in a terminal and records how i
     run_with({}, (result) => {
         let downloads = uloop.__processes();
         t.eq(downloads[0].executable, "uclient-fetch");
-        t.contains(join(" ", downloads[0].args), "-O " + installer.paths.script + " " + MIRROR + "/ushan0v/forkop/releases/latest/download/install.sh");
+        t.contains(join(" ", downloads[0].args), "-O " + installer.paths.script + " " + MIRROR + "/Zagorsky17/LoKi/releases/latest/download/install.sh");
         t.eq(state().runner_pid, me, "the runner records itself first");
         uloop.__exit(0, 0);
         t.contains(join(" ", uloop.__processes()[1].args), "release.json", "an install checks the release first");
@@ -489,15 +490,15 @@ t.test("through GitHub's API the run reads the release's listing, then its files
     run_with({}, () => {
         let listing = uloop.__processes()[0];
         t.eq([ listing.executable, join(" ", listing.args) ],
-            [ "uclient-fetch", "-q -T 30 -O " + installer.paths.listing + " https://api.github.com/repos/ushan0v/forkop/releases/latest" ]);
-        fs.writefile(installer.paths.listing, "{\"assets\":[{\"name\":\"install.sh\",\"url\":\"https://api.github.com/repos/ushan0v/forkop/releases/assets/1\"}," +
-            "{\"name\":\"release.json\",\"url\":\"https://api.github.com/repos/ushan0v/forkop/releases/assets/2\"}]}");
+            [ "uclient-fetch", "-q -T 30 -O " + installer.paths.listing + " https://api.github.com/repos/Zagorsky17/LoKi/releases/latest" ]);
+        fs.writefile(installer.paths.listing, "{\"assets\":[{\"name\":\"install.sh\",\"url\":\"https://api.github.com/repos/Zagorsky17/LoKi/releases/assets/1\"}," +
+            "{\"name\":\"release.json\",\"url\":\"https://api.github.com/repos/Zagorsky17/LoKi/releases/assets/2\"}]}");
         uloop.__exit(0, 0);
         t.eq(join(" ", uloop.__processes()[1].args), "-q -T 30 --header=Accept: application/octet-stream -O " + installer.paths.script +
-            " https://api.github.com/repos/ushan0v/forkop/releases/assets/1");
+            " https://api.github.com/repos/Zagorsky17/LoKi/releases/assets/1");
         uloop.__exit(1, 0);
         t.eq(uloop.__processes()[2].args[5], installer.paths.manifest);
-        t.eq(uloop.__processes()[2].args[6], "https://api.github.com/repos/ushan0v/forkop/releases/assets/2");
+        t.eq(uloop.__processes()[2].args[6], "https://api.github.com/repos/Zagorsky17/LoKi/releases/assets/2");
         fs.writefile(installer.paths.manifest, "{\"version\":\"2.0.1\"}");
         uloop.__exit(2, 0);
         t.eq(uloop.__processes()[4].args[4], installer.paths.script, "install.sh runs");

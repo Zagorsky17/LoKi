@@ -1,3 +1,4 @@
+// Modified for LoKi on 2026-10-31: resolve outbound hosts independently of main DNS availability.
 let common = require("core.common");
 let core_ip = require("core.ip");
 let uci_core = require("core.uci");
@@ -275,7 +276,7 @@ function base_config(settings, service_address) {
         { type: "direct", tag: runtime_constants.SYSTEM_DNS_INBOUND_TAG, listen: runtime_constants.SYSTEM_DNS_INBOUND_ADDRESS, listen_port: runtime_constants.SYSTEM_DNS_INBOUND_PORT }
     ];
 
-    let runtime_context = { default_domain_resolver: runtime_dns.default_domain_resolver(settings) };
+    let runtime_context = { default_domain_resolver: runtime_constants.BOOTSTRAP_DNS_SERVER_TAG };
 
     return {
         log: {

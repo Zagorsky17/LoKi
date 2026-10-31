@@ -1,3 +1,4 @@
+// Modified for LoKi on 2026-10-31: enforce explicit DNS encryption before applying settings.
 let fs = require("fs");
 let core_common = require("core.common");
 let core_exec = require("core.exec");
@@ -392,6 +393,10 @@ function validate_dns_settings(settings, sections, context) {
         if (parsed.unsupported)
             fail_validation("Invalid Bootstrap DNS server '" + value + "': " + parsed.unsupported);
     }
+
+    let encryption_error = runtime_dns.encryption_error(settings);
+    if (encryption_error != "")
+        fail_validation(encryption_error);
 
     let static_hosts = runtime_dns.static_hosts(settings);
     if (static_hosts.unsupported)
