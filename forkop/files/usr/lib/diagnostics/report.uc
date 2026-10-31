@@ -1,3 +1,4 @@
+// Modified for LoKi on 2026-11-01: identify report visibility and mask every attachment consistently.
 let fs = require("fs");
 let common = require("core.common");
 let exec = require("core.exec");
@@ -63,14 +64,16 @@ function report(visibility, checks) {
     let sing_box = masked ? common.read_json_file(common.option(settings, "config_path", "")) : null;
     let hosts = masked ? sort(uniq([ ...mask.hosts(sing_box), ...server_hosts() ]), (a, b) => length(b) - length(a)) : [];
     let resolvers = resolver_addresses(settings);
-    let text = (value) => masked ? mask.text(value, hosts, resolvers) : value;
-    let names = (value) => masked ? mask.names(value, hosts) : value;
+    let secrets = masked ? mask.credentials([ sing_box, uci.section_objects(constants.FORKOP_CONFIG_NAME) ]) : [];
+    let text = (value) => masked ? mask.text(value, hosts, resolvers, secrets) : value;
     let forkop = fs.readfile(paths.forkop_config) ?? "";
 
     return {
+        visibility: masked ? "masked" : "raw",
+        notice: masked ? "MASKED REPORT: review before sharing." : "UNMASKED REPORT: contains keys and passwords. Do not share.",
         checks: text(checks ?? ""),
         log: text(log_tail(output([ "logread", "-e", constants.FORKOP_LOG_PATTERN ]))),
-        forkop_config: names(masked ? mask.forkop_config(forkop) : forkop),
+        forkop_config: text(masked ? mask.forkop_config(forkop) : forkop),
         nftables: text(chains(output([ "nft", "-t", "list", "table", "inet", constants.NFT_TABLE_NAME ]))),
         ip_rules: text(output([ "ip", "-4", "rule" ]) + output([ "ip", "-6", "rule" ]))
     };

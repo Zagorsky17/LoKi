@@ -1,4 +1,4 @@
-# Modified for LoKi on 2026-10-31: explicit DNS encryption settings.
+# Modified for LoKi on 2026-11-01: DNS settings and diagnostic report privacy.
 # SOME DESCRIPTIVE TITLE.
 # Copyright (C) 2026 THE PACKAGE'S COPYRIGHT HOLDER
 # This file is distributed under the same license as the FORKOP package.
@@ -8,8 +8,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: FORKOP\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-31 12:53+0300\n"
-"PO-Revision-Date: 2026-10-31 12:53+0300\n"
+"POT-Creation-Date: 2026-11-01 01:04+0300\n"
+"PO-Revision-Date: 2026-11-01 01:04+0300\n"
 "Last-Translator: ushan0v <ushanov2204@gmail.com>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
 "Language: \n"
@@ -5410,4 +5410,16 @@ msgstr ""
 #: fe-app-forkop/src/forkop/tabs/servers/form/security.ts:138
 #: luci-app-forkop/htdocs/luci-static/resources/view/forkop/main.js:28744
 msgid "Your own certificate"
+msgstr ""
+
+#: fe-app-forkop/src/forkop/tabs/diagnostic/report.ts
+msgid "MASKED REPORT: review before sharing."
+msgstr ""
+
+#: fe-app-forkop/src/forkop/tabs/diagnostic/report.ts
+msgid "UNMASKED REPORT: contains keys and passwords. Do not share."
+msgstr ""
+
+#: fe-app-forkop/src/partials/modal/renderModal.ts
+msgid "Show an unmasked report? It contains keys and passwords. Do not share it."
 msgstr ""

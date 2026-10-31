@@ -1,4 +1,4 @@
-# Modified for LoKi on 2026-10-31: explicit DNS encryption settings.
+# Modified for LoKi on 2026-11-01: DNS settings and diagnostic report privacy.
 # RU translations for FORKOP package.
 # Copyright (C) 2026 THE FORKOP COPYRIGHT HOLDER
 # This file is distributed under the same license as the FORKOP package.
@@ -8,8 +8,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: FORKOP\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-31 12:53+0300\n"
-"PO-Revision-Date: 2026-10-31 12:53+0300\n"
+"POT-Creation-Date: 2026-11-01 01:04+0300\n"
+"PO-Revision-Date: 2026-11-01 01:04+0300\n"
 "Last-Translator: ushan0v\n"
 "Language-Team: none\n"
 "Language: ru\n"
@@ -1512,6 +1512,9 @@ msgstr "Основной DNS"
 msgid "Main DNS Query Mode"
 msgstr "Режим опроса основного DNS"
 
+msgid "MASKED REPORT: review before sharing."
+msgstr "ЗАМАСКИРОВАННЫЙ ОТЧЁТ: проверьте перед отправкой."
+
 msgid "Masquerade"
 msgstr "Маскировка"
 
@@ -2322,6 +2325,9 @@ msgstr "Меньше интервала проверки"
 msgid "Show a QR code"
 msgstr "Показать QR-код"
 
+msgid "Show an unmasked report? It contains keys and passwords. Do not share it."
+msgstr "Показать отчёт без маскирования? Он содержит ключи и пароли. Не публикуйте его."
+
 msgid "Show details"
 msgstr "Показать подробности"
 
@@ -2765,6 +2771,9 @@ msgstr "Неизвестный параметр %s"
 
 msgid "Unknown token mode %s"
 msgstr "Неизвестный режим токена %s"
+
+msgid "UNMASKED REPORT: contains keys and passwords. Do not share."
+msgstr "ОТЧЁТ СОДЕРЖИТ КЛЮЧИ И ПАРОЛИ. НЕ ПУБЛИКОВАТЬ."
 
 msgid "Unsaved changes to Forkop made earlier are replaced."
 msgstr "Непринятые изменения Forkop, сделанные раньше, будут заменены."

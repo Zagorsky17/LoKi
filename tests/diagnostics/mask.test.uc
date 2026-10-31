@@ -218,4 +218,14 @@ t.test("free text loses URL paths and credentials, the given hosts and public ad
         t.contains(masked, kept);
 });
 
+t.test("known credential values are masked literally, including nested headers and regular-expression characters", () => {
+    let secrets = mask.credentials([
+        { mixed_proxy_password: "a$.*[x]", reality_private_key: "private-test-key", password: "", enabled: "1" },
+        { outbounds: [ { uuid: "fixture-uuid", server: "node.test", headers: { Authorization: "Bearer fixture-token" } } ] }
+    ]);
+    t.eq(sort(secrets), sort([ "a$.*[x]", "private-test-key", "fixture-uuid", "Bearer fixture-token" ]));
+    t.eq(mask.text("a$.*[x] / a$.*[x] / fixture-uuid / Bearer fixture-token / keep", [], [], secrets),
+        "MASKED / MASKED / MASKED / MASKED / keep");
+});
+
 t.done();

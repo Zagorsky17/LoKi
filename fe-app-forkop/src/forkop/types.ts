@@ -428,6 +428,8 @@ export namespace Forkop {
   }
 
   export interface ReportAttachments {
+    visibility: 'masked' | 'raw';
+    notice: string;
     checks: string;
     log: string;
     forkop_config: string;

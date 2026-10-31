@@ -3,11 +3,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   showToast: vi.fn(),
   downloadAsTxt: vi.fn(),
+  copyToClipboard: vi.fn(),
+  confirm: vi.fn(),
 }));
 
 vi.mock('../../../helpers/showToast', () => ({ showToast: mocks.showToast }));
 vi.mock('../../../helpers/downloadAsTxt', () => ({
   downloadAsTxt: mocks.downloadAsTxt,
+}));
+vi.mock('../../../helpers/copyToClipboard', () => ({
+  copyToClipboard: mocks.copyToClipboard,
 }));
 vi.mock('../../button/renderButton', () => ({
   renderButton: (props: { text: string; onClick: () => void }) => ({
@@ -77,7 +82,10 @@ async function render(
   const download = walk(body).find(
     (node) => (node as { button?: string })?.button === 'Download',
   ) as { click: () => void };
-  return { body, code, box, download };
+  const copy = walk(body).find(
+    (node) => (node as { button?: string })?.button === 'Copy',
+  ) as { click: () => void };
+  return { body, code, box, download, copy };
 }
 
 describe('a text dialog', () => {
@@ -85,6 +93,9 @@ describe('a text dialog', () => {
     (globalThis as unknown as { E: unknown }).E = fakeE;
     mocks.showToast.mockReset();
     mocks.downloadAsTxt.mockReset();
+    mocks.copyToClipboard.mockReset();
+    mocks.confirm.mockReset().mockReturnValue(true);
+    vi.stubGlobal('window', { confirm: mocks.confirm });
   });
 
   it('shows the text it was given and saves what it shows', async () => {
@@ -137,6 +148,45 @@ describe('a text dialog', () => {
     expect(mocks.showToast).toHaveBeenCalledWith(
       'Failed to load diagnostics',
       'error',
+    );
+  });
+
+  it('does not request raw text when its warning is declined', async () => {
+    mocks.confirm.mockReturnValue(false);
+    const getText = vi.fn(async () => 'raw secret');
+    const { code, box, copy } = await render(getText);
+    await box.flip();
+    expect(mocks.confirm).toHaveBeenCalledOnce();
+    expect(getText).not.toHaveBeenCalled();
+    expect(box.input.checked).toBe(true);
+    expect(code.textContent).toBe('masked text');
+    copy.click();
+    expect(mocks.copyToClipboard).toHaveBeenCalledWith(
+      '```forkop-report\nmasked text\n```',
+    );
+  });
+
+  it('cannot export the previous raw text while masking is being loaded', async () => {
+    let resolveMasked: (text: string) => void = () => {};
+    const getText = vi.fn(({ maskValues }: { maskValues: boolean }) =>
+      maskValues
+        ? new Promise<string>((resolve) => {
+            resolveMasked = resolve;
+          })
+        : Promise.resolve('raw secret'),
+    );
+    const { box, download, copy } = await render(getText);
+    await box.flip();
+    const remask = box.flip();
+    download.click();
+    copy.click();
+    expect(mocks.downloadAsTxt).not.toHaveBeenCalled();
+    expect(mocks.copyToClipboard).not.toHaveBeenCalled();
+    resolveMasked('masked again');
+    await remask;
+    copy.click();
+    expect(mocks.copyToClipboard).toHaveBeenCalledWith(
+      '```forkop-report\nmasked again\n```',
     );
   });
 });
