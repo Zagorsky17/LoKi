@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Modified for LoKi on 2026-10-31: use the project release repository.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -7,7 +8,7 @@ usage() {
   cat <<EOF
 Usage: $(basename "$0") <version> [output-directory]
 
-Build Forkop IPK and APK packages and the other files of its release: install.sh,
+Build LoKi IPK and APK packages and the other files of its release: install.sh,
 release.json and SHA256SUMS. The version must use x.y.z format.
 
 INSTALL_COMMAND, when set, goes into release.json as install_command: the release installs
@@ -41,10 +42,10 @@ IPK_SDK_URL="${IPK_SDK_URL:-https://downloads.openwrt.org/releases/24.10.6/targe
 APK_SDK_URL="${APK_SDK_URL:-https://downloads.openwrt.org/releases/25.12.3/targets/x86/64/openwrt-sdk-25.12.3-x86-64_gcc-14.3.0_musl.Linux-x86_64.tar.zst}"
 
 BACKEND_DESCRIPTION="Rule-based traffic routing for OpenWrt"
-APP_DESCRIPTION="Web interface for Forkop"
+APP_DESCRIPTION="Web interface for LoKi"
 I18N_DESCRIPTION="Translation for luci-app-forkop - Русский (Russian)"
-MAINTAINER="ushan0v <ushan0v@users.noreply.github.com>"
-PROJECT_URL="https://github.com/ushan0v/forkop"
+MAINTAINER="Zagorsky17"
+PROJECT_URL="https://github.com/Zagorsky17/LoKi"
 uc_constant() {
   sed -n "s/^[[:space:]]*\(const[[:space:]]\{1,\}\)\{0,1\}$2[[:space:]]*[:=][[:space:]]*\"\([^\"]*\)\".*/\2/p" "$ROOT_DIR/forkop/files/usr/lib/$1"
 }

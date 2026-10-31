@@ -1,3 +1,4 @@
+// Modified for LoKi on 2026-10-31: keep application downloads in the project repository.
 // The backend package is built by the feed Makefile and by build.sh, each with its own
 // dependency lists, layout and hooks; these checks hold the copies to each other.
 
@@ -44,6 +45,14 @@ function words(value) {
 function sorted(list) {
     return sort(uniq(list));
 }
+
+t.test("application installer, updater and packages use the LoKi repository", () => {
+    t.eq(constants.FORKOP_RELEASE_REPO, "Zagorsky17/LoKi");
+    let installer_repo = match(fs.readfile(repo.path("install.sh")), /\nFORKOP_REPO=([^\n]+)\n/);
+    t.eq(installer_repo ? installer_repo[1] : null, constants.FORKOP_RELEASE_REPO);
+    t.eq(build_sh_variable("PROJECT_URL"), "https://github.com/" + constants.FORKOP_RELEASE_REPO);
+    t.eq(makefile_field("URL"), build_sh_variable("PROJECT_URL"));
+});
 
 let makefile_depends = sorted(map(words(makefile_field("DEPENDS")), (word) => ltrim(word, "+")));
 

@@ -1,4 +1,5 @@
 #!/bin/sh
+# Modified for LoKi on 2026-10-31: use the project release repository.
 # shellcheck shell=dash
 #
 # Installs, updates and removes Forkop and its core, sing-box-forkop, on OpenWrt 24.10 and newer.
@@ -26,7 +27,7 @@
 
 set -u
 
-FORKOP_REPO=ushan0v/forkop
+FORKOP_REPO=Zagorsky17/LoKi
 CORE_REPO=ushan0v/sing-box-forkop
 # github.com answers a release link with a header line longer than uclient-fetch reads
 API_URL=https://api.github.com

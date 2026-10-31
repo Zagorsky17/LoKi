@@ -1,3 +1,4 @@
+// Modified for LoKi on 2026-10-31: main DNS encryption is selected explicitly.
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { coreFeatures } from '../lib/coreFeatures.js';
@@ -329,20 +330,22 @@ describe('the Settings tab', () => {
     expect(flag.validate('settings', '1')).toBe(true);
   });
 
-  it('asks for QUIC for DNS over QUIC and over HTTP/3', () => {
-    harness.bundle.setCoreFeatures(without('with_quic'));
+  it('keeps the selected DoT protocol regardless of QUIC support', () => {
     addSections([['settings', 'settings', {}]]);
-    const dns = option(settings(), 'dns_server');
-
-    expect(dns.description).toBe(
-      'Several servers give automatic failover. The protocol is set by a prefix: udp://, tcp://, tls://, https://',
-    );
-    expect(dns.validate('settings', 'quic://dns.example.com')).toBe(
-      'sing-box is built without with_quic',
-    );
-    expect(dns.validate('settings', 'h3://1.1.1.1/dns-query')).toBe(
-      'sing-box is built without with_quic',
-    );
-    expect(dns.validate('settings', 'tls://1.1.1.1')).toBe(true);
+    for (const features of [without('with_quic'), base()]) {
+      harness.bundle.setCoreFeatures(features);
+      const section = settings();
+      option(section, 'dns_encryption').cfgvalue('settings', '1');
+      option(section, 'dns_encrypted_protocol').cfgvalue('settings', 'tls');
+      const dns = option(section, 'dns_server');
+      expect(dns.validate('settings', 'tls://192.0.2.53')).toBe(true);
+      expect(dns.validate('settings', 'quic://dns.example.com')).not.toBe(true);
+      expect(dns.validate('settings', 'h3://192.0.2.53/dns-query')).not.toBe(
+        true,
+      );
+      expect(
+        dns.validate('settings', 'https://dns.example/dns-query'),
+      ).not.toBe(true);
+    }
   });
 });

@@ -1,3 +1,4 @@
+# Modified for LoKi on 2026-10-31: explicit DNS encryption settings.
 # RU translations for FORKOP package.
 # Copyright (C) 2026 THE FORKOP COPYRIGHT HOLDER
 # This file is distributed under the same license as the FORKOP package.
@@ -7,8 +8,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: FORKOP\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-27 16:04+0300\n"
-"PO-Revision-Date: 2026-10-27 16:04+0300\n"
+"POT-Creation-Date: 2026-10-31 12:53+0300\n"
+"PO-Revision-Date: 2026-10-31 12:53+0300\n"
 "Last-Translator: ushan0v\n"
 "Language-Team: none\n"
 "Language: ru\n"
@@ -275,6 +276,9 @@ msgstr "Все устройства"
 msgid "All except selected"
 msgstr "Кроме выбранных"
 
+msgid "All main DNS servers use the selected protocol. Enter https://host/path for DoH, tls://host for DoT, or an IP address for UDP."
+msgstr "Все основные DNS-серверы используют выбранный протокол. Для DoH укажите https://host/path, для DoT — tls://host, для UDP — IP-адрес."
+
 msgid "All of the clients' traffic goes to the selected routing mode"
 msgstr "Весь трафик клиентов уходит в выбранный режим маршрутизации"
 
@@ -380,6 +384,9 @@ msgstr "за NAT провайдера (%s), из интернета недост
 msgid "Bootstrap DNS"
 msgstr "Bootstrap DNS"
 
+msgid "Bootstrap DNS must use UDP"
+msgstr "Bootstrap DNS должен использовать UDP"
+
 msgid "Bootstrap DNS Query Mode"
 msgstr "Режим опроса Bootstrap DNS"
 
@@ -466,6 +473,21 @@ msgstr "Проверки не пройдены"
 
 msgid "Checks passed"
 msgstr "Проверки пройдены"
+
+msgid "Choose a protocol"
+msgstr "Выберите протокол"
+
+msgid "Choose DoH or DoT"
+msgstr "Выберите DoH или DoT"
+
+msgid "Choose enabled or disabled"
+msgstr "Выберите включение или отключение"
+
+msgid "Choose encryption mode"
+msgstr "Выберите режим шифрования"
+
+msgid "Choose explicitly. Server addresses must match the selected protocol; changing the mode does not rewrite them."
+msgstr "Выберите режим явно. Адреса серверов должны соответствовать выбранному протоколу; смена режима не переписывает их."
 
 msgid "Cipher"
 msgstr "Шифр"
@@ -728,8 +750,14 @@ msgstr "Отключить автостарт"
 msgid "Disable QUIC"
 msgstr "Отключить QUIC"
 
+msgid "Disabled (UDP)"
+msgstr "Выключено (UDP)"
+
 msgid "Disables QUIC for compatibility and to fix video streaming"
 msgstr "Отключает QUIC для совместимости и исправления видеостриминга"
+
+msgid "DNS encryption"
+msgstr "Шифрование DNS"
 
 msgid "DNS outside the rules"
 msgstr "DNS вне правил"
@@ -773,6 +801,9 @@ msgstr "не слушает %s"
 msgid "does not use the router's DNS"
 msgstr "не использует DNS роутера"
 
+msgid "DoH (HTTPS)"
+msgstr "DoH (HTTPS)"
+
 msgid "Domain Resolver"
 msgstr "Резолвер доменов"
 
@@ -787,6 +818,9 @@ msgstr "Только домены"
 
 msgid "done"
 msgstr "готово"
+
+msgid "DoT (TLS)"
+msgstr "DoT (TLS)"
 
 msgid "Downlink"
 msgstr "Входящий"
@@ -847,6 +881,12 @@ msgstr "Включить YACD"
 
 msgid "Enable YACD WAN Access"
 msgstr "Включить доступ YACD WAN"
+
+msgid "Enabled"
+msgstr "Включено"
+
+msgid "Encrypted DNS protocol"
+msgstr "Протокол шифрования DNS"
 
 msgid "Ephemeral node"
 msgstr "Временный узел"
@@ -2030,8 +2070,8 @@ msgstr "Reserved не поддерживается: добавьте тунне�
 msgid "Reserved name"
 msgstr "Зарезервированное имя"
 
-msgid "Resolve the addresses of the main DNS servers and proxies. Several servers give automatic failover. The protocol is set by a prefix: %s"
-msgstr "Резолвят адреса основных DNS-серверов и прокси. Несколько серверов дают автоматическое переключение при сбоях. Протокол задаётся префиксом: %s"
+msgid "Resolve the addresses of the main DNS servers and proxies over UDP. IP addresses only."
+msgstr "Разрешение имён основных DNS-серверов и прокси через UDP. Только IP-адреса."
 
 msgid "Resolves domains that match the section conditions. Several servers give automatic failover. The protocol is set by a prefix: %s"
 msgstr "Резолвит домены, совпавшие с условиями секции. Несколько серверов дают автоматическое переключение при сбоях. Протокол задаётся префиксом: %s"
@@ -2140,6 +2180,9 @@ msgstr "Защита"
 
 msgid "Select a .ovpn, .conf, .xml or .nmconnection file"
 msgstr "Выберите файл .ovpn, .conf, .xml или .nmconnection"
+
+msgid "Select a DNS encryption mode"
+msgstr "Выберите режим шифрования DNS"
 
 msgid "Select a server or set a pattern"
 msgstr "Выберите сервер или задайте шаблон"
@@ -2482,6 +2525,9 @@ msgstr "Конфигурацию Forkop %s не удаётся перевест�
 
 msgid "The device internet traffic leaves through. Without one, only tailnet devices and the subnets they share are reachable"
 msgstr "Устройство, через которое трафик выходит в интернет. Без него доступны только устройства сети и подсети, которые они открывают"
+
+msgid "The DNS server must use %s"
+msgstr "DNS-сервер должен использовать %s"
 
 msgid "The file is not a Forkop configuration: it names no version"
 msgstr "Это не конфигурация Forkop: в ней не указана версия"

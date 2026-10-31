@@ -1,4 +1,5 @@
 #!/usr/bin/env ucode
+// Modified for LoKi on 2026-10-31: independent bootstrap and explicit main DNS encryption.
 
 let common = require("core.common");
 let core_ip = require("core.ip");
@@ -218,7 +219,39 @@ function add_uri_server_group(result, values, canonical_tag, strategy, detour, i
     });
 }
 
+function encryption_error(settings) {
+    let enabled = option(settings, "dns_encryption", "");
+    // Existing URIs remain authoritative until the user explicitly selects a mode.
+    if (settings?.dns_encryption == null)
+        return "";
+    if (enabled != "0" && enabled != "1")
+        return "DNS encryption must be explicitly enabled or disabled";
+
+    let protocol = enabled == "0" ? "udp" : option(settings, "dns_encrypted_protocol", "");
+    if (enabled == "1" && protocol != "https" && protocol != "tls")
+        return "Choose DoH (https) or DoT (tls)";
+
+    for (let value in server_list(settings, "dns_server", "77.88.8.8")) {
+        let parsed = parse_server_uri(value, false);
+        if (parsed.unsupported)
+            return parsed.unsupported;
+        if (parsed.type != protocol)
+            return "Main DNS protocol must match the explicit encryption setting (" + protocol + ")";
+    }
+    for (let value in server_list(settings, "bootstrap_dns_server", "77.88.8.8")) {
+        let parsed = parse_server_uri(value, true);
+        if (parsed.unsupported)
+            return parsed.unsupported;
+        if (parsed.type != "udp")
+            return "Bootstrap DNS must use UDP";
+    }
+    return "";
+}
+
 function config(settings) {
+    let unsupported = encryption_error(settings);
+    if (unsupported != "")
+        return { unsupported };
     let servers = [];
     let main_strategy = option(settings, "dns_main_fallback_strategy", "parallel");
     let bootstrap_strategy = option(settings, "dns_bootstrap_fallback_strategy", "parallel");
@@ -226,7 +259,7 @@ function config(settings) {
     let main_values = server_list(settings, "dns_server", "77.88.8.8");
     let detour = detour_tag(settings);
 
-    let unsupported = add_uri_server_group(
+    unsupported = add_uri_server_group(
         servers,
         bootstrap_values,
         runtime_constants.BOOTSTRAP_DNS_SERVER_TAG,
@@ -251,16 +284,10 @@ function config(settings) {
     return { servers };
 }
 
-function default_domain_resolver(settings) {
-    return bool_option(settings, "dns_detour_enabled", false)
-        ? runtime_constants.BOOTSTRAP_DNS_SERVER_TAG
-        : runtime_constants.DNS_SERVER_TAG;
-}
-
 return {
     add_uri_server_group,
     config,
-    default_domain_resolver,
+    encryption_error,
     parse_server_uri,
     static_hosts,
     server_list

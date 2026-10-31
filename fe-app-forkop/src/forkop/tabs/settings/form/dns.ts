@@ -1,7 +1,7 @@
+// Modified for LoKi on 2026-10-31: require explicit global DNS encryption and protocol choices.
 import {
   configureDnsQueryMode,
   configureDnsServerList,
-  dnsServerPrefixes,
   offerPublicResolvers,
 } from '../../../cbi/dnsServers';
 import {
@@ -14,19 +14,68 @@ import { required } from '../../../cbi/required';
 import { wholeNumberField } from '../../../../validators/fields';
 
 export function addDnsOptions(section: CBISection) {
+  let o = section.option(
+    form.ListValue,
+    'dns_encryption',
+    _('DNS encryption'),
+    _(
+      'Choose explicitly. Server addresses must match the selected protocol; changing the mode does not rewrite them.',
+    ),
+  );
+  o.value('', _('Choose encryption mode'));
+  o.value('0', _('Disabled (UDP)'));
+  o.value('1', _('Enabled'));
+  o.default = '';
+  o.rmempty = false;
+  o.validate = required((_sectionId, value) =>
+    value === '0' || value === '1' ? true : _('Choose enabled or disabled'),
+  );
+
+  o = section.option(
+    form.ListValue,
+    'dns_encrypted_protocol',
+    _('Encrypted DNS protocol'),
+  );
+  o.value('', _('Choose a protocol'));
+  o.value('https', _('DoH (HTTPS)'));
+  o.value('tls', _('DoT (TLS)'));
+  o.default = '';
+  o.rmempty = false;
+  o.retain = true;
+  o.depends('dns_encryption', '1');
+  o.validate = required((_sectionId, value) =>
+    value === 'https' || value === 'tls' ? true : _('Choose DoH or DoT'),
+  );
+
   const dnsOption = section.option(
     form.DynamicList,
     'dns_server',
     _('DNS Server'),
     _(
-      'Several servers give automatic failover. The protocol is set by a prefix: %s',
-    ).format(dnsServerPrefixes()),
+      'All main DNS servers use the selected protocol. Enter https://host/path for DoH, tls://host for DoT, or an IP address for UDP.',
+    ),
   );
   dnsOption.default = ['77.88.8.8'];
   offerPublicResolvers(dnsOption);
   configureDnsServerList(dnsOption);
+  const validateMainDns = dnsOption.validate;
+  dnsOption.validate = function (sectionId, value) {
+    const valid = validateMainDns.call(this, sectionId, value);
+    if (valid !== true || !value.trim()) return valid;
+    const mode = dnsSetting(this, sectionId, 'dns_encryption');
+    if (mode !== '0' && mode !== '1') return _('Select a DNS encryption mode');
+    const protocol =
+      mode === '0'
+        ? 'udp'
+        : dnsSetting(this, sectionId, 'dns_encrypted_protocol');
+    if (mode === '1' && protocol !== 'https' && protocol !== 'tls')
+      return _('Choose DoH or DoT');
+    return dnsUriProtocol(value) === protocol
+      ? true
+      : _('The DNS server must use %s').format(protocol);
+  };
 
-  let o = section.option(
+  o = section.option(
     form.ListValue,
     'dns_main_fallback_strategy',
     _('Main DNS Query Mode'),
@@ -41,12 +90,19 @@ export function addDnsOptions(section: CBISection) {
     'bootstrap_dns_server',
     _('Bootstrap DNS Servers'),
     _(
-      'Resolve the addresses of the main DNS servers and proxies. Several servers give automatic failover. The protocol is set by a prefix: %s',
-    ).format(dnsServerPrefixes()),
+      'Resolve the addresses of the main DNS servers and proxies over UDP. IP addresses only.',
+    ),
   );
   bootstrapOption.default = ['77.88.8.8'];
   offerPublicResolvers(bootstrapOption, { bootstrap: true });
   configureDnsServerList(bootstrapOption, { ipOnly: true });
+  const validateBootstrap = bootstrapOption.validate;
+  bootstrapOption.validate = function (sectionId, value) {
+    const valid = validateBootstrap.call(this, sectionId, value);
+    return valid !== true || !value.trim() || dnsUriProtocol(value) === 'udp'
+      ? valid
+      : _('Bootstrap DNS must use UDP');
+  };
 
   o = section.option(
     form.ListValue,
@@ -118,4 +174,20 @@ export function addDnsOptions(section: CBISection) {
   o.value('router', _('Router'));
   o.default = 'forkop';
   o.rmempty = false;
+}
+
+function dnsSetting(option: CBIOption, sectionId: string, name: string) {
+  const lookup = option.map.lookupOption(name, sectionId);
+  return lookup
+    ? (lookup[0].formvalue(lookup[1]) ?? lookup[0].cfgvalue(lookup[1]))
+    : null;
+}
+
+function dnsUriProtocol(value: string) {
+  return (
+    value
+      .trim()
+      .match(/^([a-z][a-z0-9+.-]*):\/\//i)?.[1]
+      .toLowerCase() || 'udp'
+  );
 }
