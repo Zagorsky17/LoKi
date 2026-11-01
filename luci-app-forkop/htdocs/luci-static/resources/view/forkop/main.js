@@ -12823,6 +12823,20 @@ function conflictItems(data) {
   }
   return items.length ? items : [finding("success", key, _("none found"))];
 }
+function listOverlapItems(data) {
+  return (data.list_overlaps ?? []).map((overlap) => {
+    const builtin = DOMAIN_LIST_OPTIONS[overlap.builtin] ?? overlap.builtin;
+    return finding(
+      "warning",
+      _("Lists in %s").format(overlap.section),
+      (overlap.relation === "same_source" ? _(
+        "External list %s uses the same source as %s; review the section lists"
+      ) : _(
+        "External list %s may overlap %s; compare domains and subnets before removing a list"
+      )).format(overlap.external, builtin)
+    );
+  });
+}
 function memoryItem(data) {
   const key = _("Memory");
   const free = _("%s of %s free").format(
@@ -12840,6 +12854,7 @@ function presentService(data) {
     coreItem(data),
     coreLogItem(data),
     ...conflictItems(data),
+    ...listOverlapItems(data),
     memoryItem(data)
   ];
 }

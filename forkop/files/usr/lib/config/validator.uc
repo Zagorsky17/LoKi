@@ -1,4 +1,4 @@
-// Modified for LoKi on 2026-10-31: enforce explicit DNS encryption before applying settings.
+// Modified for LoKi on 2026-11-01: warn about known list overlaps after validating references.
 let fs = require("fs");
 let core_common = require("core.common");
 let core_exec = require("core.exec");
@@ -644,6 +644,12 @@ function validate_common_rule_references(section) {
         validate_ruleset_reference_value(value, section);
     for (let value in connections.rule_sets_with_subnets(section))
         validate_ruleset_reference_value(value, section);
+    let label = replace(section_label(section), /[[:cntrl:]]/g, " ");
+    for (let overlap in rulesets.overlaps(connections.community_lists(section),
+        [ ...connections.rule_sets(section), ...connections.rule_sets_with_subnets(section) ]))
+        core_exec.log("warn", "Section '" + label + "': external list '" + overlap.external + "'" +
+            (overlap.relation == "same_source" ? " uses the same source as " : " may overlap ") +
+            "built-in '" + overlap.builtin + "'; compare domains and subnets before removing a list");
 }
 
 function outbound_json_object(value) {

@@ -1,4 +1,5 @@
-// Modified for LoKi on 2026-11-01: add bounded core log diagnostics.
+// Modified for LoKi on 2026-11-01: report known list overlaps without changing routing.
+import { DOMAIN_LIST_OPTIONS } from '../../../../constants';
 import { ForkopShellMethods } from '../../../methods';
 import type { IDiagnosticsChecksItem } from '../../../services';
 import type { Forkop } from '../../../types';
@@ -126,6 +127,26 @@ function conflictItems(data: Forkop.ServiceCheckResult) {
   return items.length ? items : [finding('success', key, _('none found'))];
 }
 
+function listOverlapItems(data: Forkop.ServiceCheckResult) {
+  return (data.list_overlaps ?? []).map((overlap) => {
+    const builtin =
+      (DOMAIN_LIST_OPTIONS as Record<string, string>)[overlap.builtin] ??
+      overlap.builtin;
+    return finding(
+      'warning',
+      _('Lists in %s').format(overlap.section),
+      (overlap.relation === 'same_source'
+        ? _(
+            'External list %s uses the same source as %s; review the section lists',
+          )
+        : _(
+            'External list %s may overlap %s; compare domains and subnets before removing a list',
+          )
+      ).format(overlap.external, builtin),
+    );
+  });
+}
+
 function memoryItem(data: Forkop.ServiceCheckResult) {
   const key = _('Memory');
   const free = _('%s of %s free').format(
@@ -151,6 +172,7 @@ export function presentService(
     coreItem(data),
     coreLogItem(data),
     ...conflictItems(data),
+    ...listOverlapItems(data),
     memoryItem(data),
   ];
 }

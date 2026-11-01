@@ -1,4 +1,4 @@
-// Modified for LoKi on 2026-11-01: add bounded core log diagnostics.
+// Modified for LoKi on 2026-11-01: report known list overlaps without changing routing.
 // eslint-disable-next-line @typescript-eslint/no-namespace
 export namespace ClashAPI {
   interface ProxyHistoryEntry {
@@ -356,6 +356,12 @@ export namespace Forkop {
       problem: string;
     };
     core_log: { available: boolean; count: number; limited: boolean };
+    list_overlaps: Array<{
+      section: string;
+      builtin: string;
+      external: string;
+      relation: 'same_source' | 'possible_overlap';
+    }>;
     foreign_sing_box: number[];
     conflicts: Array<{ table: string; kind: 'tproxy' | 'dns' }>;
     memory: { total_kb: number; available_kb: number };
