@@ -12,6 +12,7 @@ on:
       - 'forkop/files/etc/init.d/**'
       - 'luci-app-forkop/root/etc/uci-defaults/**'
       - 'tests/**/*.sh'
+      - 'core/**/*.sh'
       - '.github/workflows/shellcheck.yml'
   pull_request:
     branches:
@@ -23,6 +24,7 @@ on:
       - 'forkop/files/etc/init.d/**'
       - 'luci-app-forkop/root/etc/uci-defaults/**'
       - 'tests/**/*.sh'
+      - 'core/**/*.sh'
       - '.github/workflows/shellcheck.yml'
 
 permissions:
