@@ -50,8 +50,16 @@ t.test("application installer, updater and packages use the LoKi repository", ()
     t.eq(constants.FORKOP_RELEASE_REPO, "Zagorsky17/LoKi");
     let installer_repo = match(fs.readfile(repo.path("install.sh")), /\nFORKOP_REPO=([^\n]+)\n/);
     t.eq(installer_repo ? installer_repo[1] : null, constants.FORKOP_RELEASE_REPO);
+    let core_repo = match(fs.readfile(repo.path("install.sh")), /\nCORE_REPO=([^\n]+)\n/);
+    t.eq(core_repo ? core_repo[1] : null, constants.FORKOP_RELEASE_REPO);
     t.eq(build_sh_variable("PROJECT_URL"), "https://github.com/" + constants.FORKOP_RELEASE_REPO);
     t.eq(makefile_field("URL"), build_sh_variable("PROJECT_URL"));
+});
+
+t.test("the package requires the core version built with the bootstrap fix", () => {
+    let version = match(fs.readfile(repo.path("core/upstream.env")), /\nCORE_VERSION=([^\n]+)\n/);
+    t.eq(version ? version[1] : null, constants.SB_REQUIRED_VERSION);
+    t.contains(fs.readfile(repo.path("install.sh")), "asset=core-release.json");
 });
 
 let makefile_depends = sorted(map(words(makefile_field("DEPENDS")), (word) => ltrim(word, "+")));

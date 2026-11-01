@@ -1,1 +1,4 @@
 * text=auto eol=lf
+
+# Unified patches carry leading context spaces; validate reconstructed additions in core/prepare.sh.
+core/patches/*.patch -whitespace

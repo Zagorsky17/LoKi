@@ -145,7 +145,8 @@ t.test("the core check names the version the binary reports, and the package's v
     packages.paths.sing_box_version = dir + "/version";
     packages.paths.sing_box_variant = dir + "/variant";
     features.paths.binary = dir + "/sing-box";
-    fs.writefile(packages.paths.sing_box_version, "1.14.4-r1
+    let required = require("core.constants").SB_REQUIRED_VERSION;
+    fs.writefile(packages.paths.sing_box_version, required + "
 ");
     fs.writefile(packages.paths.sing_box_variant, "tiny
 ");
@@ -164,9 +165,10 @@ CGO: disabled
         return value;
     };
     let tags = "with_clash_api,with_utls,with_quic";
-    t.eq(core_of("1.14.4-r1", tags), { installed: true, binary: "1.14.4-r1", version: "1.14.4-r1", variant: "tiny",
-        outdated: false, required: require("core.constants").SB_REQUIRED_VERSION, problem: "" });
-    t.eq(core_of("1.14.4-r1+72", tags).variant, "tiny", "a build between releases of the package's release");
+    t.eq(core_of(required, tags), { installed: true, binary: required, version: required, variant: "tiny",
+        outdated: false, required, problem: "" });
+    t.eq(core_of(required + "+72", tags).variant, "tiny", "a build between releases of the package's release");
+    t.ok(core_of("1.14.4-r1", tags).outdated, "the core before the bootstrap fix is outdated");
     t.eq(core_of("1.14.5-r1", tags).variant, "", "a binary of another build copied over the package's");
 
     let foreign = core_of("1.12.22", tags);

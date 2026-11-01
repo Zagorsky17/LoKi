@@ -163,6 +163,9 @@ t.test("while the installer runs the service is busy with it and takes no action
     t.eq(ui.begin("start", "initd", me), { status: 2, job_id: "" });
     t.eq(ui.start_action("restart"), { success: false, job_id: "", message: "The installer is running" });
     stub.real.system("kill " + runner);
+    // SIGTERM is asynchronous; observe this fixture's exit before checking the service state.
+    for (let tries = 0; tries < 100 && index(fs.readfile("/proc/" + runner + "/cmdline") ?? "", "installer_run") >= 0; tries++)
+        sleep(10);
     t.eq(ui.current_state().service.forkop.busy, null, "a runner that died ends the run");
     t.eq(ui.begin("start", "initd", me).status, 0);
 });

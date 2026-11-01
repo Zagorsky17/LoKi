@@ -10,7 +10,7 @@ Project: [Zagorsky17/LoKi](https://github.com/Zagorsky17/LoKi). Report bugs and 
 
 ## Development status
 
-As of October 31, 2026, this repository has no LoKi release. The installer and application update checks use **`Zagorsky17/LoKi`**; application packages are fetched from this repository, with no fallback to Forkop releases. Installation requires a LoKi release with its package assets; publishing source to `main` alone is insufficient. The core still comes from `ushan0v/sing-box-forkop` until core compatibility work is complete. Installation and upgrade on a router remain untested.
+As of November 1, 2026, this repository has no LoKi release. The installer obtains the application and patched core from **`Zagorsky17/LoKi`**, without falling back to Forkop releases. Installation needs package assets, `release.json`, `core-release.json` and `SHA256SUMS`; publishing source to `main` is not enough. The application requires the LoKi core build `1.14.4-r2` or newer; its technical package name remains `sing-box-forkop`. Router installation and upgrades have not been tested.
 
 The source still uses the technical names `forkop`, `luci-app-forkop` and `/etc/config/forkop`. Their coordinated replacement is planned together with configuration migration.
 
@@ -18,7 +18,7 @@ The source still uses the technical names `forkop`, `luci-app-forkop` and `/etc/
 
 LoKi will retain connection links, subscriptions, routing sections, DNS, monitoring and diagnostics. VPN servers, tunnels and migrations from Forkop 1.0.x are scheduled for removal; they are still present in the inherited source.
 
-The target platforms are OpenWrt 24.10 and 25.12. Compatibility with the stock sing-box packages and newer versions remains to be implemented and tested. The inherited code currently requires `sing-box-forkop`.
+The target platforms are OpenWrt 24.10 and 25.12. Compatibility with stock sing-box packages and newer versions remains unverified. Current development uses the patched LoKi core in the `sing-box-forkop` package.
 
 The built-in lists from [forkop-lists](https://github.com/ushan0v/forkop-lists) and the diagnostic domains `ip.podkop.fyi` and `fakeip.podkop.fyi` are retained external dependencies.
 
@@ -27,6 +27,25 @@ The built-in lists from [forkop-lists](https://github.com/ushan0v/forkop-lists) 
 The development UI requires an explicit encryption mode for the entire main DNS list: disabled (UDP), or enabled with an explicit choice of DoH or DoT. Addresses must match: `https://dns.example/dns-query` for DoH, `tls://dns.example` for DoT, or an IP address for UDP. Replace the example name `dns.example` with your resolver. Changing the mode does not rewrite addresses or switch protocols when a server fails.
 
 Bootstrap uses UDP by IP address. Outbound connections without their own resolver use bootstrap; explicit JSON and interface resolver settings are preserved. Fresh configurations retain the existing UDP default. Legacy configurations without the encryption field keep their URI protocols until an explicit mode is selected in the UI. These changes still require testing on laboratory OpenWrt.
+
+For outbound connections with an explicit resolver, the patched core starts connecting with an available address family while the other DNS lookup is pending. The second family remains available for a fallback connection; `ipv4_only` and `ipv6_only` retain their meaning. This also covers resolving DoH/DoT server names. Ordinary DNS rule walks still obtain their full result; no downgrade to UDP or direct routing on failure is added.
+
+## Building the core
+
+`core/` contains the patch, tests and build scripts. The sing-box-forkop source is pinned to commit `60d96c99815a672712915a5c00114bf0f690ad80`; its archive is verified by SHA-256 before extraction and the patch is checked before application. Source updates are explicit. The complete core source is not copied into the LoKi repository; each package build also produces `core-source-VERSION.tar.gz` with the patched core tree for distribution alongside the binaries.
+
+Build on Linux with the Go version in `core/GO_VERSION`, Bash, Git, curl, Python 3 and the existing package build tools. This example builds the application packages and the base core for `aarch64_cortex-a53`; `0.1.0` is an example version, not a published release. The apk tool comes from the default SDK cache after building the application; adjust its path if using another SDK directory.
+
+```sh
+./build.sh 0.1.0 "$PWD/release"
+export PATH="$HOME/.cache/forkop/openwrt-sdk/extracted/apk/staging_dir/host/bin:$PATH"
+core/build.sh 0.1.0 "$PWD/release" --arch aarch64_cortex-a53 --variant base
+(cd release && sha256sum -c SHA256SUMS)
+```
+
+`core/build.sh` accepts the inherited builder's variants and targets; without an architecture restriction it builds all of its targets. The full variant may additionally download several gigabytes of Chromium sources and tools. The release workflow adds tiny/base/full core packages and a separate core manifest to the application assets. Building does not publish a release or install packages.
+
+Run `core/test.sh -race -count=1`, `python3 core/tests/test_release.py` and `python3 core/tests/dns_bootstrap.py /path/to/sing-box /results/directory`. The last command requires ucode and starts synthetic DNS, TLS and proxy peers only on loopback; results are saved in the specified directory. Passing it does not replace OpenWrt testing.
 
 ## Diagnostic reports
 
@@ -48,7 +67,7 @@ Run tests and package builds on a dedicated Linux development server. DNS failur
 
 Forkop was developed by [ushan0v and its contributors](https://github.com/ushan0v/forkop/graphs/contributors). LoKi is maintained independently in [Zagorsky17/LoKi](https://github.com/Zagorsky17/LoKi); it is not an upstream Forkop release.
 
-LoKi retains the project's [GPL-2.0-or-later license](LICENSE). Existing copyright, license and attribution notices are preserved. Third-party components retain their own notices, including the [bundled font assets](luci-app-forkop/htdocs/luci-static/resources/view/forkop/fonts/LICENSE.md).
+LoKi retains the project's [GPL-2.0-or-later license](LICENSE). The core patch and resulting sing-box-forkop core are distributed separately under [GPL-3.0-or-later](core/COPYING); their corresponding source consists of the pinned upstream and `core/patches/`. Existing copyright, license and attribution notices are preserved. Third-party components retain their own notices, including the [bundled font assets](luci-app-forkop/htdocs/luci-static/resources/view/forkop/fonts/LICENSE.md).
 
 When distributing modified versions or binary packages, retain the applicable notices and license, identify modified files and their change dates, and provide the corresponding source as required by the [GNU GPL version 2](https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html). The software is provided without warranty under the license terms.
 

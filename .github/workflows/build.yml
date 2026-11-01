@@ -44,6 +44,22 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: ./build.sh "$TAG" "$PWD/release"
 
+      - name: Setup Go for the core
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: core/GO_VERSION
+          cache: false
+
+      - name: Build the core packages
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          export PATH="$HOME/.cache/forkop/openwrt-sdk/extracted/apk/staging_dir/host/bin:$PATH"
+          for variant in tiny base full; do
+            core/build.sh "$TAG" "$PWD/release" --variant "$variant"
+          done
+          python3 core/tests/verify_packages.py "$PWD/release"
+
       - name: Upload the release files
         uses: actions/upload-artifact@v4.6.2
         with:

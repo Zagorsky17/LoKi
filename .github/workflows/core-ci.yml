@@ -1,0 +1,50 @@
+name: Core CI
+
+on:
+  pull_request:
+    paths:
+      - 'core/**'
+      - 'install.sh'
+      - 'forkop/files/usr/lib/core/constants.uc'
+      - '.github/workflows/core-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'core/**'
+      - 'install.sh'
+      - 'forkop/files/usr/lib/core/constants.uc'
+      - '.github/workflows/core-ci.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  dns:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5.0.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: core/GO_VERSION
+          cache: false
+      - name: Install test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential busybox cmake git libjson-c-dev pkg-config
+          git clone --depth 1 --branch v0.0.20250529 https://github.com/jow-/ucode.git "$RUNNER_TEMP/ucode"
+          cmake -S "$RUNNER_TEMP/ucode" -B "$RUNNER_TEMP/ucode/build" \
+            -DUBUS_SUPPORT=OFF -DUCI_SUPPORT=OFF -DULOOP_SUPPORT=OFF
+          cmake --build "$RUNNER_TEMP/ucode/build" --parallel
+          sudo cmake --install "$RUNNER_TEMP/ucode/build"
+          sudo ldconfig
+      - name: Test source integrity and core manifests
+        run: python3 core/tests/test_release.py
+      - name: Test DNS and connection concurrency
+        run: core/test.sh -race -count=1
+      - name: Build the patched core and verify real DNS traffic
+        run: |
+          source core/upstream.env
+          core/prepare.sh "$RUNNER_TEMP/core-source"
+          export SOURCE_DATE_EPOCH=$CORE_SOURCE_DATE_EPOCH
+          (cd "$RUNNER_TEMP/core-source" && ./build.sh --binary-only --version "$CORE_VERSION" --output "$RUNNER_TEMP/core-build" amd64)
+          python3 core/tests/dns_bootstrap.py "$RUNNER_TEMP/core-build/build/amd64/base/sing-box" "$RUNNER_TEMP/core-dns-results"
