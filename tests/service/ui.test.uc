@@ -1,3 +1,4 @@
+// Modified for LoKi on 2026-11-01: wait for the test process to start before reading its identity.
 let t = require("t");
 let stub = require("stub");
 let fs = require("fs");
@@ -21,10 +22,9 @@ function fresh() {
     return dir;
 }
 
-// A process whose command line names marker; the second command keeps the shell from
-// replacing itself with sleep.
+// The child reports its own PID after exec, before closing the pipe; ':' keeps its command line stable.
 function live_process(marker) {
-    let pipe = stub.real.popen("sh -c 'sleep 30; :' " + marker + " >/dev/null 2>&1 & echo $!", "r");
+    let pipe = stub.real.popen("sh -c 'echo $$; exec >/dev/null 2>&1; sleep 30; :' " + marker + " &", "r");
     let pid = trim(pipe.read("all"));
     pipe.close();
     return pid;
