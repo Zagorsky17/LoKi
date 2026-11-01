@@ -8,11 +8,11 @@ trap 'rm -rf -- "$work"' EXIT
 cd -- "$work/source"
 export GOTOOLCHAIN=local
 go mod verify
-unformatted=$(gofmt -l adapter/dns.go dns/router.go common/dialer/resolve*.go)
+unformatted=$(gofmt -l adapter/dns.go dns/router.go common/dialer/resolve*.go log/observable.go log/error_repeats*.go)
 if [[ -n "$unformatted" ]]; then
     printf 'Unformatted core patch files:\n%s\n' "$unformatted" >&2
     exit 1
 fi
 tags=$(./build.sh --print-tags --variant base amd64)
-go vet -tags "$tags" ./common/dialer ./dns/...
-go test -tags "$tags" -ldflags="$(tr '\n' ' ' < release/LDFLAGS)" ./common/dialer ./dns/... "$@"
+go vet -tags "$tags" ./common/dialer ./dns/... ./log
+go test -tags "$tags" -ldflags="$(tr '\n' ' ' < release/LDFLAGS)" ./common/dialer ./dns/... ./log "$@"
