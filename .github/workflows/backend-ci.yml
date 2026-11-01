@@ -7,6 +7,8 @@ on:
       - 'forkop/Makefile'
       - 'build.sh'
       - 'tests/**'
+      - 'core/**'
+      - 'install.sh'
       # The packaging checks read the LuCI app's package scripts and bundle.
       - 'luci-app-forkop/**'
       - '.github/workflows/build.yml'
@@ -19,6 +21,8 @@ on:
       - 'forkop/Makefile'
       - 'build.sh'
       - 'tests/**'
+      - 'core/**'
+      - 'install.sh'
       - 'luci-app-forkop/**'
       - '.github/workflows/build.yml'
       - '.github/workflows/backend-ci.yml'

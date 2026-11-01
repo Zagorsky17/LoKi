@@ -22,13 +22,13 @@
 # Every release carries release.json beside its packages, install.sh and SHA256SUMS:
 #   {"schema":1,"name":"forkop","version":"2.0.0","tag":"2.0.0","page":URL,
 #    "requires":{"sing-box-forkop":"1.14.4-r1"},"min_config_version":"1.0.2"}
-# The core's says "name":"sing-box-forkop" and requires the oldest Forkop it works with. An
+# The core's core-release.json says "name":"sing-box-forkop" and requires the oldest Forkop it works with. An
 # "install_command" field says the release installs only with that command, not from the page.
 
 set -u
 
 FORKOP_REPO=Zagorsky17/LoKi
-CORE_REPO=ushan0v/sing-box-forkop
+CORE_REPO=Zagorsky17/LoKi
 # github.com answers a release link with a header line longer than uclient-fetch reads
 API_URL=https://api.github.com
 MIRROR=${FORKOP_DOWNLOAD_URL:-}
@@ -846,21 +846,21 @@ fetch_or_fail() { # fetch_or_fail URL FILE NAME RELEASE: a file of a release, or
 }
 
 fetch_release() { # fetch_release forkop|core: the latest release's manifest, and from the API its files
-	local repo=$FORKOP_REPO name=Forkop package=forkop manifest="$WORK/$1.json" url status=0
-	[ "$1" = forkop ] || repo=$CORE_REPO name=sing-box-forkop package=sing-box-forkop
+	local repo=$FORKOP_REPO name=Forkop package=forkop manifest="$WORK/$1.json" asset=release.json url status=0
+	[ "$1" = forkop ] || repo=$CORE_REPO name=sing-box-forkop package=sing-box-forkop asset=core-release.json
 	if [ -z "$MIRROR" ]; then
 		download "$API_URL/repos/$repo/releases/latest" "$WORK/$1.release"
 		status=$?
 	fi
 	if [ "$status" = 0 ]; then
-		url=$(asset_url "$1" release.json)
+		url=$(asset_url "$1" "$asset")
 		status=2
 		[ -z "$url" ] || { download "$url" "$manifest" application/octet-stream; status=$?; }
 	fi
 	case $status in
 	0) ;;
 	2)
-		fail 1 release "$(t 'The latest %s release has no release.json' 'В последнем релизе %s нет release.json' "$name")" \
+		fail 1 release "$(t 'The latest %s release has no %s' 'В последнем релизе %s нет %s' "$name" "$asset")" \
 			"$(t 'Download the latest install.sh' 'Скачайте свежий install.sh')"
 		;;
 	3) rate_limited ;;
