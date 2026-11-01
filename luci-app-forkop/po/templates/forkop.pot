@@ -1465,11 +1465,6 @@ msgstr ""
 msgid "does not listen on %s"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/traffic.ts:56
-#: luci-app-forkop/htdocs/luci-static/resources/view/forkop/main.js:12895
-msgid "does not use the router's DNS"
-msgstr ""
-
 #: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:40
 #: luci-app-forkop/htdocs/luci-static/resources/view/forkop/main.js:29326
 msgid "DoH (HTTPS)"
@@ -5442,4 +5437,8 @@ msgstr ""
 
 #: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts
 msgid "No error messages found in the last 60 seconds"
+msgstr ""
+
+#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/traffic.ts
+msgid "Browser check did not confirm FakeIP; router results are shown separately"
 msgstr ""

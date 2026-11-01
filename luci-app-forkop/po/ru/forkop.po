@@ -798,9 +798,6 @@ msgstr "Без срока"
 msgid "does not listen on %s"
 msgstr "не слушает %s"
 
-msgid "does not use the router's DNS"
-msgstr "не использует DNS роутера"
-
 msgid "DoH (HTTPS)"
 msgstr "DoH (HTTPS)"
 
@@ -2971,3 +2968,7 @@ msgstr "Найдено сообщений об ошибках за послед�
 #: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts
 msgid "No error messages found in the last 60 seconds"
 msgstr "Сообщений об ошибках за последние 60 секунд не найдено"
+
+#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/traffic.ts
+msgid "Browser check did not confirm FakeIP; router results are shown separately"
+msgstr "Проверка браузера не подтвердила FakeIP; результаты роутера показаны отдельно"

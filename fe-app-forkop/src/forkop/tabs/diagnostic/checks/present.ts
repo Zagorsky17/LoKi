@@ -1,3 +1,4 @@
+// Modified for LoKi on 2026-11-01: keep browser traffic observations informational.
 import type {
   IDiagnosticsChecksItem,
   IDiagnosticsChecksStoreItem,
@@ -10,7 +11,7 @@ export type CheckOutcome = Pick<
   'state' | 'description' | 'items'
 >;
 
-const SEVERITY: Record<ItemState, number> = {
+const SEVERITY: Record<Exclude<ItemState, 'info'>, number> = {
   success: 0,
   warning: 1,
   error: 2,
@@ -28,9 +29,11 @@ export function finding(
 export function summarize(
   items: IDiagnosticsChecksItem[],
 ): Pick<IDiagnosticsChecksStoreItem, 'state' | 'description'> {
-  const state = items.reduce<ItemState>(
+  const state = items.reduce<Exclude<ItemState, 'info'>>(
     (worst, item) =>
-      SEVERITY[item.state] > SEVERITY[worst] ? item.state : worst,
+      item.state !== 'info' && SEVERITY[item.state] > SEVERITY[worst]
+        ? item.state
+        : worst,
     'success',
   );
 

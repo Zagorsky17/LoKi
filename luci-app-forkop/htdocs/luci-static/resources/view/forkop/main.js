@@ -12701,7 +12701,7 @@ function finding(state, key, value) {
 }
 function summarize(items) {
   const state = items.reduce(
-    (worst, item) => SEVERITY[item.state] > SEVERITY[worst] ? item.state : worst,
+    (worst, item) => item.state !== "info" && SEVERITY[item.state] > SEVERITY[worst] ? item.state : worst,
     "success"
   );
   return {
@@ -12940,7 +12940,13 @@ function deviceItem(browser) {
   if (browser?.fakeip) {
     return finding("success", key, _("goes through Forkop"));
   }
-  return browser ? finding("warning", key, _("does not use the router's DNS")) : finding("warning", key, _("not checked: no answer"));
+  return browser ? finding(
+    "info",
+    key,
+    _(
+      "Browser check did not confirm FakeIP; router results are shown separately"
+    )
+  ) : finding("warning", key, _("not checked: no answer"));
 }
 function presentTraffic(data, browser) {
   return [
@@ -12960,7 +12966,7 @@ async function runTrafficCheck() {
   return outcome(
     presentTraffic(
       response.data,
-      browser.success ? { fakeip: Boolean(browser.data.fakeip) } : null
+      browser.success && typeof browser.data?.fakeip === "boolean" ? { fakeip: browser.data.fakeip } : null
     )
   );
 }
@@ -13186,6 +13192,7 @@ async function runServersCheck() {
 
 // src/forkop/tabs/diagnostic/report.ts
 var MARKS = {
+  info: "\u2139",
   success: "\u2713",
   warning: "!",
   error: "\u2717",
@@ -13335,6 +13342,7 @@ var STATE_ICONS = {
   skipped: renderCircleSlashIcon24
 };
 var ITEM_ICONS = {
+  info: renderInfoIcon24,
   success: renderCheckIcon24,
   warning: renderTriangleAlertIcon24,
   error: renderXIcon24
@@ -14310,6 +14318,10 @@ controls. */
     flex: 1 1 8rem;
     min-width: 0;
     overflow-wrap: anywhere;
+}
+
+.fkp_diagnostic_alert__summary__item--info {
+    color: var(--text-color-medium, CanvasText);
 }
 
 .fkp_diagnostic_alert__summary__item--error {

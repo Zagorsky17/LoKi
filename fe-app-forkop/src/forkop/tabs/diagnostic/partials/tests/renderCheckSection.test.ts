@@ -1,3 +1,4 @@
+// Modified for LoKi on 2026-11-01: keep browser traffic observations informational.
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { IDiagnosticsChecksStoreItem } from '../../../../services';
 
@@ -85,6 +86,25 @@ beforeEach(() => {
 });
 
 describe('a diagnostic check', () => {
+  it('renders an informational icon and neutral style while keeping markup-like values as text', async () => {
+    const value = '<img src=x onerror=alert(1)>TEST_SECRET';
+    const root = await render(
+      check('success', [{ state: 'info', key: 'This device', value }]),
+    );
+    const row = find(root, 'fkp_diagnostic_alert__summary__item--info');
+    expect(row).toBeDefined();
+    expect(find(row!, 'lucide-info')).toBeDefined();
+    const body = find(row!, 'fkp_diagnostic_alert__summary__item__body');
+    expect(body?.children[1]).toMatchObject({ type: 'div', children: [value] });
+    expect(
+      find(root, 'fkp_diagnostic_alert__summary__item--warning'),
+    ).toBeUndefined();
+    const { styles } = await import('../../styles');
+    expect(styles).toMatch(
+      /summary__item--info\s*\{[^}]*color:\s*var\(--text-color-medium/,
+    );
+  });
+
   it('folds its details away to its header line', async () => {
     const onToggle = vi.fn();
     const folded = await render(check('success'), {

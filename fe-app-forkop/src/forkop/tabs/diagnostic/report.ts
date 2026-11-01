@@ -1,10 +1,18 @@
-// Modified for LoKi on 2026-11-01: put the report's privacy notice before its content.
-import type { IDiagnosticsChecksStoreItem, StoreType } from '../../services';
+// Modified for LoKi on 2026-11-01: keep browser traffic observations informational.
+import type {
+  IDiagnosticsChecksItem,
+  IDiagnosticsChecksStoreItem,
+  StoreType,
+} from '../../services';
 import type { Forkop } from '../../types';
 import { formatDuration } from '../../helpers/formatDuration';
 import { formatMegabytes } from './checks/present';
 
-const MARKS: Record<IDiagnosticsChecksStoreItem['state'], string> = {
+const MARKS: Record<
+  IDiagnosticsChecksStoreItem['state'] | IDiagnosticsChecksItem['state'],
+  string
+> = {
+  info: 'ℹ',
   success: '✓',
   warning: '!',
   error: '✗',

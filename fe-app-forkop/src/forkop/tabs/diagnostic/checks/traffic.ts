@@ -1,3 +1,4 @@
+// Modified for LoKi on 2026-11-01: keep browser traffic observations informational.
 import { ForkopShellMethods, RemoteFakeIPMethods } from '../../../methods';
 import type { IDiagnosticsChecksItem } from '../../../services';
 import type { Forkop } from '../../../types';
@@ -53,7 +54,13 @@ function deviceItem(browser: BrowserCheck) {
     return finding('success', key, _('goes through Forkop'));
   }
   return browser
-    ? finding('warning', key, _("does not use the router's DNS"))
+    ? finding(
+        'info',
+        key,
+        _(
+          'Browser check did not confirm FakeIP; router results are shown separately',
+        ),
+      )
     : finding('warning', key, _('not checked: no answer'));
 }
 
@@ -82,7 +89,9 @@ export async function runTrafficCheck(): Promise<CheckOutcome> {
   return outcome(
     presentTraffic(
       response.data,
-      browser.success ? { fakeip: Boolean(browser.data.fakeip) } : null,
+      browser.success && typeof browser.data?.fakeip === 'boolean'
+        ? { fakeip: browser.data.fakeip }
+        : null,
     ),
   );
 }
