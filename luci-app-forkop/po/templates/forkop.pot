@@ -5442,3 +5442,15 @@ msgstr ""
 #: fe-app-forkop/src/forkop/tabs/diagnostic/checks/traffic.ts
 msgid "Browser check did not confirm FakeIP; router results are shown separately"
 msgstr ""
+
+#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts
+msgid "Lists in %s"
+msgstr ""
+
+#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts
+msgid "External list %s uses the same source as %s; review the section lists"
+msgstr ""
+
+#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts
+msgid "External list %s may overlap %s; compare domains and subnets before removing a list"
+msgstr ""

@@ -2972,3 +2972,15 @@ msgstr "Сообщений об ошибках за последние 60 сек
 #: fe-app-forkop/src/forkop/tabs/diagnostic/checks/traffic.ts
 msgid "Browser check did not confirm FakeIP; router results are shown separately"
 msgstr "Проверка браузера не подтвердила FakeIP; результаты роутера показаны отдельно"
+
+#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts
+msgid "Lists in %s"
+msgstr "Списки в %s"
+
+#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts
+msgid "External list %s uses the same source as %s; review the section lists"
+msgstr "Внешний список %s использует тот же источник, что и %s; проверьте списки секции"
+
+#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts
+msgid "External list %s may overlap %s; compare domains and subnets before removing a list"
+msgstr "Внешний список %s может пересекаться с %s; сравните домены и подсети перед удалением списка"

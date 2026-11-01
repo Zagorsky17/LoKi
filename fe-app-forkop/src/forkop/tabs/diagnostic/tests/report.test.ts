@@ -1,4 +1,4 @@
-// Modified for LoKi on 2026-11-01: keep browser traffic observations informational.
+// Modified for LoKi on 2026-11-01: report known list overlaps without changing routing.
 import { describe, expect, it } from 'vitest';
 
 import { checksText, reportText } from '../report';
@@ -135,6 +135,7 @@ describe('the diagnostic report', () => {
             problem: '',
           },
           core_log: { available: true, count: 0, limited: false },
+          list_overlaps: [],
           foreign_sing_box: [],
           conflicts: [],
           memory: { total_kb: 239540, available_kb: 45476 },

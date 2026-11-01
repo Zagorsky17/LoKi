@@ -1,3 +1,4 @@
+// Modified for LoKi on 2026-11-01: report known list overlaps without changing routing.
 let t = require("t");
 let stub = require("stub");
 let fs = require("fs");
@@ -93,6 +94,15 @@ t.test("the reason Forkop is down is the first error of the last action, not wha
         line("warn", "Forkop has nothing to run") ])), "Forkop has nothing to run", "an action that did not fail, by its last warning");
 });
 
+t.test("list overlap facts include only enabled sections and fixed list identifiers", () => {
+    fixture.seed({ section: [
+        { ".name": "MAIN", enabled: "1", action: "bypass", community_lists: [ "telegram" ], rule_set: [ "telegram", "https://other.test/telegram.srs?token=TEST_SECRET" ] },
+        { ".name": "OFF", enabled: "0", action: "bypass", community_lists: [ "telegram" ], rule_set: [ "telegram" ] }
+    ] });
+    t.eq(checks.list_overlaps(), [ { section: "MAIN", builtin: "telegram", external: "forkop-lists/telegram.srs", relation: "same_source" } ]);
+    fixture.seed({});
+});
+
 t.test("the service check finds running cores other than Forkop's, and nothing Forkop runs for a moment", () => {
     let proc = dir + "/proc";
     for (let process in [ [ "100", [ "/usr/bin/sing-box", "run", "-c", "/etc/sing-box/config.json" ] ],
@@ -125,6 +135,7 @@ t.test("the service check finds running cores other than Forkop's, and nothing F
         required: require("core.constants").SB_REQUIRED_VERSION, problem: "" }, "no core at all");
     t.eq(value.last_error, "Clash API address 192.168.1.1:9090 is already in use by another process");
     t.eq(value.conflicts, [ { table: "inet other", kind: "tproxy" } ]);
+    t.eq(value.list_overlaps, []);
     t.eq([ value.memory, value.router_uptime ], [ { total_kb: 239540, available_kb: 45536 }, 100700 ]);
 });
 

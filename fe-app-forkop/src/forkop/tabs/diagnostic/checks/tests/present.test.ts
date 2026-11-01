@@ -1,4 +1,4 @@
-// Modified for LoKi on 2026-11-01: keep browser traffic observations informational.
+// Modified for LoKi on 2026-11-01: report known list overlaps without changing routing.
 import { describe, expect, it, vi } from 'vitest';
 
 import { summarize } from '../present';
@@ -26,6 +26,7 @@ function service(
       problem: '',
     },
     core_log: { available: true, count: 0, limited: false },
+    list_overlaps: [],
     foreign_sing_box: [],
     conflicts: [],
     memory: { total_kb: 239540, available_kb: 45476 },
@@ -114,6 +115,44 @@ describe('the service check', () => {
       state: 'warning',
       value: 'Log data unavailable',
     });
+  });
+
+  it('warns about list sources without hiding service failures or inferring identical contents', () => {
+    const items = presentService(
+      service({
+        running: false,
+        list_overlaps: [
+          {
+            section: 'MAIN',
+            builtin: 'telegram',
+            external: 'forkop-lists/telegram.srs',
+            relation: 'same_source',
+          },
+          {
+            section: '<img src=x onerror=alert(1)>',
+            builtin: 'ru_blocked_all',
+            external: 'itdog/meta.srs',
+            relation: 'possible_overlap',
+          },
+        ],
+      }),
+    );
+    expect(summarize(items).state).toBe('error');
+    const warnings = items.filter((item) => item.key.startsWith('Lists in '));
+    expect(warnings).toEqual([
+      {
+        state: 'warning',
+        key: 'Lists in MAIN',
+        value:
+          'External list forkop-lists/telegram.srs uses the same source as Telegram; review the section lists',
+      },
+      {
+        state: 'warning',
+        key: 'Lists in <img src=x onerror=alert(1)>',
+        value:
+          'External list itdog/meta.srs may overlap RU Blocked (All); compare domains and subnets before removing a list',
+      },
+    ]);
   });
 
   it('gives the error that kept Forkop from running, if one did', () => {

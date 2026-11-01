@@ -30,6 +30,8 @@ Bootstrap uses UDP by IP address. Outbound connections without their own resolve
 
 ## Diagnostic reports
 
+Applying settings and the service check warn when a built-in list and a recognized external reference in the same enabled section use the same source or may overlap. Recognition is limited to exact canonical forkop-lists URLs, short built-in names and two historical itdog URLs (`russia_inside.srs`, `meta.srs`). The warning does not prove that different files have identical contents: compare domains and subnets before removing a list. Saving is not blocked, and lists and routing are not changed automatically; unknown URLs and local files are not fetched for comparison. Full external URLs and tokens are not included in the new warnings or response fields. This is diagnostics, not a reduction in memory usage.
+
 FakeIP maps a synthetic IP address to a domain name for routing. In the traffic check, a negative browser FakeIP result is an informational note and does not by itself mark the group as problematic. It does not identify the device’s DNS settings. An unanswered check remains a warning, and router/exit failures retain their severity. Text reports mark informational notes with ℹ.
 
 The service check shows the number of sing-box ERROR/FATAL messages found in the available log during the last 60 seconds. It counts log records, not network failures: a DNS repeat summary counts as one record. On-demand reading is capped at 64 KiB and 1000 lines; limits or malformed data are reported as incomplete, and read failures as unavailable. No history or separate log files are created, and the new response field contains no log text. Logd eviction and clock changes limit accuracy; this counter does not reduce the original log traffic.

@@ -1,4 +1,4 @@
-// Modified for LoKi on 2026-11-01: add bounded core log diagnostics.
+// Modified for LoKi on 2026-11-01: report bounded core logs and known list overlaps.
 // The Status tab checks return facts; the page judges them and words the verdict.
 
 let fs = require("fs");
@@ -13,6 +13,7 @@ let netstat = require("core.netstat");
 let packages = require("core.packages");
 let core_version = require("core.version");
 let runtime_dns = require("singbox.dns");
+let runtime_rulesets = require("singbox.rulesets");
 let singbox_constants = require("singbox.constants");
 let features = require("singbox.features");
 let config_status = require("singbox.config_status");
@@ -162,6 +163,18 @@ function core() {
     };
 }
 
+function list_overlaps() {
+    let result = [];
+    for (let section in uci.section_objects(CONFIG_NAME, "section")) {
+        if (!common.bool_option(section, "enabled", true))
+            continue;
+        for (let overlap in runtime_rulesets.overlaps(connections.community_lists(section),
+            [ ...connections.rule_sets(section), ...connections.rule_sets_with_subnets(section) ]))
+            push(result, { section: connections.section_display_name(section), ...overlap });
+    }
+    return result;
+}
+
 function service() {
     let running = health.forkop_stably_running(constants.RT_TABLE_NAME, constants.NFT_TABLE_NAME, constants.NFT_FAKEIP_MARK, STABLE_MIN_AGE);
     let pid = health.sing_box_service_pid_runtime();
@@ -174,6 +187,7 @@ function service() {
         foreign_sing_box: filter(sing_box_cores(), (found) => found != own),
         conflicts: conflicts.find(output([ "nft", "-t", "list", "ruleset" ])),
         core_log: core_log(),
+        list_overlaps: list_overlaps(),
         memory: meminfo(),
         router_uptime: uptime_seconds()
     };
@@ -445,4 +459,4 @@ function servers() {
     return { wan, behind_cgnat, items };
 }
 
-return { paths, last_error, core_log, core, service, dns, traffic, servers };
+return { paths, last_error, core_log, list_overlaps, core, service, dns, traffic, servers };

@@ -105,6 +105,18 @@ describe('a diagnostic check', () => {
     );
   });
 
+  it('renders list warning names as text rather than interpreting markup', async () => {
+    const key = 'Lists in <img src=x onerror=alert(1)>';
+    const value =
+      'External list forkop-lists/telegram.srs uses the same source as Telegram';
+    const root = await render(
+      check('warning', [{ state: 'warning', key, value }]),
+    );
+    const body = find(root, 'fkp_diagnostic_alert__summary__item__body');
+    expect(body?.children[0]).toMatchObject({ type: 'b', children: [key] });
+    expect(body?.children[1]).toMatchObject({ type: 'div', children: [value] });
+  });
+
   it('folds its details away to its header line', async () => {
     const onToggle = vi.fn();
     const folded = await render(check('success'), {
