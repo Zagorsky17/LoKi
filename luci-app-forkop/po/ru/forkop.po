@@ -2951,3 +2951,23 @@ msgstr "вчера %s"
 
 msgid "Your own certificate"
 msgstr "Свой сертификат"
+
+#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts
+msgid "Core log"
+msgstr "Журнал ядра"
+
+#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts
+msgid "Log data unavailable"
+msgstr "Данные журнала недоступны"
+
+#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts
+msgid "At least %s error messages in the last 60 seconds; log data incomplete"
+msgstr "Не менее %s сообщений об ошибках за последние 60 секунд; данные журнала неполны"
+
+#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts
+msgid "%s error messages found in the last 60 seconds"
+msgstr "Найдено сообщений об ошибках за последние 60 секунд: %s"
+
+#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts
+msgid "No error messages found in the last 60 seconds"
+msgstr "Сообщений об ошибках за последние 60 секунд не найдено"

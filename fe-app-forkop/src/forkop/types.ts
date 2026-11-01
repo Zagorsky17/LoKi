@@ -1,3 +1,4 @@
+// Modified for LoKi on 2026-11-01: add bounded core log diagnostics.
 // eslint-disable-next-line @typescript-eslint/no-namespace
 export namespace ClashAPI {
   interface ProxyHistoryEntry {
@@ -354,6 +355,7 @@ export namespace Forkop {
       required: string;
       problem: string;
     };
+    core_log: { available: boolean; count: number; limited: boolean };
     foreign_sing_box: number[];
     conflicts: Array<{ table: string; kind: 'tproxy' | 'dns' }>;
     memory: { total_kb: number; available_kb: number };

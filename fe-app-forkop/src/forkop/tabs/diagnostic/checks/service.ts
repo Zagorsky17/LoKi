@@ -1,3 +1,4 @@
+// Modified for LoKi on 2026-11-01: add bounded core log diagnostics.
 import { ForkopShellMethods } from '../../../methods';
 import type { IDiagnosticsChecksItem } from '../../../services';
 import type { Forkop } from '../../../types';
@@ -74,6 +75,30 @@ function coreItem(data: Forkop.ServiceCheckResult) {
   );
 }
 
+function coreLogItem(data: Forkop.ServiceCheckResult) {
+  const key = _('Core log');
+  const log = data.core_log;
+  if (!log?.available) {
+    return finding('warning', key, _('Log data unavailable'));
+  }
+  if (log.limited) {
+    return finding(
+      'warning',
+      key,
+      _(
+        'At least %s error messages in the last 60 seconds; log data incomplete',
+      ).format(log.count),
+    );
+  }
+  return finding(
+    log.count > 0 ? 'warning' : 'success',
+    key,
+    log.count > 0
+      ? _('%s error messages found in the last 60 seconds').format(log.count)
+      : _('No error messages found in the last 60 seconds'),
+  );
+}
+
 function conflictItems(data: Forkop.ServiceCheckResult) {
   const key = _('Conflicts');
   const items: IDiagnosticsChecksItem[] = data.conflicts.map((conflict) =>
@@ -124,6 +149,7 @@ export function presentService(
   return [
     forkopItem(data),
     coreItem(data),
+    coreLogItem(data),
     ...conflictItems(data),
     memoryItem(data),
   ];
