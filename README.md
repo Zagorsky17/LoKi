@@ -30,6 +30,8 @@ Bootstrap uses UDP by IP address. Outbound connections without their own resolve
 
 For outbound connections with an explicit resolver, the patched core starts connecting with an available address family while the other DNS lookup is pending. The second family remains available for a fallback connection; `ipv4_only` and `ipv6_only` retain their meaning. This also covers resolving DoH/DoT server names. Ordinary DNS rule walks still obtain their full result; no downgrade to UDP or direct routing on failure is added.
 
+Captured PTR lookups use the local resolver for locally served reverse zones and the current IPv4/IPv6 prefixes of the configured LAN capture interfaces, including public LAN prefixes. Other PTR lookups follow the selected DNS rules. If a LAN address snapshot is unavailable, malformed or exceeds its limits, a warning is logged and all PTR lookups retain their previous local route. Prefixes are refreshed when the service starts or reloads; apply settings again after LAN renumbering. The `router` mode continues to send unmatched queries to the local resolver. This behavior still requires OpenWrt testing.
+
 ## Building the core
 
 `core/` contains the patches, tests and build scripts. The sing-box-forkop source is pinned to commit `60d96c99815a672712915a5c00114bf0f690ad80`; its archive is verified by SHA-256 before extraction and the patch is checked before application. Source updates are explicit. The complete core source is not copied into the LoKi repository; each package build also produces `core-source-VERSION.tar.gz` with the patched core tree for distribution alongside the binaries.

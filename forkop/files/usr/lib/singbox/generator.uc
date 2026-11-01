@@ -1,4 +1,4 @@
-// Modified for LoKi on 2026-10-31: resolve outbound hosts independently of main DNS availability.
+// Modified for LoKi on 2026-11-01: resolve outbound hosts independently and constrain local PTR routing.
 let common = require("core.common");
 let core_ip = require("core.ip");
 let uci_core = require("core.uci");
@@ -12,6 +12,7 @@ let subscription_headers_module = require("singbox.subscription_headers");
 let runtime_urltest = require("singbox.urltest");
 let connections = require("config.connections");
 let runtime_settings_cache = null;
+let runtime_local_ptr_zone = null;
 
 let as_string = common.as_string;
 let strip_internal_fields = common.strip_internal_fields;
@@ -1308,10 +1309,53 @@ function section_dns_server(section) {
         : runtime_constants.FAKEIP_DNS_SERVER_TAG;
 }
 
-// Single-label names, the DHCP domain and reverse lookups are what the local resolver is
-// authoritative for, so they stay with it.
+// IANA locally served reverse zones, plus the whole ULA range to keep private IPv6 local.
+const LOCAL_PTR_PREFIXES = [
+    "0.0.0.0/8", "10.0.0.0/8", "127.0.0.0/8", "169.254.0.0/16", "172.16.0.0/12", "192.168.0.0/16",
+    "192.0.2.0/24", "198.51.100.0/24", "203.0.113.0/24", "255.255.255.255/32", "100.64.0.0/10",
+    "::/128", "::1/128", "fc00::/7", "fe80::/10", "2001:db8::/32"
+];
+
+function local_ptr_zone(prefixes) {
+    let zone = { query_type: [ "PTR" ] };
+    // An incomplete snapshot must not send a public LAN prefix to an external resolver.
+    if (type(prefixes) != "array" || length(prefixes) > 256)
+        return zone;
+    for (let prefix in prefixes)
+        if (type(prefix) != "string" || !core_ip.valid_ip_cidr(prefix))
+            return zone;
+
+    let patterns = {};
+    for (let prefix in [ ...LOCAL_PTR_PREFIXES, ...prefixes ]) {
+        let parts = split(prefix, "/");
+        let bytes = core_ip.network_bytes(iptoarr(parts[0]), int(parts[1]));
+        let ipv4 = length(bytes) == 4;
+        let step = ipv4 ? 8 : 4;
+        let digits = [];
+        for (let byte in bytes)
+            if (ipv4)
+                push(digits, byte);
+            else
+                push(digits, byte >> 4, byte & 15);
+        let whole = int(int(parts[1]) / step);
+        let remaining = int(parts[1]) % step;
+        let labels = map(reverse(slice(digits, 0, whole)), (digit) => ipv4 ? "" + digit : sprintf("%x", digit));
+        let tail = (length(labels) > 0 ? join("\\.", labels) + "\\." : "") + (ipv4 ? "in-addr\\.arpa" : "ip6\\.arpa");
+        if (remaining > 0) {
+            let alternatives = [];
+            for (let digit = digits[whole]; digit < digits[whole] + (1 << (step - remaining)); digit++)
+                push(alternatives, ipv4 ? "" + digit : sprintf("%x", digit));
+            tail = "(" + join("|", alternatives) + ")\\." + tail;
+        }
+        patterns["(?i)(^|\\.)" + tail + "\\.?$"] = true;
+    }
+    zone.domain_regex = sort(keys(patterns));
+    return zone;
+}
+
+// Local names and reverse zones stay with the local resolver; other PTR queries follow DNS policy.
 function add_local_zone_rules(config, matchers, rewrite_ttl) {
-    for (let zone in [ { domain_regex: "^[^.]+$" }, { domain_suffix: "." + local_resolver_domain() }, { query_type: [ "PTR" ] } ]) {
+    for (let zone in [ { domain_regex: "^[^.]+$" }, { domain_suffix: "." + local_resolver_domain() }, runtime_local_ptr_zone ]) {
         let rule = copy_matchers(matchers);
         rule.action = "route";
         rule.server = runtime_constants.DNSMASQ_DNS_SERVER_TAG;
@@ -1819,6 +1863,7 @@ function build(context) {
     context = object_or_empty(context);
     connections.load();
     runtime_settings_cache = null;
+    runtime_local_ptr_zone = local_ptr_zone(context.local_prefixes);
     let settings = runtime_settings();
 
     let sections = runtime_sections(enabled_sections());
