@@ -1,4 +1,4 @@
-// Modified for LoKi on 2026-11-01: add bounded core log diagnostics.
+// Modified for LoKi on 2026-11-01: keep browser traffic observations informational.
 import { describe, expect, it } from 'vitest';
 
 import { checksText, reportText } from '../report';
@@ -9,14 +9,15 @@ const checks: IDiagnosticsChecksStoreItem[] = [
     order: 2,
     code: 'TRAFFIC',
     title: 'Traffic',
-    description: 'Issues detected',
-    state: 'warning',
+    description: 'Checks passed',
+    state: 'success',
     items: [
       { state: 'success', key: 'Router', value: 'goes through Forkop' },
       {
-        state: 'warning',
+        state: 'info',
         key: 'This device',
-        value: "does not use the router's DNS",
+        value:
+          'Browser check did not confirm FakeIP; router results are shown separately',
       },
     ],
   },
@@ -98,9 +99,9 @@ describe('the diagnostic report', () => {
       [
         '✓ Service — Checks passed',
         '    ✓ Forkop: running for 2 h',
-        '! Traffic — Issues detected',
+        '✓ Traffic — Checks passed',
         '    ✓ Router: goes through Forkop',
-        "    ! This device: does not use the router's DNS",
+        '    ℹ This device: Browser check did not confirm FakeIP; router results are shown separately',
         '– Sections — Skipped: Forkop is not running',
         '',
       ].join('\n'),

@@ -1,3 +1,4 @@
+// Modified for LoKi on 2026-11-01: keep browser traffic observations informational.
 // language=CSS
 import { FORKOP_UCI_PACKAGE as FORKOP_CBI_PREFIX } from '../../../constants';
 
@@ -220,6 +221,10 @@ controls. */
     flex: 1 1 8rem;
     min-width: 0;
     overflow-wrap: anywhere;
+}
+
+.fkp_diagnostic_alert__summary__item--info {
+    color: var(--text-color-medium, CanvasText);
 }
 
 .fkp_diagnostic_alert__summary__item--error {

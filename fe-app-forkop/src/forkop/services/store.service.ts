@@ -1,3 +1,4 @@
+// Modified for LoKi on 2026-11-01: keep browser traffic observations informational.
 import { Forkop } from '../types';
 import { initialDiagnosticStore } from '../tabs/diagnostic/diagnostic.store';
 
@@ -111,7 +112,7 @@ export class StoreService<T extends Record<string, any>> {
 }
 
 export interface IDiagnosticsChecksItem {
-  state: 'error' | 'warning' | 'success';
+  state: 'error' | 'warning' | 'success' | 'info';
   key: string;
   value: string;
 }

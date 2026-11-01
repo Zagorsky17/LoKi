@@ -1,3 +1,4 @@
+// Modified for LoKi on 2026-11-01: keep browser traffic observations informational.
 import {
   renderCheckIcon24,
   renderChevronUpIcon24,
@@ -6,6 +7,7 @@ import {
   renderCircleSlashIcon24,
   renderCircleXIcon24,
   renderLoaderCircleIcon24,
+  renderInfoIcon24,
   renderTriangleAlertIcon24,
   renderXIcon24,
 } from '../../../../icons';
@@ -28,6 +30,7 @@ const STATE_ICONS = {
 } as const;
 
 const ITEM_ICONS = {
+  info: renderInfoIcon24,
   success: renderCheckIcon24,
   warning: renderTriangleAlertIcon24,
   error: renderXIcon24,

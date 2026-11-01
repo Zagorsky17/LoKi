@@ -1,10 +1,11 @@
-// Modified for LoKi on 2026-11-01: add bounded core log diagnostics.
-import { describe, expect, it } from 'vitest';
+// Modified for LoKi on 2026-11-01: keep browser traffic observations informational.
+import { describe, expect, it, vi } from 'vitest';
 
 import { summarize } from '../present';
 import { presentService } from '../service';
 import { presentDns } from '../dns';
-import { presentTraffic } from '../traffic';
+import { presentTraffic, runTrafficCheck } from '../traffic';
+import { ForkopShellMethods, RemoteFakeIPMethods } from '../../../../methods';
 import { presentServers } from '../servers';
 import type { Forkop } from '../../../../types';
 
@@ -51,6 +52,21 @@ describe('a group summary', () => {
       state: 'error',
       description: 'Checks failed',
     });
+  });
+});
+
+describe('informational findings', () => {
+  it('never masks a warning or error and does not change the group status by its position', () => {
+    const info = { state: 'info' as const, key: 'Browser', value: 'observed' };
+    expect(summarize([info])).toEqual({
+      state: 'success',
+      description: 'Checks passed',
+    });
+    for (const state of ['warning', 'error'] as const) {
+      const problem = { state, key: 'Router', value: 'failed' };
+      expect(summarize([info, problem]).state).toBe(state);
+      expect(summarize([problem, info]).state).toBe(state);
+    }
   });
 });
 
@@ -315,16 +331,103 @@ describe('the traffic check', () => {
     });
   });
 
-  it('tells a device that bypasses the router DNS from one that could not be checked', () => {
+  it('keeps a negative browser result informational and an unanswered check a warning', () => {
     expect(presentTraffic(traffic(), { fakeip: false })[2]).toMatchObject({
-      state: 'warning',
-      value: "does not use the router's DNS",
+      state: 'info',
+      value:
+        'Browser check did not confirm FakeIP; router results are shown separately',
     });
     expect(presentTraffic(traffic(), null)[2]).toMatchObject({
       state: 'warning',
       value: 'not checked: no answer',
     });
   });
+
+  it('does not turn successful router checks into a group warning because of the browser', () => {
+    const items = presentTraffic(traffic(), { fakeip: false });
+    expect(items.map((item) => item.state)).toEqual([
+      'success',
+      'success',
+      'info',
+    ]);
+    expect(summarize(items)).toEqual({
+      state: 'success',
+      description: 'Checks passed',
+    });
+    expect(summarize(presentTraffic(traffic(), null)).state).toBe('warning');
+  });
+
+  it.each([
+    [
+      { router: { ...traffic().router, dns_fakeip: false, fakeip: false } },
+      'warning',
+    ],
+    [
+      { router: { ...traffic().router, answered: false, fakeip: false } },
+      'warning',
+    ],
+    [{ router: { ...traffic().router, fakeip: false } }, 'error'],
+    [{ exit: { ...traffic().exit!, answered: false } }, 'warning'],
+    [{ exit: { ...traffic().exit!, ip: traffic().router.ip } }, 'warning'],
+  ] as const)(
+    'preserves router and exit findings next to an informational browser result: %j',
+    (overrides, state) => {
+      const items = presentTraffic(traffic(overrides), { fakeip: false });
+      expect(items[items.length - 1]?.state).toBe('info');
+      expect(summarize(items).state).toBe(state);
+    },
+  );
+
+  it.each([undefined, null, 0, 1, 'false', 'true', {}, []])(
+    'treats a malformed browser flag %j as unavailable rather than informational or successful',
+    async (fakeip) => {
+      const router = vi
+        .spyOn(ForkopShellMethods, 'checkTraffic')
+        .mockResolvedValue({ success: true, data: traffic() });
+      const browser = vi
+        .spyOn(RemoteFakeIPMethods, 'getFakeIpCheck')
+        .mockResolvedValue({
+          success: true,
+          data: { fakeip, IP: '192.0.2.1' },
+        } as Awaited<ReturnType<typeof RemoteFakeIPMethods.getFakeIpCheck>>);
+      try {
+        const result = await runTrafficCheck();
+        expect(result.state).toBe('warning');
+        expect(result.items[result.items.length - 1]).toMatchObject({
+          state: 'warning',
+          value: 'not checked: no answer',
+        });
+      } finally {
+        router.mockRestore();
+        browser.mockRestore();
+      }
+    },
+  );
+
+  it.each([false, true])(
+    'accepts an actual boolean browser flag %j',
+    async (fakeip) => {
+      const router = vi
+        .spyOn(ForkopShellMethods, 'checkTraffic')
+        .mockResolvedValue({ success: true, data: traffic() });
+      const browser = vi
+        .spyOn(RemoteFakeIPMethods, 'getFakeIpCheck')
+        .mockResolvedValue({
+          success: true,
+          data: { fakeip, IP: '192.0.2.1' },
+        });
+      try {
+        const result = await runTrafficCheck();
+        expect(result.state).toBe('success');
+        expect(result.items[result.items.length - 1].state).toBe(
+          fakeip ? 'success' : 'info',
+        );
+      } finally {
+        router.mockRestore();
+        browser.mockRestore();
+      }
+    },
+  );
 
   it('finds where the router itself leaves Forkop out', () => {
     const router = (value: Partial<Forkop.TrafficCheckResult['router']>) =>
