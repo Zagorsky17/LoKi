@@ -169,6 +169,7 @@ CGO: disabled
         outdated: false, required, problem: "" });
     t.eq(core_of(required + "+72", tags).variant, "tiny", "a build between releases of the package's release");
     t.ok(core_of("1.14.4-r1", tags).outdated, "the core before the bootstrap fix is outdated");
+    t.ok(core_of("1.14.4-r2", tags).outdated, "the core before error repeat suppression is outdated");
     t.eq(core_of("1.14.5-r1", tags).variant, "", "a binary of another build copied over the package's");
 
     let foreign = core_of("1.12.22", tags);

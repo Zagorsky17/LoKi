@@ -1,0 +1,300 @@
+diff --git a/log/error_repeats.go b/log/error_repeats.go
+new file mode 100644
+index 0000000..d58500e
+--- /dev/null
++++ b/log/error_repeats.go
+@@ -0,0 +1,66 @@
++// Modified for LoKi on 2026-11-01: bound repeated error output before system logging.
++package log
++
++import (
++	"crypto/sha256"
++	"sync"
++	"time"
++)
++
++const errorRepeatInterval = 10 * time.Second
++const errorRepeatKeys = 64
++
++type errorRepeatKey struct {
++	tag     [sha256.Size]byte
++	message [sha256.Size]byte
++}
++
++type errorRepeatLog struct {
++	access     sync.Mutex
++	since      time.Time
++	seen       map[errorRepeatKey]struct{}
++	suppressed uint64
++}
++
++func (l *errorRepeatLog) record(level Level, tag, message string, now time.Time) (bool, uint64) {
++	l.access.Lock()
++	defer l.access.Unlock()
++	var summary uint64
++	// shortcut: quiet windows are summarized by the next entry or Close; add a timer if idle summaries are needed.
++	if !l.since.IsZero() && (now.Sub(l.since) >= errorRepeatInterval || level <= LevelFatal) {
++		summary = l.clear()
++	}
++	if level != LevelError {
++		return true, summary
++	}
++	if l.since.IsZero() {
++		l.since = now
++	}
++	key := errorRepeatKey{sha256.Sum256([]byte(tag)), sha256.Sum256([]byte(message))}
++	if _, exists := l.seen[key]; exists {
++		l.suppressed++
++		return false, summary
++	}
++	if l.seen == nil {
++		l.seen = make(map[errorRepeatKey]struct{}, errorRepeatKeys)
++	}
++	// New errors remain visible when the bounded identity cache is full.
++	if len(l.seen) < errorRepeatKeys {
++		l.seen[key] = struct{}{}
++	}
++	return true, summary
++}
++
++func (l *errorRepeatLog) flush() uint64 {
++	l.access.Lock()
++	defer l.access.Unlock()
++	return l.clear()
++}
++
++func (l *errorRepeatLog) clear() uint64 {
++	count := l.suppressed
++	clear(l.seen)
++	l.since = time.Time{}
++	l.suppressed = 0
++	return count
++}
+diff --git a/log/error_repeats_test.go b/log/error_repeats_test.go
+new file mode 100644
+index 0000000..659e8ce
+--- /dev/null
++++ b/log/error_repeats_test.go
+@@ -0,0 +1,176 @@
++// Modified for LoKi on 2026-11-01: bound repeated error output before system logging.
++package log
++
++import (
++	"bytes"
++	"context"
++	"fmt"
++	"os"
++	"os/exec"
++	"strings"
++	"sync"
++	"sync/atomic"
++	"testing"
++	"time"
++
++	"github.com/stretchr/testify/require"
++)
++
++func TestRepeatedErrorsKeepFirstAndSummarizeOnClose(t *testing.T) {
++	var output bytes.Buffer
++	factory := NewDefaultFactory(context.Background(), Formatter{DisableColors: true}, &output, "", nil, false)
++	factory.SetLevel(LevelWarn)
++	require.NoError(t, factory.Start())
++	logger := factory.NewLogger("connection")
++	for i := 0; i < 100; i++ {
++		logger.ErrorContext(ContextWithNewID(context.Background()), "synthetic connection refused")
++	}
++	require.Equal(t, 1, strings.Count(output.String(), "synthetic connection refused"), "connection IDs must not defeat repeat suppression")
++	require.NoError(t, factory.Close())
++	require.Contains(t, output.String(), "99 repeated error messages suppressed")
++	require.Equal(t, 2, strings.Count(output.String(), "ERROR"))
++	_ = factory.Close()
++	require.Equal(t, 2, strings.Count(output.String(), "ERROR"), "closing twice must not repeat a summary")
++}
++
++func TestErrorRepeatWindowAndIdentity(t *testing.T) {
++	var repeats errorRepeatLog
++	now := time.Now()
++	show, count := repeats.record(LevelError, "one", "secret-value", now)
++	require.True(t, show)
++	require.Zero(t, count)
++	show, _ = repeats.record(LevelError, "one", "secret-value", now.Add(errorRepeatInterval-time.Nanosecond))
++	require.False(t, show)
++	show, count = repeats.record(LevelInfo, "", "tick", now.Add(errorRepeatInterval))
++	require.True(t, show)
++	require.EqualValues(t, 1, count)
++	show, _ = repeats.record(LevelError, "one", "secret-value", now.Add(errorRepeatInterval))
++	require.True(t, show, "a new window must show its first error")
++	show, _ = repeats.record(LevelError, "two", "secret-value", now.Add(errorRepeatInterval))
++	require.True(t, show, "different components must not be combined")
++	show, _ = repeats.record(LevelError, "one", "different error", now.Add(errorRepeatInterval))
++	require.True(t, show)
++	for _, level := range []Level{LevelTrace, LevelDebug, LevelInfo, LevelWarn, LevelFatal, LevelPanic} {
++		for i := 0; i < 2; i++ {
++			show, _ = repeats.record(level, "one", "same text", now.Add(errorRepeatInterval))
++			require.True(t, show, "only ERROR is eligible for suppression")
++		}
++	}
++}
++
++func TestErrorRepeatCacheIsBoundedAndKeepsNewErrors(t *testing.T) {
++	var repeats errorRepeatLog
++	now := time.Now()
++	for i := 0; i < errorRepeatKeys+1000; i++ {
++		show, _ := repeats.record(LevelError, "tag", fmt.Sprint(i), now)
++		require.True(t, show)
++	}
++	require.Len(t, repeats.seen, errorRepeatKeys)
++	show, _ := repeats.record(LevelError, "tag", "0", now)
++	require.False(t, show)
++	show, _ = repeats.record(LevelError, "tag", "1000", now)
++	require.True(t, show, "an uncached error must remain visible")
++	require.EqualValues(t, 1, repeats.flush())
++	require.Empty(t, repeats.seen)
++	require.Zero(t, repeats.flush())
++	show, _ = repeats.record(LevelError, "a\x00b", "c", now)
++	require.True(t, show)
++	show, _ = repeats.record(LevelError, "a", "b\x00c", now)
++	require.True(t, show, "tag and message boundaries must be unambiguous")
++}
++
++func TestErrorRepeatConcurrentCount(t *testing.T) {
++	var repeats errorRepeatLog
++	var shown atomic.Int32
++	var workers sync.WaitGroup
++	now := time.Now()
++	for i := 0; i < 1000; i++ {
++		workers.Go(func() {
++			show, _ := repeats.record(LevelError, "connection", "refused", now)
++			if show {
++				shown.Add(1)
++			}
++		})
++	}
++	workers.Wait()
++	require.EqualValues(t, 1, shown.Load())
++	require.EqualValues(t, 999, repeats.flush())
++}
++
++func TestErrorRepeatsReachObserverAsOneSummary(t *testing.T) {
++	factory := NewDefaultFactory(context.Background(), Formatter{}, consoleWriter{}, "", nil, true)
++	require.NoError(t, factory.Start())
++	defer factory.Close()
++	subscription, _, err := factory.Subscribe()
++	require.NoError(t, err)
++	defer factory.UnSubscribe(subscription)
++	logger := factory.NewLogger("connection")
++	logger.Error("synthetic-secret")
++	logger.Error("synthetic-secret")
++	logger.Error("synthetic-secret")
++	factory.(*defaultFactory).output(context.Background(), LevelWarn, "", "next window", time.Now().Add(errorRepeatInterval))
++	var entries []Entry
++	for len(entries) < 3 {
++		select {
++		case entry, ok := <-subscription:
++			require.True(t, ok, "observer closed before receiving the summary")
++			entries = append(entries, entry)
++		case <-time.After(2 * time.Second):
++			t.Fatal("observer did not receive the error, summary and next entry")
++		}
++	}
++	require.Contains(t, entries[0].Message, "synthetic-secret")
++	require.Contains(t, entries[1].Message, "2 repeated error messages suppressed")
++	require.NotContains(t, entries[1].Message, "synthetic-secret")
++	require.Equal(t, LevelError, entries[1].Level)
++	require.Equal(t, LevelWarn, entries[2].Level)
++}
++
++func TestErrorRepeatFlushBeforeFatal(t *testing.T) {
++	if os.Getenv("LOKI_TEST_FATAL") == "1" {
++		factory := NewDefaultFactory(context.Background(), Formatter{DisableColors: true}, os.Stderr, "", nil, false)
++		_ = factory.Start()
++		logger := factory.Logger()
++		logger.Error("synthetic failure")
++		logger.Error("synthetic failure")
++		logger.Fatal("fatal stays visible")
++		return
++	}
++	command := exec.Command(os.Args[0], "-test.run=^TestErrorRepeatFlushBeforeFatal$")
++	command.Env = append(os.Environ(), "LOKI_TEST_FATAL=1")
++	output, err := command.CombinedOutput()
++	var exit *exec.ExitError
++	require.ErrorAs(t, err, &exit)
++	require.Equal(t, 1, exit.ExitCode())
++	require.Contains(t, string(output), "1 repeated error messages suppressed")
++	require.Contains(t, string(output), "FATAL")
++	require.Contains(t, string(output), "fatal stays visible")
++}
++
++func TestErrorRepeatTerminalAndLongMessages(t *testing.T) {
++	now := time.Now()
++	for _, level := range []Level{LevelFatal, LevelPanic} {
++		var repeats errorRepeatLog
++		message := strings.Repeat("synthetic-secret", 100000)
++		show, _ := repeats.record(LevelError, "connection", message, now)
++		require.True(t, show)
++		show, _ = repeats.record(LevelError, "connection", message, now)
++		require.False(t, show)
++		show, count := repeats.record(level, "connection", "terminal failure", now)
++		require.True(t, show)
++		require.EqualValues(t, 1, count)
++		require.Empty(t, repeats.seen)
++	}
++}
++
++func TestErrorRepeatPanicStillPanics(t *testing.T) {
++	var output bytes.Buffer
++	factory := NewDefaultFactory(context.Background(), Formatter{DisableColors: true}, &output, "", nil, false)
++	require.NoError(t, factory.Start())
++	defer factory.Close()
++	logger := factory.Logger()
++	logger.Error("synthetic failure")
++	logger.Error("synthetic failure")
++	require.Panics(t, func() { logger.Panic("panic stays visible") })
++	require.Contains(t, output.String(), "1 repeated error messages suppressed")
++}
+diff --git a/log/observable.go b/log/observable.go
+index baa0080..9dda61b 100644
+--- a/log/observable.go
++++ b/log/observable.go
+@@ -1,3 +1,4 @@
++// Modified for LoKi on 2026-11-01: bound repeated error output before system logging.
+ package log
+ 
+ import (
+@@ -33,6 +34,7 @@ type defaultFactory struct {
+ 	startAccess       sync.Mutex
+ 	started           atomic.Bool
+ 	pendingEntries    []pendingEntry
++	errorRepeats      errorRepeatLog
+ }
+ 
+ type pendingEntry struct {
+@@ -101,6 +103,7 @@ func (f *defaultFactory) Start() error {
+ }
+ 
+ func (f *defaultFactory) Close() error {
++	f.outputErrorSummary(f.errorRepeats.flush(), time.Now())
+ 	f.startAccess.Lock()
+ 	f.pendingEntries = nil
+ 	f.startAccess.Unlock()
+@@ -160,6 +163,20 @@ func (f *defaultFactory) observed() bool {
+ }
+ 
+ func (f *defaultFactory) output(ctx context.Context, level Level, tag string, message string, timestamp time.Time) {
++	show, suppressed := f.errorRepeats.record(level, tag, message, timestamp)
++	f.outputErrorSummary(suppressed, timestamp)
++	if show {
++		f.outputEntry(ctx, level, tag, message, timestamp)
++	}
++}
++
++func (f *defaultFactory) outputErrorSummary(count uint64, timestamp time.Time) {
++	if count != 0 {
++		f.outputEntry(context.Background(), LevelError, "log", F.ToString(count, " repeated error messages suppressed"), timestamp)
++	}
++}
++
++func (f *defaultFactory) outputEntry(ctx context.Context, level Level, tag string, message string, timestamp time.Time) {
+ 	if level <= f.level && (f.needConsole || level == LevelPanic || level == LevelFatal) {
+ 		formatted := f.formatter.Format(ctx, level, tag, message, timestamp)
+ 		if level == LevelPanic {

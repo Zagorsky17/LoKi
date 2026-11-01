@@ -39,7 +39,7 @@ jobs:
           sudo ldconfig
       - name: Test source integrity and core manifests
         run: python3 core/tests/test_release.py
-      - name: Test DNS and connection concurrency
+      - name: Test logging, DNS and connection concurrency
         run: core/test.sh -race -count=1
       - name: Build the patched core and verify real DNS traffic
         run: |
@@ -48,3 +48,4 @@ jobs:
           export SOURCE_DATE_EPOCH=$CORE_SOURCE_DATE_EPOCH
           (cd "$RUNNER_TEMP/core-source" && ./build.sh --binary-only --version "$CORE_VERSION" --output "$RUNNER_TEMP/core-build" amd64)
           python3 core/tests/dns_bootstrap.py "$RUNNER_TEMP/core-build/build/amd64/base/sing-box" "$RUNNER_TEMP/core-dns-results"
+          python3 core/tests/log_repeats.py "$RUNNER_TEMP/core-build/build/amd64/base/sing-box" "$RUNNER_TEMP/core-log-results"

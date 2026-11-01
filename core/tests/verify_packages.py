@@ -26,6 +26,7 @@ with tarfile.open(root / f"core-source-{core['version']}.tar.gz") as source:
     names = {name.removeprefix('./') for name in source.getnames()}
     assert 'common/dialer/resolve_connect.go' in names
     assert 'common/dialer/resolve_test.go' in names
+    assert 'log/error_repeats.go' in names and 'log/error_repeats_test.go' in names
     assert 'go.mod' in names and 'go.sum' in names and 'LICENSE' in names
     assert not any(name == '.git' or name.startswith('.git/') for name in names)
 packages = sorted(root.glob('sing-box-forkop_*.ipk'))

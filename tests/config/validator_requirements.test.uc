@@ -95,10 +95,10 @@ t.test("a core that is not sing-box-forkop is refused, whatever package files st
 });
 
 t.test("a core of the sing-box-extended line or a build before the first release is older than the minimum", () => {
-    for (let version in [ "1.13.18-extended-2.6.5-f165", "1.14.0-forkop.3", "1.14.4-r0+12", "1.14.4-r1", "1.14.4-r1+3" ])
+    for (let version in [ "1.13.18-extended-2.6.5-f165", "1.14.0-forkop.3", "1.14.4-r0+12", "1.14.4-r1", "1.14.4-r1+3", "1.14.4-r2", "1.14.4-r2+3" ])
         t.eq(requirements(version, null, PRESENT).error,
             "sing-box-forkop " + version + " is older than the required minimum (" + REQUIRED + "). Update sing-box-forkop", version);
-    for (let version in [ "1.14.4-r2", "1.14.4-r2+3", "1.14.5-r1" ])
+    for (let version in [ "1.14.4-r3", "1.14.4-r3+3", "1.14.5-r1" ])
         t.ok(core_accepted(requirements(version, null, PRESENT)), version);
 });
 

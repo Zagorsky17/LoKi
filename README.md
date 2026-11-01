@@ -10,7 +10,7 @@ Project: [Zagorsky17/LoKi](https://github.com/Zagorsky17/LoKi). Report bugs and 
 
 ## Development status
 
-As of November 1, 2026, this repository has no LoKi release. The installer obtains the application and patched core from **`Zagorsky17/LoKi`**, without falling back to Forkop releases. Installation needs package assets, `release.json`, `core-release.json` and `SHA256SUMS`; publishing source to `main` is not enough. The application requires the LoKi core build `1.14.4-r2` or newer; its technical package name remains `sing-box-forkop`. Router installation and upgrades have not been tested.
+As of November 1, 2026, this repository has no LoKi release. The installer obtains the application and patched core from **`Zagorsky17/LoKi`**, without falling back to Forkop releases. Installation needs package assets, `release.json`, `core-release.json` and `SHA256SUMS`; publishing source to `main` is not enough. The application requires the LoKi core build `1.14.4-r3` or newer; its technical package name remains `sing-box-forkop`. Router installation and upgrades have not been tested.
 
 The source still uses the technical names `forkop`, `luci-app-forkop` and `/etc/config/forkop`. Their coordinated replacement is planned together with configuration migration.
 
@@ -32,7 +32,7 @@ For outbound connections with an explicit resolver, the patched core starts conn
 
 ## Building the core
 
-`core/` contains the patch, tests and build scripts. The sing-box-forkop source is pinned to commit `60d96c99815a672712915a5c00114bf0f690ad80`; its archive is verified by SHA-256 before extraction and the patch is checked before application. Source updates are explicit. The complete core source is not copied into the LoKi repository; each package build also produces `core-source-VERSION.tar.gz` with the patched core tree for distribution alongside the binaries.
+`core/` contains the patches, tests and build scripts. The sing-box-forkop source is pinned to commit `60d96c99815a672712915a5c00114bf0f690ad80`; its archive is verified by SHA-256 before extraction and the patch is checked before application. Source updates are explicit. The complete core source is not copied into the LoKi repository; each package build also produces `core-source-VERSION.tar.gz` with the patched core tree for distribution alongside the binaries.
 
 Build on Linux with the Go version in `core/GO_VERSION`, Bash, Git, curl, Python 3 and the existing package build tools. This example builds the application packages and the base core for `aarch64_cortex-a53`; `0.1.0` is an example version, not a published release. The apk tool comes from the default SDK cache after building the application; adjust its path if using another SDK directory.
 
@@ -45,13 +45,15 @@ core/build.sh 0.1.0 "$PWD/release" --arch aarch64_cortex-a53 --variant base
 
 `core/build.sh` accepts the inherited builder's variants and targets; without an architecture restriction it builds all of its targets. The full variant may additionally download several gigabytes of Chromium sources and tools. The release workflow adds tiny/base/full core packages and a separate core manifest to the application assets. Building does not publish a release or install packages.
 
-Run `core/test.sh -race -count=1`, `python3 core/tests/test_release.py` and `python3 core/tests/dns_bootstrap.py /path/to/sing-box /results/directory`. The last command requires ucode and starts synthetic DNS, TLS and proxy peers only on loopback; results are saved in the specified directory. Passing it does not replace OpenWrt testing.
+Run `core/test.sh -race -count=1` and `python3 core/tests/test_release.py`. The command `python3 core/tests/dns_bootstrap.py /path/to/sing-box /results/directory` requires ucode and starts synthetic DNS, TLS and proxy peers only on loopback. The command `python3 core/tests/log_repeats.py /path/to/sing-box /results/directory` checks repeated TCP failures, the 10-second window and a shutdown summary. Results are saved in the specified directory; these checks do not replace OpenWrt testing.
 
 ## Diagnostic reports
 
 Applying settings and the service check warn when a built-in list and a recognized external reference in the same enabled section use the same source or may overlap. Recognition is limited to exact canonical forkop-lists URLs, short built-in names and two historical itdog URLs (`russia_inside.srs`, `meta.srs`). The warning does not prove that different files have identical contents: compare domains and subnets before removing a list. Saving is not blocked, and lists and routing are not changed automatically; unknown URLs and local files are not fetched for comparison. Full external URLs and tokens are not included in the new warnings or response fields. This is diagnostics, not a reduction in memory usage.
 
 FakeIP maps a synthetic IP address to a domain name for routing. In the traffic check, a negative browser FakeIP result is an informational note and does not by itself mark the group as problematic. It does not identify the device’s DNS settings. An unanswered check remains a warning, and router/exit failures retain their severity. Text reports mark informational notes with ℹ.
+
+The LoKi core folds exact ERROR repeats from the same component within a 10-second window. The first error is visible immediately; subsequent repeats produce a numeric summary. The cache holds at most 64 pairs of component and message hashes without retaining their text. New uncached errors, other levels and FATAL/PANIC remain visible. A summary appears with the next entry after the window or on normal shutdown; there is no background timer. Abrupt termination can lose a pending summary. Different messages are not combined, so this does not cap all logging traffic.
 
 The service check shows the number of sing-box ERROR/FATAL messages found in the available log during the last 60 seconds. It counts log records, not network failures: a DNS repeat summary counts as one record. On-demand reading is capped at 64 KiB and 1000 lines; limits or malformed data are reported as incomplete, and read failures as unavailable. No history or separate log files are created, and the new response field contains no log text. Logd eviction and clock changes limit accuracy; this counter does not reduce the original log traffic.
 
