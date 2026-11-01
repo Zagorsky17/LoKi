@@ -1,12 +1,12 @@
-// Modified for LoKi on 2026-10-31: cover independent outbound bootstrap resolution.
+// Modified for LoKi on 2026-11-01: cover independent bootstrap and local PTR routing.
 let t = require("t");
 let fixture = require("fixture");
 let q = require("sbconfig");
 let generator = require("singbox.generator");
 
-function build(data) {
+function build(data, context) {
     fixture.seed(data);
-    return generator.build({ service_address: "192.168.1.1" });
+    return generator.build({ service_address: "192.168.1.1", local_prefixes: [], ...(context ?? {}) });
 }
 
 t.test("a single DNS server is used directly", () => {
@@ -275,6 +275,88 @@ t.test("DNS timeout reaches the core as configured", () => {
     t.eq(config.dns.optimistic, null);
     t.eq(config.dns.independent_cache, null);
     t.eq(config.experimental.cache_file.store_subscriptions, true);
+});
+
+function reverse_name(address) {
+    let bytes = iptoarr(address);
+    if (length(bytes) == 4)
+        return join(".", reverse(bytes)) + ".in-addr.arpa";
+    return join(".", reverse(split(join("", map(bytes, (byte) => sprintf("%02x", byte))), ""))) + ".ip6.arpa";
+}
+
+function matches_ptr(rule, name) {
+    if (rule.domain_regex == null)
+        return true;
+    for (let pattern in rule.domain_regex)
+        // ucode uses POSIX regexes; RE2's inline case flag becomes its compiler flag here.
+        if (match(name, regexp(substr(pattern, 4), "i")) != null)
+            return true;
+    return false;
+}
+
+t.test("local PTR zones keep private addresses without diverting public lookups", () => {
+    let config = build({ settings: DNS, section: BYPASS });
+    let ptr = q.dns_rule(config, (r) => r.server == "dnsmasq-server" && q.has(r.query_type, "PTR"));
+    t.ok(ptr.domain_regex != null, "PTR must be constrained by the reverse zone");
+    for (let address in [ "0.0.0.1", "10.1.2.3", "127.0.0.1", "169.254.1.2", "172.16.0.1", "172.31.255.254",
+        "192.168.1.20", "100.64.0.1", "100.127.255.254", "192.0.2.1", "198.51.100.1", "203.0.113.1", "255.255.255.255",
+        "::", "::1", "fc12::1", "fd12::1", "fe80::1", "febf::1", "2001:db8::1" ])
+        t.ok(matches_ptr(ptr, reverse_name(address)), address + " stays local");
+    for (let address in [ "8.8.8.8", "172.15.255.255", "172.32.0.1", "100.63.255.255", "100.128.0.1",
+        "192.169.1.20", "2606:4700:4700::1111", "fe7f::1", "fec0::1" ])
+        t.eq(matches_ptr(ptr, reverse_name(address)), false, address + " is not a local reverse zone");
+    for (let name in [ "lb._dns-sd._udp.8.8.8.8.in-addr.arpa", "x10.in-addr.arpa", "10.in-addr.arpa.example",
+        "1.1.168.192.in-addr.arpa.example", "_printer._tcp.example" ])
+        t.eq(matches_ptr(ptr, name), false, "a public name or a false suffix: " + name);
+    for (let name in [ "10.in-addr.arpa", "LB._DNS-SD._UDP.1.1.168.192.IN-ADDR.ARPA.", "lb._dns-sd._udp.1.1.168.192.in-addr.arpa" ])
+        t.ok(matches_ptr(ptr, name), "the local zone apex and discovery names stay local");
+});
+
+t.test("LAN prefixes match exact IPv4 and IPv6 boundaries and are refreshed for every build", () => {
+    let data = { settings: DNS, section: BYPASS };
+    let config = build(data, { local_prefixes: [ "203.0.114.190/25", "2001:db9:abcd:10::1/63", "2001:db9:ffff::1/128" ] });
+    let ptr = q.dns_rule(config, (r) => r.server == "dnsmasq-server" && q.has(r.query_type, "PTR"));
+    for (let address in [ "203.0.114.128", "203.0.114.255", "2001:db9:abcd:10::", "2001:db9:abcd:11:ffff:ffff:ffff:ffff", "2001:db9:ffff::1" ])
+        t.ok(matches_ptr(ptr, reverse_name(address)), address + " is in the LAN");
+    for (let address in [ "203.0.114.127", "203.0.115.128", "2001:db9:abcd:f::1", "2001:db9:abcd:12::1", "2001:db9:ffff::2" ])
+        t.eq(matches_ptr(ptr, reverse_name(address)), false, address + " is outside the LAN");
+    let next = build(data, { local_prefixes: [ "203.0.115.1/24" ] });
+    ptr = q.dns_rule(next, (r) => r.server == "dnsmasq-server" && q.has(r.query_type, "PTR"));
+    t.eq(matches_ptr(ptr, reverse_name("203.0.114.190")), false, "the previous LAN snapshot is not cached");
+    t.ok(matches_ptr(ptr, reverse_name("203.0.115.190")));
+});
+
+t.test("unavailable or invalid LAN prefixes retain the old PTR policy without widening other queries", () => {
+    for (let prefixes in [ null, "203.0.114.1/24", [ "203.0.114.1/33" ], [ "2001:db9::1/129" ], [ "10.0.0.1/8", "bad.*" ], [ {} ] ]) {
+        let config = build({ settings: DNS, section: BYPASS }, { local_prefixes: prefixes });
+        let ptr = q.dns_rule(config, (r) => r.server == "dnsmasq-server" && q.has(r.query_type, "PTR"));
+        t.eq(ptr.domain_regex, null, "discovery failure keeps the old policy");
+        t.eq(ptr.query_type, [ "PTR" ], "the failure does not capture other query types");
+        t.eq(ptr.inbound, [ "source-dns-in", "system-dns-in" ]);
+    }
+});
+
+t.test("a device DNS keeps source restrictions on its local PTR exception", () => {
+    let config = build({ settings: DNS, section: [ {
+        ".name": "device", enabled: "1", action: "dns", dns_server: [ "8.8.8.8" ],
+        fully_routed_ips: [ "@system", "192.168.1.20/32" ]
+    } ] });
+    for (let inbound in [ "source-dns-in", "system-dns-in" ]) {
+        let ptr = q.dns_rule(config, (r) => r.server == "dnsmasq-server" && q.has(r.query_type, "PTR") && q.has(r.inbound, inbound));
+        t.ok(matches_ptr(ptr, reverse_name("192.168.1.10")));
+        t.eq(matches_ptr(ptr, reverse_name("8.8.8.8")), false);
+        t.eq(q.as_array(ptr.source_ip_cidr), inbound == "source-dns-in" ? [ "192.168.1.20/32" ] : []);
+    }
+});
+
+t.test("a prefix snapshot has a bounded size and an empty known LAN differs from discovery failure", () => {
+    let prefixes = [];
+    for (let i = 0; i < 257; i++)
+        push(prefixes, "203.0.114.1/24");
+    let config = build({ settings: DNS, section: BYPASS }, { local_prefixes: prefixes });
+    t.eq(q.dns_rule(config, (r) => q.has(r.query_type, "PTR")).domain_regex, null);
+    config = build({ settings: DNS, section: BYPASS }, { local_prefixes: [] });
+    t.ok(q.dns_rule(config, (r) => q.has(r.query_type, "PTR")).domain_regex != null);
 });
 
 t.done();

@@ -1,3 +1,4 @@
+// Modified for LoKi on 2026-11-01: cover LAN prefix discovery and conservative PTR fallback.
 let t = require("t");
 let stub = require("stub");
 let fixture = require("fixture");
@@ -22,12 +23,15 @@ function configuration(dir, extra) {
 }
 
 let logs = [];
+const LAN_ADDRESSES = "2: br-lan    inet 192.168.1.1/24 brd 192.168.1.255 scope global br-lan\\\n" +
+    "2: br-lan    inet6 2001:db9:abcd:10::1/64 scope global\\\n";
 
 function tools(extra) {
     logs = [];
     stub.commands([
         stub.logger(logs),
-        ...(extra ?? [])
+        ...(extra ?? []),
+        [ "ip -o addr show dev", { stdout: LAN_ADDRESSES } ]
     ]);
 }
 
@@ -240,6 +244,86 @@ t.test("a WARP registration the core gave up on is logged with the core's reason
     t.eq(direct_logs, [ "[error] Failed to generate WARP profile: " + reason + hint ]);
     t.eq(proxied.result, 1);
     t.eq(logs, [ "[error] Failed to generate WARP profile through section 'Proxy': " + reason ]);
+});
+
+t.test("LAN prefix discovery is limited to configured devices and refreshed on reload", () => {
+    let dir = stub.tmpdir();
+    fixture.seed(configuration(dir, { source_network_interfaces: [ "br-lan", "br-guest", "br-lan" ] }));
+    let commands = [];
+    tools([ [ CHECK, {} ], [ "ip -o addr show dev", (argv) => {
+        push(commands, argv);
+        return { stdout: argv[5] == "br-guest" ? "3: br-guest inet 203.0.114.190/25 scope global br-guest\n" : LAN_ADDRESSES };
+    } ] ]);
+    runtime.write_config(false);
+    let path = dir + "/etc/sing-box/config.json";
+    let first = json(fs.readfile(path));
+    let ptr = filter(first.dns.rules, (r) => r.server == "dnsmasq-server" && r.query_type?.[0] == "PTR")[0];
+    t.ok(ptr.domain_regex != null, "known LAN prefixes enable narrow PTR routing");
+    t.eq(map(commands, (argv) => argv[5]), [ "br-lan", "br-guest" ], "neither WAN nor duplicate devices are queried");
+    t.ok(length(filter(ptr.domain_regex, (pattern) => match("1.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.1.0.0.d.c.b.a.9.b.d.0.1.0.0.2.ip6.arpa", regexp(substr(pattern, 4), "i")) != null)) > 0,
+        "the public IPv6 prefix reaches the generator");
+    tools([ [ CHECK, {} ], [ "ip -o addr show dev", (argv) => ({ stdout: "2: " + argv[5] + " inet 203.0.115.1/24 scope global " + argv[5] + "\n" }) ] ]);
+    t.eq(runtime.write_config(false), true, "a changed LAN snapshot changes the generated file");
+    t.ok(fs.readfile(path) != sprintf("%J\n", first));
+    t.eq(logs, []);
+    stub.restore();
+});
+
+t.test("failed, empty, malformed or excessive address snapshots retain PTR locally and log no input", () => {
+    for (let reply in [ { status: 1, stdout: LAN_ADDRESSES }, { stdout: "" }, { stdout: "malformed secret-fixture" },
+        { stdout: "2: br-lan inet 203.0.114.1/33 scope global br-lan\n" },
+        { stdout: "2: br-lan inet 2001:db9::1/64 scope global br-lan\n" },
+        { stdout: "3: wan inet 203.0.114.1/24 scope global wan\n" },
+        { stdout: join("", map([ 1, 2, 3, 4 ], () => sprintf("%20000s", "x"))) } ]) {
+        let dir = stub.tmpdir();
+        fixture.seed(configuration(dir));
+        tools([ [ CHECK, {} ], [ "ip -o addr show dev", reply ] ]);
+        runtime.write_config(false);
+        let config = json(fs.readfile(dir + "/etc/sing-box/config.json"));
+        let ptr = filter(config.dns.rules, (r) => r.server == "dnsmasq-server" && r.query_type?.[0] == "PTR")[0];
+        t.eq(ptr.domain_regex, null);
+        t.eq(logs, [ "[warn] Cannot determine LAN prefixes; keeping all PTR queries with the local DNS resolver" ]);
+        stub.restore();
+    }
+});
+
+t.test("interface names stay in one quoted argument and a partial snapshot is not trusted", () => {
+    let dir = stub.tmpdir();
+    let device = "guest;$(id)";
+    fixture.seed(configuration(dir, { source_network_interfaces: [ "br-lan", device ] }));
+    tools([ [ CHECK, {} ], [ "ip -o addr show dev", (argv) => {
+        t.eq(length(argv), 6, "an interface name cannot add a shell command or option");
+        return argv[5] == "br-lan" ? { stdout: LAN_ADDRESSES } : { status: 1 };
+    } ] ]);
+    runtime.write_config(false);
+    let commands = filter(stub.calls(), (entry) => entry.argv[0] == "ip");
+    t.eq(commands[1].argv[5], device);
+    t.contains(commands[1].command, "'guest;$(id)'");
+    let config = json(fs.readfile(dir + "/etc/sing-box/config.json"));
+    t.eq(filter(config.dns.rules, (r) => r.query_type?.[0] == "PTR")[0].domain_regex, null);
+    t.eq(logs, [ "[warn] Cannot determine LAN prefixes; keeping all PTR queries with the local DNS resolver" ]);
+    stub.restore();
+});
+
+t.test("address discovery bounds device and prefix counts and accepts an explicitly empty device list", () => {
+    let devices = [];
+    let addresses = "";
+    for (let i = 0; i < 257; i++) {
+        if (i < 65)
+            push(devices, "dev" + i);
+        addresses += "2: br-lan inet 203.0." + (114 + int(i / 256)) + "." + (i % 256) + "/32 scope global br-lan\n";
+    }
+    for (let sample in [ { devices, output: LAN_ADDRESSES }, { devices: [ "br-lan" ], output: addresses }, { devices: [], output: null } ]) {
+        let dir = stub.tmpdir();
+        fixture.seed(configuration(dir, { source_network_interfaces: sample.devices }));
+        tools([ [ CHECK, {} ], [ "ip -o addr show dev", { stdout: sample.output } ] ]);
+        runtime.write_config(false);
+        let config = json(fs.readfile(dir + "/etc/sing-box/config.json"));
+        let ptr = filter(config.dns.rules, (r) => r.query_type?.[0] == "PTR")[0];
+        t.eq(ptr.domain_regex != null, length(sample.devices) == 0);
+        t.eq(length(logs), length(sample.devices) == 0 ? 0 : 1);
+        stub.restore();
+    }
 });
 
 t.done();

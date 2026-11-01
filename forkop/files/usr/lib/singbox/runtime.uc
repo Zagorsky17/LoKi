@@ -1,3 +1,4 @@
+// Modified for LoKi on 2026-11-01: preserve LAN reverse zones while routing external PTR by DNS policy.
 let fs = require("fs");
 let common = require("core.common");
 let exec = require("core.exec");
@@ -7,6 +8,7 @@ let singbox_constants = require("singbox.constants");
 let packages = require("core.packages");
 let connections = require("config.connections");
 let generator = require("singbox.generator");
+let core_ip = require("core.ip");
 
 const CONFIG_NAME = "forkop";
 
@@ -68,6 +70,37 @@ function listen_address(values) {
     return address;
 }
 
+function local_prefixes(values) {
+    let devices = common.words(common.option(values, "source_network_interfaces", "br-lan"));
+    if (length(devices) > 64)
+        return null;
+    let seen = {};
+    let prefixes = {};
+    for (let device in devices) {
+        if (seen[device])
+            continue;
+        seen[device] = true;
+        let pipe = fs.popen(exec.command_line([ "ip", "-o", "addr", "show", "dev", device ]) + " 2>/dev/null", "r");
+        if (!pipe)
+            return null;
+        // Bound each snapshot before expanding its addresses into reverse-zone matchers.
+        let output = pipe.read(65537);
+        let status = pipe.close();
+        if (status != 0 || type(output) != "string" || output == "" || length(output) > 65536)
+            return null;
+        for (let line in split(trim(output), "\n")) {
+            let entry = match(line, /^[0-9]+:[ \t]+([^ \t]+)[ \t]+(inet6?)[ \t]+([^ \t]+)([ \t]|$)/);
+            if (entry == null || split(entry[1], "@")[0] != device || !core_ip.valid_ip_cidr(entry[3]) ||
+                core_ip.ip_family(entry[3]) != (entry[2] == "inet" ? 4 : 6))
+                return null;
+            prefixes[entry[3]] = true;
+            if (length(prefixes) > 256)
+                return null;
+        }
+    }
+    return sort(keys(prefixes));
+}
+
 // While mwan3 has an enabled interface and runs or will start, it owns egress routing, which a
 // pinned output interface bypasses.
 function mwan3_active() {
@@ -118,7 +151,10 @@ function write_config(checked) {
 
     let text;
     try {
-        text = sprintf("%J\n", generator.build({ service_address: address }));
+        let prefixes = local_prefixes(values);
+        if (prefixes == null)
+            exec.log("warn", "Cannot determine LAN prefixes; keeping all PTR queries with the local DNS resolver");
+        text = sprintf("%J\n", generator.build({ service_address: address, local_prefixes: prefixes }));
     }
     catch (e) {
         die("Failed to generate the sing-box configuration: " + e.message);

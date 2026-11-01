@@ -1,4 +1,4 @@
-// Modified for LoKi on 2026-10-31: use the project release repository.
+// Modified for LoKi on 2026-11-01: use project releases and wait for the test process to start.
 let t = require("t");
 let stub = require("stub");
 let fs = require("fs");
@@ -51,10 +51,9 @@ function write_state(value) {
     }));
 }
 
-// A process whose command line names marker, as a runner's names installer_run; the second
-// command keeps the shell from replacing itself with sleep.
+// The child reports its own PID after exec, before closing the pipe; ':' keeps its command line stable.
 function live_process(marker) {
-    let pipe = stub.real.popen("sh -c 'sleep 30; :' " + marker + " >/dev/null 2>&1 & echo $!", "r");
+    let pipe = stub.real.popen("sh -c 'echo $$; exec >/dev/null 2>&1; sleep 30; :' " + marker + " &", "r");
     let pid = trim(pipe.read("all"));
     pipe.close();
     return pid;
