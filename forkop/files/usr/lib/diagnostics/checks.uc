@@ -1,3 +1,4 @@
+// Modified for LoKi on 2026-11-01: add bounded core log diagnostics.
 // The Status tab checks return facts; the page judges them and words the verdict.
 
 let fs = require("fs");
@@ -76,6 +77,55 @@ function last_error(log) {
     return error ?? warning ?? "";
 }
 
+// Keep this on demand: no resident reader, history or temporary log file.
+const CORE_LOG_BYTES = 65536;
+const CORE_LOG_LINES = 1000;
+
+function core_log() {
+    let unavailable = { available: false, count: 0, limited: false };
+    let pipe = fs.popen(exec.command_line([ "logread", "-t", "-l", CORE_LOG_LINES, "-e", "^sing-box" ]) + " 2>/dev/null", "r");
+    if (pipe == null)
+        return unavailable;
+    let text = pipe.read(CORE_LOG_BYTES + 1);
+    let status = pipe.close();
+    if (text == null)
+        return unavailable;
+    let limited = length(text) > CORE_LOG_BYTES;
+    // Closing a full pipe can stop logread with SIGPIPE; other failures are not a zero count.
+    if (status != 0 && !(limited && (status == -13 || status == 141)))
+        return unavailable;
+    if (limited)
+        text = substr(text, 0, CORE_LOG_BYTES);
+    let now = time();
+    let count = 0;
+    let lines = 0;
+    // Parse one line at a time so many tiny lines cannot allocate a large split array.
+    while (text != "" && lines < CORE_LOG_LINES) {
+        let end = index(text, "\n");
+        if (end < 0) {
+            limited = true;
+            break;
+        }
+        let line = substr(text, 0, end);
+        text = substr(text, end + 1);
+        lines++;
+        let entry = match(line, /^.{24} \[([0-9]+)\.[0-9]{3}\] [a-z0-9]+\.[a-z]+ sing-box(\[[0-9]+\])?: (.*)$/);
+        if (entry == null) {
+            limited = true;
+            continue;
+        }
+        let stamp = int(entry[1]);
+        if (stamp > now) {
+            limited = true;
+            continue;
+        }
+        let message = replace(entry[3], /\x1b\[[0-9;]*m/g, "");
+        if (stamp > now - 60 && match(message, /^(ERROR|FATAL)([ \t]|\[)/) != null)
+            count++;
+    }
+    return { available: true, count, limited: limited || lines >= CORE_LOG_LINES };
+}
+
 function meminfo() {
     let text = fs.readfile(paths.meminfo) ?? "";
     let value = (key) => int(match(text, regexp("(^|\n)" + key + ":[ \t]*([0-9]+)"))?.[2] ?? 0);
@@ -123,6 +173,7 @@ function service() {
         core: core(),
         foreign_sing_box: filter(sing_box_cores(), (found) => found != own),
         conflicts: conflicts.find(output([ "nft", "-t", "list", "ruleset" ])),
+        core_log: core_log(),
         memory: meminfo(),
         router_uptime: uptime_seconds()
     };
@@ -394,4 +445,4 @@ function servers() {
     return { wan, behind_cgnat, items };
 }
 
-return { paths, last_error, core, service, dns, traffic, servers };
+return { paths, last_error, core_log, core, service, dns, traffic, servers };

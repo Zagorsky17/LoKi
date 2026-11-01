@@ -12780,6 +12780,27 @@ function coreItem(data) {
     variant ? _("sing-box-forkop %s (%s)").format(version, variant) : _("sing-box-forkop %s").format(version)
   );
 }
+function coreLogItem(data) {
+  const key = _("Core log");
+  const log = data.core_log;
+  if (!log?.available) {
+    return finding("warning", key, _("Log data unavailable"));
+  }
+  if (log.limited) {
+    return finding(
+      "warning",
+      key,
+      _(
+        "At least %s error messages in the last 60 seconds; log data incomplete"
+      ).format(log.count)
+    );
+  }
+  return finding(
+    log.count > 0 ? "warning" : "success",
+    key,
+    log.count > 0 ? _("%s error messages found in the last 60 seconds").format(log.count) : _("No error messages found in the last 60 seconds")
+  );
+}
 function conflictItems(data) {
   const key = _("Conflicts");
   const items = data.conflicts.map(
@@ -12817,6 +12838,7 @@ function presentService(data) {
   return [
     forkopItem(data),
     coreItem(data),
+    coreLogItem(data),
     ...conflictItems(data),
     memoryItem(data)
   ];

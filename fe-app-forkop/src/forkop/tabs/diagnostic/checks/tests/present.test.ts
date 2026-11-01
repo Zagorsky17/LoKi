@@ -1,3 +1,4 @@
+// Modified for LoKi on 2026-11-01: add bounded core log diagnostics.
 import { describe, expect, it } from 'vitest';
 
 import { summarize } from '../present';
@@ -23,6 +24,7 @@ function service(
       required: '1.14.4-r1',
       problem: '',
     },
+    core_log: { available: true, count: 0, limited: false },
     foreign_sing_box: [],
     conflicts: [],
     memory: { total_kb: 239540, available_kb: 45476 },
@@ -61,9 +63,41 @@ describe('the service check', () => {
         key: 'Core',
         value: 'sing-box-forkop 1.14.4-r1 (base)',
       },
+      {
+        state: 'success',
+        key: 'Core log',
+        value: 'No error messages found in the last 60 seconds',
+      },
       { state: 'success', key: 'Conflicts', value: 'none found' },
       { state: 'success', key: 'Memory', value: '44 MB of 234 MB free' },
     ]);
+  });
+
+  it('warns about recorded errors, incomplete data and failed reads without displaying log text', () => {
+    const item = (core_log: Forkop.ServiceCheckResult['core_log']) =>
+      presentService(service({ core_log })).find(
+        (value) => value.key === 'Core log',
+      );
+    expect(item({ available: true, count: 12, limited: false })).toEqual({
+      state: 'warning',
+      key: 'Core log',
+      value: '12 error messages found in the last 60 seconds',
+    });
+    expect(item({ available: true, count: 0, limited: true })).toMatchObject({
+      state: 'warning',
+      value:
+        'At least 0 error messages in the last 60 seconds; log data incomplete',
+    });
+    expect(item({ available: false, count: 0, limited: false })).toMatchObject({
+      state: 'warning',
+      value: 'Log data unavailable',
+    });
+    expect(
+      item(undefined as unknown as Forkop.ServiceCheckResult['core_log']),
+    ).toMatchObject({
+      state: 'warning',
+      value: 'Log data unavailable',
+    });
   });
 
   it('gives the error that kept Forkop from running, if one did', () => {

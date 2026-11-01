@@ -1,3 +1,4 @@
+// Modified for LoKi on 2026-11-01: add bounded core log diagnostics.
 import { describe, expect, it } from 'vitest';
 
 import { checksText, reportText } from '../report';
@@ -132,6 +133,7 @@ describe('the diagnostic report', () => {
             required: '1.14.4-r1',
             problem: '',
           },
+          core_log: { available: true, count: 0, limited: false },
           foreign_sing_box: [],
           conflicts: [],
           memory: { total_kb: 239540, available_kb: 45476 },
