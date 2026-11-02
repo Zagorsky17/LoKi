@@ -274,7 +274,7 @@ t.test("DNS timeout reaches the core as configured", () => {
     t.eq(config.dns.timeout, "4s");
     t.eq(config.dns.optimistic, null);
     t.eq(config.dns.independent_cache, null);
-    t.eq(config.experimental.cache_file.store_subscriptions, true);
+    t.eq(config.experimental.cache_file.store_subscriptions, null, "a DNS-only section has no subscriptions to cache");
 });
 
 function reverse_name(address) {

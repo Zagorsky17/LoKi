@@ -3,7 +3,7 @@
 Usage: python3 core/tests/compatibility.py REFERENCE_R3 STOCK_BINARY_DIR OUTPUT_DIR
 The directory holds each sing-box-VERSION and its official archive filename;
 archives match the pinned official release digests in compatibility_releases.json.
-This is a baseline of known incompatibilities, not a declaration of stock support.
+This checks known schema boundaries and one limited manual profile, not full stock support.
 """
 import hashlib
 import json
@@ -18,9 +18,27 @@ ROOT = Path(__file__).resolve().parents[2]
 REFERENCE_VERSION = re.search(r'^CORE_VERSION=(.+)$', (ROOT / 'core/upstream.env').read_text(), re.M)[1]
 RELEASES = json.loads((ROOT / 'core/tests/compatibility_releases.json').read_text())
 SCHEMA_BOUNDARIES = {
-    '1.12.22': 'unknown field "timeout"',
-    '1.13.21': 'unknown field "timeout"',
-    '1.14.4': 'unknown field "providers"',
+    '1.12.22': {
+        'manual-json': 'unknown field "timeout"',
+        'manual-json-native': 'unknown field "timeout"',
+        'share-link': 'unknown field "timeout"',
+        'dns-fallback': 'unknown transport type: fallback',
+        'subscription': 'unknown field "timeout"',
+    },
+    '1.13.21': {
+        'manual-json': 'unknown field "timeout"',
+        'manual-json-native': 'unknown field "timeout"',
+        'share-link': 'unknown field "timeout"',
+        'dns-fallback': 'unknown transport type: fallback',
+        'subscription': 'unknown field "timeout"',
+    },
+    '1.14.4': {
+        'manual-json': 'unknown field "unified_delay"',
+        'manual-json-native': None,
+        'share-link': 'unknown outbound type: parser',
+        'dns-fallback': 'unknown transport type: fallback',
+        'subscription': 'unknown field "providers"',
+    },
 }
 
 
@@ -46,13 +64,15 @@ def verify_stock_binary(directory, release):
 
 def assert_result(profile, version, status, output):
     if version == REFERENCE_VERSION:
+        expected = None
+    elif version in SCHEMA_BOUNDARIES and profile in SCHEMA_BOUNDARIES[version]:
+        expected = SCHEMA_BOUNDARIES[version][profile]
+    else:
+        raise AssertionError(f'Uncharacterized core/profile: {version}/{profile}')
+    if expected is None:
         if status != 0:
-            raise AssertionError(f'{profile}: the reference configuration failed: {output[:1200]}')
-        return
-    if version not in SCHEMA_BOUNDARIES:
-        raise AssertionError(f'Uncharacterized core version: {version}')
-    expected = 'unknown transport type: fallback' if profile == 'dns-fallback' else SCHEMA_BOUNDARIES[version]
-    if status != 1 or expected not in output:
+            raise AssertionError(f'{profile}/{version}: the supported schema failed: {output[:1200]}')
+    elif status != 1 or expected not in output:
         raise AssertionError(f'{profile}/{version}: expected the known schema boundary, got {status}: {output[:1200]}')
 
 
@@ -64,7 +84,9 @@ def profiles(output):
         'section': [{'.name': 'main', 'action': 'connection', 'enabled': '1', 'outbound_jsons': [json.dumps({
             'type': 'socks', 'tag': 'local-socks', 'server': '127.0.0.1', 'server_port': 18080})]}],
     }
-    result = {'manual-json': base}
+    native = json.loads(json.dumps(base))
+    native['settings']['unified_delay'] = '0'
+    result = {'manual-json': base, 'manual-json-native': native}
     links = json.loads(json.dumps(base))
     links['section'][0].pop('outbound_jsons')
     links['connection_link'] = [{'.name': 'link', 'section': 'main', 'name': 'Local', 'order': '0',
@@ -113,7 +135,7 @@ def main(reference, directory, output):
             results.append(result)
             print(json.dumps(result), flush=True)
     (output / 'results.json').write_text(json.dumps(results, indent=2))
-    print(f'{len(results)} schema boundary checks passed; stock configurations remain unsupported')
+    print(f'{len(results)} schema boundary checks passed; only the limited manual schema is accepted by stock 1.14.4')
 
 
 if __name__ == '__main__':
