@@ -38,7 +38,6 @@ const NOTHING_TO_RUN = "Forkop has nothing to run: no section with connections i
 
 let paths = {
     config: "/etc/config/forkop",
-    shipped_config: "/usr/share/forkop/default-config",
     sing_box_init: "/etc/init.d/sing-box",
     lock: "/var/run/forkop/start.lock",
     pending_reload: "/var/run/forkop/reload.pending",
@@ -71,12 +70,8 @@ function queue_reload_if_changed(fingerprint, context) {
         log("warn", "The configuration changed " + during + ", and applying it could not be queued; apply it again");
 }
 
-// A configuration restored from a backup, or kept by a sysupgrade, missed the migration the
-// package runs at its install; its version then differs from the one the package ships.
+// Restored and current configurations both pass the shared format guard before runtime changes.
 function migrate_restored_config() {
-    let shipped = match(fs.readfile(paths.shipped_config) ?? "", /option config_version '([^']*)'/);
-    if (shipped != null && uci.get(CONFIG_NAME + ".settings.config_version") == shipped[1])
-        return true;
     let migrated = require("config.migration").start();
     uci.reset();
     return migrated;

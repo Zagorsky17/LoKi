@@ -365,7 +365,7 @@ export function initController(): void {
   async function uploadConfig(file: File) {
     if (file.size > MAX_CONFIG_SIZE) {
       showToast(
-        _('The file is over 1 MB, far larger than a Forkop configuration'),
+        _('The file is over 1 MB, far larger than a LoKi configuration'),
         'error',
       );
       return;

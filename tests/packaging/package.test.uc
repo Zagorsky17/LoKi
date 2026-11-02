@@ -189,4 +189,17 @@ t.test("project documentation cannot publish an inherited GitHub Pages site", ()
     }
 });
 
+t.test("packages contain only LoKi's configuration migration framework", () => {
+    for (let name in [ "v1_0_5", "v2_0_0", "url_1_0_5" ])
+        t.eq(fs.stat(repo.path("forkop/files/usr/lib/config/migrations/" + name + ".uc")), null);
+    let source = fs.readfile(repo.path("forkop/files/usr/lib/config/migration.uc"));
+    for (let entry in [ "remove_leftovers", "after_commit", "migrate-fixture", "keep_aside", "config.migrations.v2_0_0" ])
+        t.excludes(source, entry);
+    let defaults = fs.readfile(repo.path("forkop/files/etc/config/forkop"));
+    t.contains(defaults, "option config_format 'loki'");
+    t.eq(require("config.migration").MIN_CONFIG_VERSION, "2.0.0");
+    for (let name in fs.lsdir(repo.path("tests/fixtures")))
+        t.eq(match(name, /^forkop-1\.0\..*\.conf$/), null);
+});
+
 t.done();

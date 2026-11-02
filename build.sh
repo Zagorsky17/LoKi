@@ -56,8 +56,7 @@ if [[ ! "$SB_REQUIRED_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+-r[0-9]+$ ]] ||
   echo "Cannot read SB_REQUIRED_VERSION or MIN_CONFIG_VERSION from the sources" >&2
   exit 1
 fi
-# Forkop runs only on its own core. A 1.0.x updater installs luci-app-forkop and forkop by
-# file and never the core: this dependency makes that fail before anything changes.
+# The generated configuration requires the supported core and its LoKi fixes.
 # APK says ip: apk refuses ip-tiny beside ip-full, yet takes it for ip; opkg takes ip-full for ip
 BACKEND_DEPENDS_IPK="libc, ca-bundle, ucode, ucode-mod-fs, ucode-mod-resolv, ucode-mod-socket, ucode-mod-ubus, ucode-mod-uloop, ucode-mod-uci, uclient-fetch, kmod-nft-tproxy, nftables, kmod-nft-nat, ip-tiny, sing-box-forkop (>= ${SB_REQUIRED_VERSION})"
 BACKEND_DEPENDS_APK="ca-bundle ip kmod-nft-nat kmod-nft-tproxy libc nftables uclient-fetch ucode ucode-mod-fs ucode-mod-resolv ucode-mod-socket ucode-mod-ubus ucode-mod-uci ucode-mod-uloop sing-box-forkop>=${SB_REQUIRED_VERSION}"

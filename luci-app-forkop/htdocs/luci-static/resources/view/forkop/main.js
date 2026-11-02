@@ -3197,29 +3197,37 @@ var configImportApi = {
 };
 function refusalMessage(refusal) {
   switch (refusal.reason) {
+    case "file":
+      return _("The configuration must be a regular file of at most 1 MiB");
+    case "foreign":
+      return _(
+        "The file is not a LoKi configuration; importing other applications is not supported"
+      );
+    case "schema":
+      return _("The file has unsupported or ambiguous LoKi sections");
     case "unreadable":
       return _("The file is not a UCI configuration");
     case "missing":
-      return _("The file is not a Forkop configuration: it names no version");
+      return _("The file is not a LoKi configuration: it names no version");
     case "invalid":
       return _(
-        "The file is not a Forkop configuration: its version is not a release number"
+        "The file is not a LoKi configuration: its version is not a release number"
       );
     case "newer":
       return _(
-        "The configuration is from Forkop %s, newer than this one: update Forkop first"
+        "The configuration is from LoKi %s, newer than this one: update LoKi first"
       ).format(refusal.from);
     case "below_min":
       return _(
-        "The configuration is from Forkop %s, and Forkop loads configurations from %s on"
+        "The configuration is from LoKi %s, and LoKi loads configurations from %s on"
       ).format(refusal.from, refusal.min);
     case "unknown":
-      return _("No Forkop release wrote configuration version %s").format(
+      return _("No LoKi release wrote configuration version %s").format(
         refusal.from
       );
     case "migration":
       return _(
-        "The configuration of Forkop %s cannot be brought to %s: %s"
+        "The configuration of LoKi %s cannot be brought to %s: %s"
       ).format(refusal.from, refusal.to, refusal.detail);
     default:
       return _("Failed to load the configuration: %s").format(
@@ -3228,8 +3236,8 @@ function refusalMessage(refusal) {
   }
 }
 function renderImportDialog(fileName, check, onLoad) {
-  const version = check.from === check.to ? _("%s holds a configuration of Forkop %s.").format(fileName, check.from) : _(
-    "%s holds a configuration of Forkop %s, which is brought to %s as an update would bring it."
+  const version = check.from === check.to ? _("%s holds a configuration of LoKi %s.").format(fileName, check.from) : _(
+    "%s holds a configuration of LoKi %s, which is brought to %s as an update would bring it."
   ).format(fileName, check.from, check.to);
   return [
     textE("p", {}, version),
@@ -3245,10 +3253,10 @@ function renderImportDialog(fileName, check, onLoad) {
       "p",
       {},
       _(
-        "It replaces the current one through unsaved changes, as if you made them by hand. Forkop runs it once you apply them."
+        "It replaces the current one through unsaved changes, as if you made them by hand. LoKi runs it once you apply them."
       )
     ),
-    ...check.unsaved ? [textE("p", {}, _("Unsaved changes to Forkop made earlier are replaced."))] : [],
+    ...check.unsaved ? [textE("p", {}, _("Unsaved changes to LoKi made earlier are replaced."))] : [],
     textE("div", { class: "fkp-partial-modal__footer" }, [
       textE(
         "button",
@@ -4523,7 +4531,7 @@ function initController() {
   async function uploadConfig(file) {
     if (file.size > MAX_CONFIG_SIZE) {
       showToast(
-        _("The file is over 1 MB, far larger than a Forkop configuration"),
+        _("The file is over 1 MB, far larger than a LoKi configuration"),
         "error"
       );
       return;

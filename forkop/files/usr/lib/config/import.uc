@@ -1,5 +1,4 @@
-// A configuration file loaded on the page, brought to this release the way an update brings the
-// router's own and staged as unsaved changes of the page's LuCI session, for the page to apply.
+// Restore an own LoKi backup as unsaved changes of the caller's LuCI session.
 
 let migration = require("config.migration");
 
@@ -9,9 +8,9 @@ const CONFIG_NAME = "forkop";
 function target(path) {
     let loaded = migration.read_file(path);
     if (loaded.error != null)
-        return { reason: "unreadable", detail: loaded.error };
+        return { reason: loaded.reason ?? "unreadable", detail: "UCI could not read the configuration" };
     let decision = migration.decide(loaded.model);
-    if (decision.result == "reset")
+    if (decision.result == "reject")
         return { reason: decision.reason, from: decision.from };
     let migrated = migration.migrate(loaded.model, decision.from);
     if (migrated.error != null)
@@ -90,7 +89,7 @@ function check(path, id) {
     let uci = connect(id);
     let current = uci != null ? uci.model() : migration.read_file(migration.paths.config).model;
     if (current == null)
-        return refused({ reason: "session", detail: uci?.state.error ?? "Forkop has no configuration to replace" });
+        return refused({ reason: "session", detail: uci?.state?.error ?? "LoKi has no configuration to replace" });
     return {
         success: true,
         from: wanted.from,
