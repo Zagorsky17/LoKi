@@ -55,8 +55,6 @@ describe('the base build', () => {
     setCoreFeatures(coreFeatures());
     expect(coreFeatureOfType('warp')).toBe('wireguard');
     expect(coreSupportsType('ssh')).toBe(false);
-    expect(coreSupportsType('ssh', ['inbound'])).toBe(true);
-    expect(coreSupportsType('naive', ['inbound'])).toBe(false);
     expect(coreSupportsType('tailscale', ['endpoint'])).toBe(false);
     expect(coreSupportsType('vless')).toBe(true);
   });
@@ -89,7 +87,7 @@ describe('the runtime feed', () => {
         forkop: { running: 1, enabled: 1, status: 'running', busy: null },
         sing_box: { running: 1, enabled: 1, status: 'running' },
       },
-      capabilities: { server_inbounds_enabled_count: 0, core },
+      capabilities: { core },
       actions: { service: [] },
     });
 

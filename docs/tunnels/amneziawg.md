@@ -27,5 +27,3 @@
 | `H1`–`H4` | подменённые заголовки типов пакетов | да |
 | `HeaderProtectionKey`, `RandomTrailers`, `DisableCookies` | параметры AmneziaWG 3.x: шифрование заголовков, случайные байты в конце пакетов, отключение cookie-ответов | да |
 | `ContentPaddingAddition`, `RekeyAfterTime`, `RekeyTimeout`, `RejectAfterTime`, `KeepaliveTimeout`, `MaxHandshakeAttempts` | параметры AmneziaWG 3.x: случайный размер пакетов с данными и тайминги WireGuard | нет |
-
-Свой сервер AmneziaWG можно поднять на самом роутере, см. [VPN-сервер](/servers/#wireguard-amneziawg-и-openvpn).

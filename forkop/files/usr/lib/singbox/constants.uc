@@ -41,9 +41,6 @@ const URLTEST_DEFAULT_IDLE_TIMEOUT = "30m";
 const CHECK_PROXY_IP_DOMAIN = "ip.podkop.fyi";
 const FAKEIP_TEST_DOMAIN = "fakeip.podkop.fyi";
 const TMP_SING_BOX_FOLDER = "/tmp/sing-box";
-// Marks the Servers tab's nft rules, an nftables.d include that never appears in
-// `uci show firewall`; the inbound check looks for it in the loaded chain.
-const SERVER_FIREWALL_COMMENT = "forkop: server ports";
 
 // Providers build nodes from outbounds only, so endpoint protocols and refused types are absent.
 const FILTERABLE_PROVIDER_TYPES = [
@@ -132,12 +129,6 @@ function domain_resolver_tag(section_name) {
     return tag(section_name, "domain-resolver");
 }
 
-// Verbatim: the tab shows it and the Clash API reports it; the runtime check refuses a name
-// already in use.
-function server_inbound_tag(display_name) {
-    return as_string(display_name);
-}
-
 return {
     DNS_SERVER_TAG,
     FAKEIP_DNS_SERVER_TAG,
@@ -173,7 +164,6 @@ return {
     CHECK_PROXY_IP_DOMAIN,
     FAKEIP_TEST_DOMAIN,
     TMP_SING_BOX_FOLDER,
-    SERVER_FIREWALL_COMMENT,
     FILTERABLE_PROVIDER_TYPES,
     FILTERABLE_GROUP_TYPES,
     RESERVED_OVERRIDE_PATCH_PATHS,
@@ -182,6 +172,5 @@ return {
     tag,
     outbound_tag,
     child_tag,
-    domain_resolver_tag,
-    server_inbound_tag
+    domain_resolver_tag
 };

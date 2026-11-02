@@ -137,27 +137,6 @@ t.test("accepts valid", () => {
                 "domain_resolver_dns_detour_section": "proxy"
             }
         ],
-        "server": [
-            {
-                ".name": "srv",
-                "enabled": "1",
-                "protocol": "vless",
-                "security": "none",
-                "listen_port": "18443",
-                "public_host": "203.0.113.9",
-                "routing_mode": "section",
-                "routing_section": "proxy"
-            }
-        ],
-        "server_client": [
-            {
-                ".name": "srv_phone",
-                "server": "srv",
-                "enabled": "1",
-                "name": "phone",
-                "uuid": "11111111-1111-4111-8111-111111111111"
-            }
-        ]
     });
 });
 
@@ -179,18 +158,10 @@ t.test("accepts valid-json-endpoint", () => {
                 "endpoint_json": "{\"type\":\"vpn-client\",\"tag\":\"vpn-client\"}"
             }
         ],
-        "server": [
-            {
-                ".name": "json",
-                "enabled": "1",
-                "protocol": "json_inbound",
-                "inbound_json": "{\"type\":\"mixed\"}"
-            }
-        ]
     });
 });
 
-t.test("leaves the contents of JSON outbounds, endpoints and inbounds to sing-box", () => {
+t.test("leaves the contents of JSON outbounds and endpoints to sing-box", () => {
     v.accepts({
         "settings": {},
         "section": [
@@ -212,14 +183,6 @@ t.test("leaves the contents of JSON outbounds, endpoints and inbounds to sing-bo
                 "endpoint_json": "{\"type\":\"vless\",\"tag\":\"wrong-container\"}"
             }
         ],
-        "server": [
-            {
-                ".name": "wg",
-                "enabled": "1",
-                "protocol": "json_inbound",
-                "inbound_json": "{\"type\":\"a-type-from-a-newer-core\",\"token\":\"x\"}"
-            }
-        ]
     });
 });
 
@@ -236,13 +199,6 @@ t.test("refuses a JSON endpoint that is not an object", () => {
         "section": [ { ".name": "proxy", "enabled": "1", "action": "connection" } ],
         "tunnel": [ { ".name": "tun_json", "section": "proxy", "kind": "json", "endpoint_json": "{\"type\":" } ]
     }, "has a JSON endpoint that is not a JSON object");
-});
-
-t.test("refuses a JSON inbound that is not an object", () => {
-    v.refuses({
-        "settings": {},
-        "server": [ { ".name": "raw", "enabled": "1", "protocol": "json_inbound", "inbound_json": "\"mixed\"" } ]
-    }, "must contain a JSON inbound object");
 });
 
 t.test("accepts tailscale-without-exit-node", () => {
@@ -893,474 +849,6 @@ t.test("a URLTest interval that is not a duration names its option", () => {
     }, "'Check interval' of URLTest 'Fast' in section 'proxy'");
 });
 
-t.test("reality server without an SNI", () => {
-    v.refuses({
-        "settings": {},
-        "server": [
-            {
-                ".name": "srv",
-                "enabled": "1",
-                "protocol": "vless",
-                "security": "reality",
-                "listen_port": "18443",
-                "public_host": "203.0.113.9",
-                "reality_private_key": "QFHBoM6IJlBnPCUKLTBLKLKB1kNU9WPMBRnMOaHYQE0",
-                "reality_public_key": "Zq5EJlBnPCUKLTBLKLKB1kNU9WPMBRnMOaHYQE0QFHA",
-                "reality_short_id": "0a1b2c3d"
-            }
-        ],
-        "server_client": [
-            {
-                ".name": "srv_phone",
-                "server": "srv",
-                "enabled": "1",
-                "name": "phone",
-                "uuid": "11111111-1111-4111-8111-111111111111"
-            }
-        ]
-    }, "needs an SNI");
-});
-
-t.test("reality server without a key pair", () => {
-    v.refuses({
-        "settings": {},
-        "server": [
-            {
-                ".name": "srv",
-                "enabled": "1",
-                "protocol": "vless",
-                "security": "reality",
-                "listen_port": "18443",
-                "public_host": "203.0.113.9",
-                "tls_server_name": "www.apple.com",
-                "reality_short_id": "0a1b2c3d"
-            }
-        ],
-        "server_client": [
-            {
-                ".name": "srv_phone",
-                "server": "srv",
-                "enabled": "1",
-                "name": "phone",
-                "uuid": "11111111-1111-4111-8111-111111111111"
-            }
-        ]
-    }, "Generate a Reality key pair");
-});
-
-t.test("reality short ID with an odd digit count", () => {
-    v.refuses({
-        "settings": {},
-        "server": [
-            {
-                ".name": "srv",
-                "enabled": "1",
-                "protocol": "vless",
-                "security": "reality",
-                "listen_port": "18443",
-                "public_host": "203.0.113.9",
-                "tls_server_name": "www.apple.com",
-                "reality_private_key": "QFHBoM6IJlBnPCUKLTBLKLKB1kNU9WPMBRnMOaHYQE0",
-                "reality_public_key": "Zq5EJlBnPCUKLTBLKLKB1kNU9WPMBRnMOaHYQE0QFHA",
-                "reality_short_id": "abc"
-            }
-        ],
-        "server_client": [
-            {
-                ".name": "srv_phone",
-                "server": "srv",
-                "enabled": "1",
-                "name": "phone",
-                "uuid": "11111111-1111-4111-8111-111111111111"
-            }
-        ]
-    }, "even number of hex digits");
-});
-
-t.test("a server of a protocol Forkop no longer serves is refused by name", () => {
-    for (let protocol in [ "ssh", "mtproto" ])
-        v.refuses({
-            "settings": {},
-            "server": [ { ".name": "srv", "enabled": "1", "protocol": protocol, "listen_port": "18442" } ],
-            "server_client": [ { ".name": "srv_phone", "server": "srv", "name": "phone", "password": "secret-password" } ]
-        }, "Server 'srv' uses unsupported protocol '" + protocol + "'");
-});
-
-t.test("TLS server without a certificate", () => {
-    v.refuses({
-        "settings": {},
-        "server": [
-            {
-                ".name": "srv",
-                "enabled": "1",
-                "protocol": "hysteria2",
-                "listen_port": "18443",
-                "public_host": "203.0.113.9"
-            }
-        ],
-        "server_client": [
-            {
-                ".name": "srv_phone",
-                "server": "srv",
-                "name": "phone",
-                "password": "secret-password"
-            }
-        ]
-    }, "has no self-signed certificate yet");
-});
-
-t.test("hysteria2 obfuscation without a password", () => {
-    v.refuses({
-        "settings": {},
-        "server": [
-            {
-                ".name": "srv",
-                "enabled": "1",
-                "protocol": "hysteria2",
-                "listen_port": "18444",
-                "public_host": "203.0.113.9",
-                "tls_self_signed_certificate": "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----",
-                "tls_self_signed_key": "-----BEGIN PRIVATE KEY-----\nMIIE\n-----END PRIVATE KEY-----",
-                "hysteria2_obfs_type": "salamander"
-            }
-        ],
-        "server_client": [
-            {
-                ".name": "srv_phone",
-                "server": "srv",
-                "enabled": "1",
-                "name": "phone",
-                "password": "secret"
-            }
-        ]
-    }, "obfuscation password");
-});
-
-t.test("bad server routing bypass", () => {
-    v.refuses({
-        "settings": {},
-        "section": [
-            {
-                ".name": "bypass",
-                "enabled": "1",
-                "action": "bypass"
-            }
-        ],
-        "server": [
-            {
-                ".name": "srv",
-                "enabled": "1",
-                "protocol": "vless",
-                "security": "none",
-                "listen_port": "18443",
-                "public_host": "203.0.113.9",
-                "routing_mode": "section",
-                "routing_section": "bypass"
-            }
-        ],
-        "server_client": [
-            {
-                ".name": "srv_phone",
-                "server": "srv",
-                "enabled": "1",
-                "name": "phone",
-                "uuid": "11111111-1111-4111-8111-111111111111"
-            }
-        ]
-    }, "whose action is 'bypass'");
-});
-
-t.test("bad server routing block", () => {
-    v.refuses({
-        "settings": {},
-        "section": [
-            {
-                ".name": "block",
-                "enabled": "1",
-                "action": "block"
-            }
-        ],
-        "server": [
-            {
-                ".name": "srv",
-                "enabled": "1",
-                "protocol": "vless",
-                "security": "none",
-                "listen_port": "18443",
-                "public_host": "203.0.113.9",
-                "routing_mode": "section",
-                "routing_section": "block"
-            }
-        ],
-        "server_client": [
-            {
-                ".name": "srv_phone",
-                "server": "srv",
-                "enabled": "1",
-                "name": "phone",
-                "uuid": "11111111-1111-4111-8111-111111111111"
-            }
-        ]
-    }, "whose action is 'block'");
-});
-
-t.test("server without clients", () => {
-    v.refuses({
-        "settings": {},
-        "section": [
-            {
-                ".name": "proxy",
-                "enabled": "1",
-                "action": "connection"
-            }
-        ],
-        "server": [
-            {
-                ".name": "srv",
-                "enabled": "1",
-                "protocol": "vless",
-                "security": "none",
-                "listen_port": "18443",
-                "public_host": "203.0.113.9"
-            }
-        ]
-    }, "has no clients");
-});
-
-t.test("a Tailscale server advertises addresses and subnets only", () => {
-    let data = (routes) => ({
-        section: [ { ".name": "main", enabled: "1", action: "connection" } ],
-        connection_link: fixture.links("main", [ "socks://127.0.0.1:1080#one" ]),
-        server: [ { ".name": "tail", enabled: "1", protocol: "tailscale", tailscale_auth_key: "tskey-auth-test", routing_mode: "direct",
-            tailscale_advertise_routes: routes } ]
-    });
-    v.accepts(data([ "192.168.1.10", "192.168.2.0/24", "fd00::/64" ]));
-    v.refuses(data([ "192.168.1.0/33" ]), "advertises '192.168.1.0/33', which is not an address or a subnet");
-});
-
-t.test("a listen address with a leading zero is refused, as sing-box refuses it", () => {
-    v.refuses({
-        section: [ { ".name": "main", enabled: "1", action: "connection" } ],
-        connection_link: fixture.links("main", [ "socks://127.0.0.1:1080#one" ]),
-        server: [ { ".name": "srv", enabled: "1", protocol: "mixed", listen: "192.168.01.1", listen_port: "18080", mixed_auth_enabled: "0", routing_mode: "direct" } ]
-    }, "listens on '192.168.01.1', which is not an IP address");
-});
-
-t.test("a Mixed server without the authentication switch asks for accounts", () => {
-    let data = (extra) => ({
-        section: [ { ".name": "main", enabled: "1", action: "connection" } ],
-        connection_link: fixture.links("main", [ "socks://127.0.0.1:1080#one" ]),
-        server: [ { ".name": "srv", enabled: "1", protocol: "mixed", listen_port: "18080", routing_mode: "direct", ...extra } ]
-    });
-    v.refuses(data({}), "has no clients");
-    v.accepts(data({ mixed_auth_enabled: "0" }));
-});
-
-t.test("server client with a broken UUID", () => {
-    v.refuses({
-        "settings": {},
-        "section": [
-            {
-                ".name": "proxy",
-                "enabled": "1",
-                "action": "connection"
-            }
-        ],
-        "server": [
-            {
-                ".name": "srv",
-                "enabled": "1",
-                "protocol": "vless",
-                "security": "none",
-                "listen_port": "18443",
-                "public_host": "203.0.113.9"
-            }
-        ],
-        "server_client": [
-            {
-                ".name": "srv_phone",
-                "server": "srv",
-                "enabled": "1",
-                "name": "phone",
-                "uuid": "not-a-uuid"
-            }
-        ]
-    }, "has an invalid UUID");
-});
-
-t.test("account name with a space", () => {
-    v.refuses({
-        "settings": {},
-        "section": [
-            {
-                ".name": "proxy",
-                "enabled": "1",
-                "action": "connection"
-            }
-        ],
-        "server": [
-            {
-                ".name": "srv",
-                "enabled": "1",
-                "protocol": "mixed",
-                "mixed_auth_enabled": "1",
-                "listen_port": "18080",
-                "public_host": "203.0.113.9"
-            }
-        ],
-        "server_client": [
-            {
-                ".name": "srv_phone",
-                "server": "srv",
-                "enabled": "1",
-                "name": "alice smith",
-                "password": "secret"
-            }
-        ]
-    }, "must contain only letters");
-});
-
-t.test("Shadowsocks 2022 client key of the wrong length", () => {
-    v.refuses({
-        "settings": {},
-        "section": [
-            {
-                ".name": "proxy",
-                "enabled": "1",
-                "action": "connection"
-            }
-        ],
-        "server": [
-            {
-                ".name": "srv",
-                "enabled": "1",
-                "protocol": "shadowsocks",
-                "shadowsocks_method": "2022-blake3-aes-128-gcm",
-                "shadowsocks_psk": "c2VydmVyLXByZXNoYXJlZC1rZXk=",
-                "listen_port": "18448",
-                "public_host": "203.0.113.9"
-            }
-        ],
-        "server_client": [
-            {
-                ".name": "srv_phone",
-                "server": "srv",
-                "enabled": "1",
-                "name": "phone",
-                "password": "plain-password"
-            }
-        ]
-    }, "base64 pre-shared key of 16 bytes");
-});
-
-t.test("two servers on one port", () => {
-    v.refuses({
-        "settings": {},
-        "section": [
-            {
-                ".name": "proxy",
-                "enabled": "1",
-                "action": "connection"
-            }
-        ],
-        "server": [
-            {
-                ".name": "first",
-                "enabled": "1",
-                "protocol": "vless",
-                "security": "none",
-                "listen_port": "18443",
-                "public_host": "203.0.113.9"
-            },
-            {
-                ".name": "second",
-                "enabled": "1",
-                "protocol": "trojan",
-                "listen_port": "18443",
-                "public_host": "203.0.113.9",
-                "security": "tls",
-                "tls_self_signed_certificate": "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----",
-                "tls_self_signed_key": "-----BEGIN PRIVATE KEY-----\nMIIE\n-----END PRIVATE KEY-----"
-            }
-        ],
-        "server_client": [
-            {
-                ".name": "first_phone",
-                "server": "first",
-                "enabled": "1",
-                "name": "phone",
-                "uuid": "11111111-1111-4111-8111-111111111111"
-            },
-            {
-                ".name": "second_phone",
-                "server": "second",
-                "enabled": "1",
-                "name": "phone",
-                "password": "secret"
-            }
-        ]
-    }, "which is already used by server 'first'");
-});
-
-t.test("server on a Forkop port", () => {
-    v.refuses({
-        "settings": {},
-        "section": [
-            {
-                ".name": "proxy",
-                "enabled": "1",
-                "action": "connection"
-            }
-        ],
-        "server": [
-            {
-                ".name": "srv",
-                "enabled": "1",
-                "protocol": "vless",
-                "security": "none",
-                "listen_port": "1602",
-                "public_host": "203.0.113.9"
-            }
-        ],
-        "server_client": [
-            {
-                ".name": "srv_phone",
-                "server": "srv",
-                "enabled": "1",
-                "name": "phone",
-                "uuid": "11111111-1111-4111-8111-111111111111"
-            }
-        ]
-    }, "already used by a Forkop inbound");
-});
-
-t.test("servers share a port only on different transports", () => {
-    let data = (servers) => ({
-        section: [ { ".name": "main", enabled: "1", action: "connection" } ],
-        connection_link: fixture.links("main", [ "socks://127.0.0.1:1080#one" ]),
-        server: servers,
-        server_client: [ { ".name": "c1", server: "tcp443", name: "one", uuid: "11111111-1111-4111-8111-111111111111" },
-            { ".name": "c2", server: "udp443", name: "one", password: "secret-one" },
-            { ".name": "c3", server: "dup", name: "one", uuid: "22222222-2222-4222-8222-222222222222" } ]
-    });
-    let vless = { ".name": "tcp443", enabled: "1", protocol: "vless", security: "none", listen_port: "443", routing_mode: "direct" };
-    let hysteria = { ".name": "udp443", enabled: "1", protocol: "hysteria2", listen_port: "443", routing_mode: "direct",
-        tls_self_signed_certificate: "-----BEGIN CERTIFICATE-----\nplaceholder\n-----END CERTIFICATE-----",
-        tls_self_signed_key: "-----BEGIN PRIVATE KEY-----\nplaceholder\n-----END PRIVATE KEY-----" };
-    v.refuses(data([ vless, { ...vless, ".name": "dup", listen_port: "0443" } ]), "listens on tcp port 443, which is already used by server 'tcp443'");
-    v.refuses(data([ vless, { ".name": "json", enabled: "1", protocol: "json_inbound", routing_mode: "direct",
-        inbound_json: "{\"type\":\"mixed\",\"listen\":\"0.0.0.0\",\"listen_port\":443}" } ]), "listens on tcp port 443");
-    v.accepts(data([ vless, hysteria ]));
-});
-
-t.test("a server may not take the port the WARP profile requests go out through", () => {
-    v.refuses({
-        section: [ { ".name": "main", enabled: "1", action: "connection" } ],
-        connection_link: fixture.links("main", [ "socks://127.0.0.1:1080#one" ]),
-        server: [ { ".name": "srv", enabled: "1", protocol: "mixed", listen_port: "4536", mixed_auth_enabled: "0", routing_mode: "direct" } ]
-    }, "already used by a Forkop inbound");
-});
-
 t.test("bad detour", () => {
     v.refuses({
         "settings": {},
@@ -1507,6 +995,25 @@ t.test("the AmneziaWG junk minimum is no greater than its maximum", () => {
     v.accepts(amnezia_tunnel({ amnezia_jmin: "10", amnezia_jmax: "10" }));
     v.refuses(amnezia_tunnel({ amnezia_jmin: "60", amnezia_jmax: "10" }), "AmneziaWG jmin greater than jmax");
     v.refuses(amnezia_tunnel({ amnezia_jmin: "60" }, null, "wireguard"), "AmneziaWG jmin greater than jmax");
+});
+
+t.test("unsupported server records are not interpreted or included in validation logs", () => {
+    let result = v.accepts({
+        section: [ { ".name": "main", enabled: "1", action: "connection" } ],
+        connection_link: fixture.links("main", [ "socks://127.0.0.1:1080#local" ]),
+        server: [ { ".name": "private-server-name", label: "private-server-label", enabled: "1", protocol: "json_inbound",
+            inbound_json: "invalid-private-json", listen_port: "not-a-port", reality_private_key: "private-key" } ],
+        server_client: [ { ".name": "private-account", server: "private-server-name", password: "private-password" } ]
+    });
+    t.excludes(sprintf("%J", result.logs), "private-");
+});
+
+t.test("the JSON tunnel wrapper cannot admit a server-only endpoint", () => {
+    for (let kind in [ "json", "openvpn-client" ])
+        v.refuses({ section: [ { ".name": "main", enabled: "1", action: "connection" } ],
+            tunnel: [ { ".name": "json", section: "main", name: "client", kind,
+                endpoint_json: "{\"type\":\"openvpn-server\",\"tag\":\"server\",\"listen_port\":18443}" } ]
+        }, "VPN server endpoints are not supported");
 });
 
 t.done();

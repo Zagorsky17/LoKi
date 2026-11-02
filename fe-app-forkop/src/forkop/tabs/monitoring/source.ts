@@ -13,14 +13,9 @@ export interface SourceConnection {
 export interface SourceNames {
   // Device address to the name the router knows it by.
   devices: Record<string, string>;
-  // Inbound tags of the servers.
-  servers: Set<string>;
-  // Per server tag, the reported user to the client's name where they differ (an OpenVPN client
-  // is reported by its certificate); without users, clients are named by their source address.
-  clients: Record<string, Record<string, string>>;
 }
 
-export type SourceKind = 'system' | 'device' | 'server';
+export type SourceKind = 'system' | 'device';
 
 export interface ConnectionSource {
   // The device filter value.
@@ -29,13 +24,12 @@ export interface ConnectionSource {
   // The main text, and the muted detail beside it; an address is always the detail.
   name: string;
   detail: string;
-  server: string;
   search: string;
 }
 
 const SYSTEM_SOURCE_KEY = '@system';
 const SYSTEM_INBOUND_TAGS = new Set(['system-in', 'system6-in']);
-const KIND_ORDER: SourceKind[] = ['system', 'device', 'server'];
+const KIND_ORDER: SourceKind[] = ['system', 'device'];
 const collator = new Intl.Collator(undefined, {
   numeric: true,
   sensitivity: 'base',
@@ -75,35 +69,14 @@ export function describeSource(
     [...values, ip, tag].filter(Boolean).join(' ');
 
   // The router's own requests also reach a local proxy inbound such as the WARP dialog's.
-  if (
-    SYSTEM_INBOUND_TAGS.has(tag) ||
-    (!names.servers.has(tag) && isLoopback(ip))
-  ) {
+  if (SYSTEM_INBOUND_TAGS.has(tag) || isLoopback(ip)) {
     const name = _('System');
     return {
       key: SYSTEM_SOURCE_KEY,
       kind: 'system',
       name,
       detail: '',
-      server: '',
       search: search(name),
-    };
-  }
-
-  if (names.servers.has(tag)) {
-    // An inbound with accounts reports the one that authenticated; one without has only the
-    // address, and a WireGuard server gives each client addresses of its own.
-    const user = text(connection.metadata?.user);
-    const byAddress = user ? '' : text(names.clients[tag]?.[ip]);
-    const name = text(names.clients[tag]?.[user]) || user || byAddress || tag;
-    const detail = user || byAddress ? tag : ip;
-    return {
-      key: JSON.stringify([tag, user, user ? '' : ip]),
-      kind: 'server',
-      name,
-      detail,
-      server: tag,
-      search: search(sourceLabel(name, detail)),
     };
   }
 
@@ -113,17 +86,14 @@ export function describeSource(
     kind: 'device',
     name,
     detail: ip,
-    server: '',
     search: search(name),
   };
 }
 
-// The router first, then the devices, named ones before bare addresses, then
-// the clients of each server together.
+// The router first, then the devices, named ones before bare addresses.
 export function compareSources(a: ConnectionSource, b: ConnectionSource) {
   return (
     KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind) ||
-    collator.compare(a.server, b.server) ||
     Number(!a.name) - Number(!b.name) ||
     collator.compare(a.name, b.name) ||
     collator.compare(a.detail, b.detail) ||

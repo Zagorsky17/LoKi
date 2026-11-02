@@ -114,8 +114,6 @@ let localDeviceNames: Record<string, string> = {};
 let routeLabels: Record<string, string> = {};
 let sectionTags: string[] = [];
 let sectionTagsLongestFirst: string[] = [];
-let serverInboundTags = new Set<string>();
-let serverClientNames: Record<string, Record<string, string>> = {};
 let filterSignatures: Record<string, string> = {};
 let loading = true;
 let failed = false;
@@ -142,10 +140,6 @@ function buildRouteDisplayNames(sections: Forkop.ConfigSection[]) {
   const labels: Record<string, string> = {
     [DIRECT_ROUTE_TAG]: _('Direct'),
   };
-  const serverTags = new Set<string>();
-  const openVPNServerTags: Record<string, string> = {};
-  const wireGuardServerTags: Record<string, string> = {};
-  const clientNames: Record<string, Record<string, string>> = {};
   const routeSectionTags: string[] = [];
   sections
     .filter((section) => section['.type'] === 'section')
@@ -162,67 +156,7 @@ function buildRouteDisplayNames(sections: Forkop.ConfigSection[]) {
       labels[displayName] = displayName;
     });
 
-  sections
-    .filter((section) => section['.type'] === 'server')
-    .filter((section) => section.enabled !== '0')
-    .forEach((section) => {
-      const sectionName = section['.name'];
-      const displayName = getDisplayName(section);
-
-      if (!sectionName || !displayName) {
-        return;
-      }
-
-      serverTags.add(displayName);
-      if (section.protocol === 'openvpn') {
-        openVPNServerTags[sectionName] = displayName;
-      }
-      if (
-        section.protocol === 'wireguard' ||
-        section.protocol === 'amneziawg'
-      ) {
-        wireGuardServerTags[sectionName] = displayName;
-      }
-    });
-
-  // The core reports an OpenVPN client by its certificate, named after the client's section, and
-  // no user for a WireGuard client, which its tunnel addresses identify.
-  sections
-    .filter((section) => section['.type'] === 'server_client')
-    .forEach((section) => {
-      const owner = normalizeString(section.server);
-      const name = normalizeString(section.name);
-      const openVPNTag = openVPNServerTags[owner];
-      const wireGuardTag = wireGuardServerTags[owner];
-
-      if (!name) {
-        return;
-      }
-
-      if (openVPNTag) {
-        clientNames[openVPNTag] = {
-          ...clientNames[openVPNTag],
-          [section['.name']]: name,
-        };
-      }
-      if (wireGuardTag) {
-        const addresses = (
-          Array.isArray(section.wireguard_address)
-            ? section.wireguard_address
-            : [section.wireguard_address]
-        )
-          .map((address) => normalizeString(address).split('/')[0])
-          .filter(Boolean);
-        clientNames[wireGuardTag] = {
-          ...clientNames[wireGuardTag],
-          ...Object.fromEntries(addresses.map((address) => [address, name])),
-        };
-      }
-    });
-
   routeLabels = labels;
-  serverInboundTags = serverTags;
-  serverClientNames = clientNames;
   sectionTags = routeSectionTags;
   sectionTagsLongestFirst = [...routeSectionTags].sort(
     (a, b) => b.length - a.length,
@@ -285,8 +219,6 @@ function formatBytes(value?: number): string {
 function getSource(connection: ClashConnection): ConnectionSource {
   return describeSource(connection, {
     devices: localDeviceNames,
-    servers: serverInboundTags,
-    clients: serverClientNames,
   });
 }
 

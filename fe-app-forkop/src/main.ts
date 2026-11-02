@@ -19,10 +19,6 @@ export {
   configureSectionSection,
   createSectionContent,
 } from './forkop/tabs/sections';
-export {
-  configureServerSection,
-  createServerContent,
-} from './forkop/tabs/servers';
 export { createSettingsContent } from './forkop/tabs/settings';
 // A check building one tab sets the core features the way ForkopView reads them.
 export { setCoreFeatures } from './forkop/services/coreFeatures.service';

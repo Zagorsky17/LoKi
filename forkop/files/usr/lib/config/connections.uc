@@ -13,8 +13,6 @@ const SYSTEM_DEVICE_VALUE = "@system";
 const DEFAULT_DOMAIN_RESOLVER_DNS_SERVER = "8.8.8.8";
 const ITEM_TYPES = [
     "section",
-    "server",
-    "server_client",
     "subscription_url",
     "section_interface",
     "connection_link",
@@ -154,10 +152,6 @@ function section_exists(value) {
     return type(child_section("section", value)) == "object";
 }
 
-function server_display_name(value) {
-    return named_display_name("server", value);
-}
-
 function owned_child_section(parent, type_name, item_id) {
     let child = child_section(type_name, item_id);
     if (type(child) != "object")
@@ -180,10 +174,6 @@ function child_items_by_owner(type_name, owner_key, owner_value) {
         if (option(child, owner_key, "") == owner_value)
             push(result, child);
     return result;
-}
-
-function server_clients(server) {
-    return child_items_by_owner("server_client", "server", section_name(server));
 }
 
 function child_item_by_value(parent, type_name, value_key, value) {
@@ -796,7 +786,5 @@ return {
     fallback_level_exclude_types,
     fallback_level_include_groups,
     section_display_name,
-    section_exists,
-    server_display_name,
-    server_clients
+    section_exists
 };

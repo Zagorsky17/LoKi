@@ -13,7 +13,7 @@ const mocks = vi.hoisted(() => ({
   actions: null as Record<string, { onClick: () => void }> | null,
   uiState: {
     service: {},
-    capabilities: { server_inbounds_enabled_count: 0 },
+    capabilities: {},
     actions: { service: [] },
   } as unknown as Forkop.UiState,
 }));

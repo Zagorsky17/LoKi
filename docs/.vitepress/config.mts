@@ -65,7 +65,6 @@ export default defineConfig({
         {
           items: [
             { text: 'DNS', link: '/dns/' },
-            { text: 'VPN-сервер', link: '/servers/' },
             { text: 'Настройки', link: '/settings' },
             { text: 'Ошибки диагностики', link: '/troubleshooting/diagnostics' },
           ],

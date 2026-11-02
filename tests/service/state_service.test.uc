@@ -266,19 +266,19 @@ t.test("a refresh after the configuration changed reads the committed configurat
     health.sing_box_service_running = () => false;
     features.report = () => ({ known: true });
 
-    fixture.seed({ server: [ { ".name": "one", enabled: "1" } ] });
+    fixture.seed({ section: [ { ".name": "one", enabled: "1" } ] });
     let service = fresh_service();
     service.paths.config = dir + "/forkop";
-    fs.writefile(service.paths.config, "one server");
+    fs.writefile(service.paths.config, "one section");
     stub.commands([ [ "/usr/bin/forkop get_system_info", { stdout: "{}" } ] ]);
-    let enabled = () => service.object_methods().refresh.call({ args: {} }).capabilities.server_inbounds_enabled_count;
+    let enabled = () => service.object_methods().refresh.call({ args: {} }).capabilities.sections_enabled_count;
     let counts = [ enabled() ];
 
     uci.__seed("forkop", [
-        { ".type": "server", ".name": "one", enabled: "1" },
-        { ".type": "server", ".name": "two", enabled: "1" }
+        { ".type": "section", ".name": "one", enabled: "1" },
+        { ".type": "section", ".name": "two", enabled: "1" }
     ]);
-    fs.writefile(service.paths.config, "two servers, committed by another process");
+    fs.writefile(service.paths.config, "two sections, committed by another process");
     push(counts, enabled());
 
     stub.restore();

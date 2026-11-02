@@ -39,7 +39,6 @@ function createUiState(
       },
     },
     capabilities: {
-      server_inbounds_enabled_count: 0,
       sections_enabled_count: 0,
     },
     actions: {

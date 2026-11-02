@@ -118,10 +118,6 @@ export const ForkopShellMethods = {
     diagnosticCheck<Forkop.TrafficCheckResult>(
       Forkop.AvailableMethods.CHECK_TRAFFIC,
     ),
-  checkServers: async () =>
-    diagnosticCheck<Forkop.ServersCheckResult>(
-      Forkop.AvailableMethods.CHECK_SERVERS,
-    ),
   // The router masks the checks by the same rules as the rest of the report.
   report: async (masked: boolean, checks: string) =>
     diagnosticCheck<Forkop.ReportAttachments>(Forkop.AvailableMethods.REPORT, [

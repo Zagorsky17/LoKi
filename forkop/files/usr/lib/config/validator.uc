@@ -13,7 +13,6 @@ let connections = require("config.connections");
 let singbox_constants = require("singbox.constants");
 let rulesets = require("singbox.rulesets");
 let runtime_dns = require("singbox.dns");
-let runtime_servers = require("singbox.servers");
 let features = require("singbox.features");
 let amnezia = require("singbox.amnezia");
 let runtime_urltest = require("singbox.urltest");
@@ -134,16 +133,8 @@ function section_label(section) {
     return connections.section_display_name(section);
 }
 
-function server_label(server) {
-    return connections.server_display_name(server);
-}
-
 function section_enabled(section) {
     return bool_option(section, "enabled", true);
-}
-
-function server_enabled(section) {
-    return bool_option(section, "enabled", false);
 }
 
 function validate_runtime_display_names(sections, kind, seen) {
@@ -764,6 +755,9 @@ function validate_tunnel_values(section) {
         let endpoint_type = lc(trim(as_string(endpoint.type || "")));
         let wrapper_kind = lc(trim(as_string(connections.option(tunnel, "kind", "wireguard"))));
 
+        if (endpoint_type == "openvpn-server")
+            fail_validation("VPN server endpoints are not supported");
+
         if (wrapper_kind == "json") {
             if (type(core_common.parse_json(connections.option(tunnel, "endpoint_json", ""))) != "object")
                 fail_validation(owner + " has a JSON endpoint that is not a JSON object");
@@ -887,26 +881,6 @@ function validate_tunnel_values(section) {
                 if (type(allowed_ip) != "string" || !core_ip.valid_ip_cidr(trim(allowed_ip)))
                     fail_validation(owner + " has an invalid WireGuard AllowedIPs subnet. Use IP addresses with CIDR prefixes");
         }
-    }
-}
-
-function validate_json_inbound_values() {
-    for (let server in sections_by_type("server")) {
-        server = object_or_empty(server);
-        if (!server_enabled(server) || option(server, "protocol", "") != "json_inbound")
-            continue;
-
-        let name = section_name(server);
-        let inbound = null;
-        try {
-            inbound = json(option(server, "inbound_json", ""));
-        }
-        catch (e) {
-            fail_validation("Server '" + server_label(name) + "' contains invalid JSON inbound");
-        }
-
-        if (type(inbound) != "object")
-            fail_validation("Server '" + server_label(name) + "' must contain a JSON inbound object");
     }
 }
 
@@ -1148,446 +1122,6 @@ function validate_subscription_download_sections(sections, context) {
 }
 
 
-const SERVER_CLIENT_FIELDS = runtime_servers.CLIENT_FIELDS;
-const SHADOWSOCKS_2022_KEY_BYTES = runtime_servers.SHADOWSOCKS_2022_KEY_BYTES;
-const LOGIN_NAME_PROTOCOLS = runtime_servers.LOGIN_NAME_PROTOCOLS;
-const CLIENT_FIELD_LABELS = { uuid: "UUID", password: "Password" };
-const ISSUED_CLIENT_FIELDS = {
-    wireguard_private_key: "WireGuard private key",
-    wireguard_public_key: "WireGuard public key",
-    wireguard_pre_shared_key: "WireGuard pre-shared key",
-    wireguard_address: "tunnel address",
-    openvpn_certificate: "OpenVPN certificate",
-    openvpn_key: "OpenVPN key",
-    openvpn_certificate_sha256: "OpenVPN certificate fingerprint"
-};
-
-function base64_decoded_length(value) {
-    value = as_string(value);
-    if (value == "" || length(value) % 4 != 0 || match(value, /^[A-Za-z0-9+/]+={0,2}$/) == null)
-        return -1;
-
-    let padding = 0;
-    for (let i = length(value) - 1; i >= 0 && substr(value, i, 1) == "="; i--)
-        padding++;
-    return (length(value) / 4) * 3 - padding;
-}
-
-function validate_server_clients(server, protocol, name) {
-    let fields = SERVER_CLIENT_FIELDS[protocol];
-    if (fields == null || length(fields) == 0)
-        return;
-
-    let auth_required = protocol != "mixed" || bool_option(server, "mixed_auth_enabled", true);
-
-    if (!auth_required)
-        return;
-
-    let clients = connections.server_clients(server);
-    if (length(clients) == 0)
-        fail_validation("Server '" + server_label(name) + "' has no clients. Add at least one client");
-
-    let key_bytes = protocol == "shadowsocks"
-        ? SHADOWSOCKS_2022_KEY_BYTES[option(server, "shadowsocks_method", "")]
-        : null;
-    let seen = {};
-
-    for (let client in clients) {
-        let client_name = trim(option(client, "name", ""));
-        if (client_name == "")
-            fail_validation("Server '" + server_label(name) + "' has a client without a name");
-        if (seen[lc(client_name)])
-            fail_validation("Server '" + server_label(name) + "' has more than one client named '" + client_name + "'");
-        seen[lc(client_name)] = true;
-        if (LOGIN_NAME_PROTOCOLS[protocol] && match(client_name, /^[A-Za-z0-9._-]+$/) == null)
-            fail_validation("Server '" + server_label(name) + "' client '" + client_name + "' is used as an account name and must contain only letters, digits, dots, underscores or hyphens");
-
-        for (let field in fields) {
-            let value = option(client, field, "");
-            if (field == "password" && !auth_required)
-                continue;
-            if (value == "")
-                fail_validation(CLIENT_FIELD_LABELS[field] != null
-                    ? "'" + CLIENT_FIELD_LABELS[field] + "' of client '" + client_name + "' of server '" +
-                        server_label(name) + "' is empty"
-                    : "Client '" + client_name + "' of server '" + server_label(name) + "' has no " +
-                        (ISSUED_CLIENT_FIELDS[field] ?? field));
-            if (field == "uuid" && match(value, /^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$/) == null)
-                fail_validation("Server '" + server_label(name) + "' client '" + client_name + "' has an invalid UUID");
-            if (field == "password" && key_bytes != null && base64_decoded_length(value) != key_bytes)
-                fail_validation("Server '" + server_label(name) + "' client '" + client_name + "' needs a base64 pre-shared key of " + key_bytes + " bytes for method '" + option(server, "shadowsocks_method", "") + "'");
-        }
-
-        if (!bool_option(client, "routing_override", false))
-            continue;
-
-        let client_mode = option(client, "routing_mode", "");
-        if (client_mode != "rules" && client_mode != "direct" && client_mode != "section")
-            fail_validation("Server '" + server_label(name) + "' client '" + client_name + "' has an unsupported routing mode '" + client_mode + "'");
-        if (client_mode == "section" && option(client, "routing_section", "") == "")
-            fail_validation("Server '" + server_label(name) + "' client '" + client_name + "' has no routing section selected");
-        if (client_mode == "section")
-            outbound_section(sections_by_type("section"), "Server '" + server_label(name) + "' client '" + client_name + "'", option(client, "routing_section", ""));
-    }
-
-    if (key_bytes != null && base64_decoded_length(option(server, "shadowsocks_psk", "")) != key_bytes)
-        fail_validation("Server '" + server_label(name) + "' needs a base64 server pre-shared key of " + key_bytes + " bytes for method '" + option(server, "shadowsocks_method", "") + "'");
-}
-
-// sing-box binds every inbound itself, so two listeners on one port stop the whole service.
-// Ports are per transport: TCP 443 and UDP 443 are two sockets.
-function validate_server_listen_ports() {
-    let owners = {};
-
-    for (let port in [
-        as_string(singbox_constants.TPROXY_INBOUND_PORT),
-        as_string(singbox_constants.SOURCE_DNS_INBOUND_PORT),
-        as_string(singbox_constants.SYSTEM_TPROXY_INBOUND_PORT),
-        as_string(singbox_constants.SYSTEM_DNS_INBOUND_PORT),
-        as_string(singbox_constants.DNS_INBOUND_PORT),
-        as_string(singbox_constants.WARP_PROFILES_MIXED_INBOUND_PORT),
-        as_string(singbox_constants.CLASH_API_CONTROLLER_PORT)
-    ])
-        owners["tcp/" + port] = owners["udp/" + port] = "a Forkop inbound";
-
-    for (let server in sections_by_type("server")) {
-        server = object_or_empty(server);
-        let protocol = option(server, "protocol", "vless");
-        if (!server_enabled(server) || protocol == "tailscale")
-            continue;
-
-        let name = section_name(server);
-        let port, transports;
-        if (protocol == "json_inbound") {
-            let inbound = core_common.parse_json(option(server, "inbound_json", ""));
-            if (type(inbound?.listen_port) != "int")
-                continue;
-            port = inbound.listen_port;
-            transports = runtime_servers.transports(inbound.type, inbound.network);
-        }
-        else {
-            let text = option(server, "listen_port", "");
-            if (match(text, /^[0-9]+$/) == null || int(text, 10) < 1 || int(text, 10) > 65535)
-                fail_validation("Server '" + server_label(name) + "' has an invalid listen port '" + text + "'");
-            port = int(text, 10);
-            transports = runtime_servers.listen_transports(server);
-        }
-        for (let transport in transports)
-            if (owners[transport + "/" + port] != null)
-                fail_validation("Server '" + server_label(name) + "' listens on " + transport + " port " + port + ", which is already used by " +
-                    owners[transport + "/" + port]);
-        for (let transport in transports)
-            owners[transport + "/" + port] = "server '" + server_label(name) + "'";
-    }
-}
-
-const PRIVATE_KEY_LABELS = [ "PRIVATE KEY", "RSA PRIVATE KEY", "EC PRIVATE KEY" ];
-
-function pem_labels(text) {
-    let labels = [];
-    let open = null;
-    let body = "";
-    for (let line in split(as_string(text), "\n")) {
-        line = trim(line);
-        let begin = match(line, /^-----BEGIN ([A-Za-z0-9 ]+)-----$/);
-        if (open == null && begin != null) {
-            open = begin[1];
-            body = "";
-        }
-        else if (open != null && line == "-----END " + open + "-----") {
-            if (length(b64dec(body) ?? "") > 0)
-                push(labels, open);
-            open = null;
-        }
-        else if (open != null && index(line, ":") < 0)
-            body += line;
-    }
-    return labels;
-}
-
-// A certificate the core cannot read takes the whole service down, so it is refused here.
-function validate_server_certificate(server, protocol, name) {
-    let material = runtime_servers.certificate_material(server, protocol);
-    if (runtime_servers.certificate_source(server, protocol) == "self_signed") {
-        if (material.certificate == "" || material.key == "")
-            fail_validation("Server '" + server_label(name) + "' has no self-signed certificate yet");
-        return;
-    }
-
-    if (material.certificate == "")
-        fail_validation("Server '" + server_label(name) + "' needs a certificate" + (protocol == "naive"
-            ? " a browser trusts: NaiveProxy clients refuse a self-signed one" : ""));
-    if (material.key == "")
-        fail_validation("Server '" + server_label(name) + "' needs the private key of its certificate");
-
-    for (let entry in [ [ "certificate", material.certificate ], [ "key", material.key ] ]) {
-        let value = trim(entry[1]);
-        if (runtime_servers.is_router_path(value)) {
-            let stat = fs.stat(value);
-            if (type(stat) != "object" || stat.type != "file" || stat.size == 0)
-                fail_validation("Server '" + server_label(name) + "' " + entry[0] + " file '" + value +
-                    "' does not exist. Point at a file that is there");
-            continue;
-        }
-        let labels = pem_labels(value);
-        if (entry[0] == "certificate" && index(labels, "CERTIFICATE") < 0)
-            fail_validation("Server '" + server_label(name) + "' has a certificate that is not a PEM certificate");
-        if (entry[0] == "key" && (index(value, "ENCRYPTED") >= 0 ||
-            length(filter(labels, (label) => index(PRIVATE_KEY_LABELS, label) >= 0)) != 1))
-            fail_validation("Server '" + server_label(name) + "' has a key that is not one unencrypted PEM private key");
-    }
-    if (runtime_servers.is_router_path(material.certificate) && trim(material.certificate) == trim(material.key))
-        fail_validation("Server '" + server_label(name) + "' uses the same file as its certificate and its key");
-}
-
-// Forkop never sets the inbound insecure flag, so a missing certificate fails the start.
-function validate_server_security(server, protocol, name) {
-    let security = runtime_servers.effective_security(server, protocol);
-
-    if (security == "tls")
-        validate_server_certificate(server, protocol, name);
-
-    if (security == "reality") {
-        // The generator borrows the handshake from the site the SNI names.
-        if (option(server, "tls_server_name", "") == "")
-            fail_validation("Server '" + server_label(name) + "' uses Reality and needs an SNI");
-        for (let field in [ [ "reality_private_key", "Reality private key" ], [ "reality_public_key", "Reality public key" ] ]) {
-            let key = option(server, field[0], "");
-            if (key == "")
-                fail_validation("'" + field[1] + "' of server '" + server_label(name) + "' is empty. Generate a Reality key pair");
-            if (match(key, /^[A-Za-z0-9_-]{43}$/) == null)
-                fail_validation("'" + field[1] + "' of server '" + server_label(name) + "' is not a Reality key");
-        }
-        let short_ids = list_option(server, "reality_short_id");
-        if (length(short_ids) == 0)
-            fail_validation("Server '" + server_label(name) + "' uses Reality and needs a short ID");
-        for (let short_id in short_ids) {
-            short_id = as_string(short_id);
-            if (match(short_id, /^([0-9a-fA-F]{2})+$/) == null)
-                fail_validation("Server '" + server_label(name) + "' short ID '" + short_id + "' must use an even number of hex digits");
-            if (length(short_id) > 16)
-                fail_validation("Server '" + server_label(name) + "' short ID '" + short_id + "' is longer than 16 hex digits");
-        }
-    }
-
-    if (protocol == "hysteria2" && option(server, "hysteria2_obfs_type", "") != "" &&
-        option(server, "hysteria2_obfs_password", "") == "")
-        fail_validation("Server '" + server_label(name) + "' enables obfuscation and needs an obfuscation password");
-
-    // A multiplexed VLESS client drops the flow before it authenticates, so the inbound refuses it.
-    if (protocol == "vless" && bool_option(server, "multiplex_enabled", false))
-        for (let client in connections.server_clients(server)) {
-            let flow = option(client, "flow", "");
-            if (flow != "" && flow != "none")
-                fail_validation("Server '" + server_label(name) + "' client '" + option(client, "name", "") +
-                    "' uses flow '" + flow + "' together with multiplex, which no client can connect with");
-        }
-}
-
-// Closed sets the core refuses while it builds the listener, which takes the whole service
-// down; each checked against `sing-box check`.
-const SERVER_ENUMS = [
-    [ "listen", "transport", [ "", "tcp", "raw", "ws", "grpc", "http", "httpupgrade", "xhttp" ], "Transport" ],
-    [ "xhttp", "transport_xhttp_mode", [ "", "auto", "packet-up", "stream-up", "stream-one" ], "XHTTP mode" ],
-    [ "shadowsocks", "shadowsocks_method", [ "2022-blake3-aes-128-gcm", "2022-blake3-aes-256-gcm",
-        "2022-blake3-chacha20-poly1305", "aes-128-gcm", "aes-192-gcm", "aes-256-gcm",
-        "chacha20-ietf-poly1305", "xchacha20-ietf-poly1305", "none" ], "Method" ],
-    [ "mieru", "mieru_transport", [ "TCP", "UDP" ], "Transport" ],
-    [ "naive", "naive_network", [ "", "tcp", "udp", "tcp_udp" ], "Network" ],
-    [ "trusttunnel", "trusttunnel_network", [ "", "tcp", "udp", "tcp_udp" ], "Network" ],
-    [ "tuic", "tuic_congestion_control", [ "", "cubic", "new_reno", "bbr" ], "Congestion control" ],
-    [ "hysteria2", "hysteria2_obfs_type", [ "", "salamander", "gecko" ], "Obfuscation" ],
-    [ "hysteria2", "hysteria2_bbr_profile", [ "", "standard", "conservative", "aggressive" ], "BBR profile" ],
-    [ "openvpn", "openvpn_network", [ "", "udp", "tcp" ], "Transport" ]
-];
-
-function server_enum_applies(scope, protocol, server) {
-    if (scope == "listen")
-        return runtime_servers.CLIENT_FIELDS[protocol] != null &&
-            protocol != "tailscale" && protocol != "json_inbound";
-    if (scope == "xhttp")
-        return option(server, "transport", "") == "xhttp";
-    return scope == protocol;
-}
-
-// The subnet address, and in IPv4 the broadcast address, cannot be the server's.
-function prefix_host_address(prefix) {
-    let parts = split(prefix, "/");
-    let bytes = iptoarr(parts[0]);
-    let bits = int(parts[1]);
-    let any = false, all = true;
-    for (let bit = bits; bit < length(bytes) * 8; bit++) {
-        let set = (bytes[bit >> 3] >> (7 - (bit & 7))) & 1;
-        any = any || set;
-        all = all && set;
-    }
-    return any && (length(bytes) == 16 || !all);
-}
-
-function validate_tunnel_subnets(server, name) {
-    let owner = "Server '" + server_label(name) + "'";
-    let families = {};
-    for (let pool in list_option(server, "tunnel_address")) {
-        pool = as_string(pool);
-        let family = core_ip.ip_family(pool);
-        if (!core_ip.valid_ip_cidr(pool))
-            fail_validation(owner + " has the tunnel subnet '" + pool + "', which is not an address with a prefix length");
-        if (families[family])
-            fail_validation(owner + " has more than one IPv" + family + " tunnel subnet");
-        families[family] = true;
-        let bits = int(split(pool, "/")[1]);
-        if (family == 4 ? (bits < 8 || bits > 30) : (bits < 64 || bits > 126))
-            fail_validation(owner + " tunnel subnet '" + pool + "' needs a prefix length from " +
-                (family == 4 ? "8 to 30" : "64 to 126"));
-        if (!prefix_host_address(pool))
-            fail_validation(owner + " tunnel subnet '" + pool +
-                "' has to name the address of the server, such as " + (family == 4 ? "10.8.0.1/24" : "fd00:8::1/64"));
-    }
-    if (!families[4])
-        fail_validation(owner + " needs an IPv4 tunnel subnet");
-    for (let route in list_option(server, "tunnel_routes"))
-        if (!core_ip.valid_ip_cidr(route))
-            fail_validation(owner + " routes '" + route + "', which is not a subnet");
-}
-
-function validate_wireguard_server(server, name, protocol) {
-    validate_tunnel_subnets(server, name);
-    let owner = "Server '" + server_label(name) + "'";
-    for (let field in [ "wireguard_private_key", "wireguard_public_key" ])
-        if (!valid_wireguard_key(option(server, field, "")))
-            fail_validation(owner + " has an invalid WireGuard key pair");
-
-    let subnets = list_option(server, "tunnel_address");
-    let own = map(subnets, (subnet) => split(subnet, "/")[0]);
-    let held = {};
-    for (let client in connections.server_clients(server)) {
-        let client_owner = owner + " client '" + option(client, "name", client[".name"]) + "'";
-        for (let field in [ "wireguard_private_key", "wireguard_public_key", "wireguard_pre_shared_key" ])
-            if (!valid_wireguard_key(option(client, field, "")))
-                fail_validation(client_owner + " has invalid WireGuard keys");
-        let addresses = list_option(client, "wireguard_address");
-        for (let subnet in subnets)
-            if (length(filter(addresses, (address) => core_ip.prefix_contains(subnet, split(address, "/")[0]))) != 1)
-                fail_validation(client_owner + " needs one address in the tunnel subnet '" + subnet + "'");
-        for (let address in addresses) {
-            let host = split(address, "/")[0];
-            if (!core_ip.valid_ip_cidr(address) || split(address, "/")[1] != (core_ip.ip_family(host) == 4 ? "32" : "128"))
-                fail_validation(client_owner + " has the tunnel address '" + address + "', which is not a single address");
-            if (index(own, host) >= 0 || held[host])
-                fail_validation(client_owner + " has the tunnel address '" + address + "', which " +
-                    (held[host] ? "client '" + held[host] + "' holds as well" : "is the server's own"));
-            held[host] = option(client, "name", client[".name"]);
-        }
-    }
-
-    if (protocol == "amneziawg") {
-        let problem = amnezia.problem(server, amnezia.KEYS);
-        if (problem != "")
-            fail_validation(owner + " " + problem);
-    }
-}
-
-function validate_openvpn_server(server, name) {
-    validate_tunnel_subnets(server, name);
-    for (let field in [ [ "openvpn_certificate", "certificate" ], [ "openvpn_key", "key" ], [ "openvpn_tls_crypt_key", "tls-crypt key" ] ])
-        if (option(server, field[0], "") == "")
-            fail_validation("OpenVPN server '" + server_label(name) + "' has no " + field[1] +
-                " yet");
-}
-
-function validate_server_values(server, protocol, name) {
-    for (let entry in SERVER_ENUMS) {
-        if (!server_enum_applies(entry[0], protocol, server))
-            continue;
-        let value = option(server, entry[1], "");
-        if (!contains(entry[2], value))
-            fail_validation("'" + entry[3] + "' of server '" + server_label(name) + "' has an unsupported value '" +
-                value + "'");
-    }
-
-    if (runtime_servers.CLIENT_FIELDS[protocol] != null && protocol != "tailscale" &&
-        protocol != "json_inbound") {
-        let listen = option(server, "listen", "::");
-        if (!core_ip.valid_ip(listen))
-            fail_validation("Server '" + server_label(name) + "' listens on '" + listen +
-                "', which is not an IP address");
-    }
-
-    if (protocol == "tailscale")
-        for (let route in list_option(server, "tailscale_advertise_routes"))
-            if (!core_ip.valid_ip_or_cidr(route))
-                fail_validation("Tailscale server '" + server_label(name) + "' advertises '" + route + "', which is not an address or a subnet");
-
-    if (protocol == "openvpn")
-        validate_openvpn_server(server, name);
-    if (protocol == "wireguard" || protocol == "amneziawg")
-        validate_wireguard_server(server, name, protocol);
-
-    if (protocol == "hysteria2") {
-        // sing-box picks the masquerade mode from the URL scheme and refuses any other.
-        let masquerade = option(server, "hysteria2_masquerade", "");
-        if (masquerade != "" && match(masquerade, /^(https?|file):\/\//) == null)
-            fail_validation("Server '" + server_label(name) + "' masquerade '" + masquerade +
-                "' must start with https://, http:// or file://");
-        for (let field in [ [ "hysteria2_up_mbps", "Max speed to a client, Mbps" ],
-            [ "hysteria2_down_mbps", "Max speed from a client, Mbps" ] ]) {
-            let value = option(server, field[0], "");
-            if (value != "" && match(value, /^[0-9]+$/) == null)
-                fail_validation("'" + field[1] + "' of server '" + server_label(name) + "' is '" + value +
-                    "', not a whole number of megabits");
-        }
-    }
-}
-
-function validate_server_clients_and_ports() {
-    validate_server_listen_ports();
-
-    for (let server in sections_by_type("server")) {
-        server = object_or_empty(server);
-        if (!server_enabled(server))
-            continue;
-
-        let protocol = option(server, "protocol", "vless");
-        if (SERVER_CLIENT_FIELDS[protocol] == null)
-            fail_validation("Server '" + server_label(server) + "' uses unsupported protocol '" + protocol + "'");
-
-        validate_server_clients(server, protocol, section_name(server));
-        validate_server_security(server, protocol, section_name(server));
-        validate_server_values(server, protocol, section_name(server));
-    }
-}
-
-function validate_server_routing_sections(sections) {
-    for (let server in sections_by_type("server")) {
-        server = object_or_empty(server);
-        if (!server_enabled(server))
-            continue;
-
-        let name = section_name(server);
-        if (option(server, "protocol", "") == "tailscale" &&
-            bool_option(server, "tailscale_detour_enabled", false)) {
-            let detour_name = option(server, "tailscale_detour_section", "");
-            if (detour_name == "")
-                fail_validation("Tailscale server '" + server_label(name) + "' has no control-plane section selected");
-            if (detour_name == name)
-                fail_validation("Tailscale server '" + server_label(name) + "' cannot use itself for the control plane");
-            outbound_section(sections, "The control plane of Tailscale server '" + server_label(name) + "'", detour_name);
-        }
-        let mode = option(server, "routing_mode", "rules");
-        if (!contains([ "rules", "direct", "section" ], mode))
-            fail_validation("Server '" + server_label(name) + "' uses unsupported routing mode '" + mode + "'");
-
-        if (mode != "section")
-            continue;
-
-        let target_name = option(server, "routing_section", "");
-        if (target_name == "")
-            fail_validation("Server '" + server_label(name) + "' uses selected-section routing, but no routing section is selected");
-
-        outbound_section(sections, "Server '" + server_label(name) + "'", target_name);
-    }
-}
-
 function validate_native_rule_set_update_settings(settings) {
     if (!bool_option(settings, "list_update_enabled", true))
         return;
@@ -1623,28 +1157,9 @@ function refuse_without(feature, core_tags, what) {
         fail_validation(what + ", but " + reason + ". Disable it or install a sing-box build that has it");
 }
 
-// The core refuses to start on a server, tunnel, link or DNS server of a type it was built
+// The core refuses to start on a tunnel, link or DNS server of a type it was built
 // without; a subscription's servers it skips and logs instead.
-function validate_core_features(settings, sections, servers, core_tags) {
-    for (let server in servers) {
-        if (!server_enabled(server))
-            continue;
-        let name = section_name(server);
-        let protocol = option(server, "protocol", "vless");
-        let feature = features.type_feature(runtime_servers.is_endpoint(protocol) ? "endpoint" : "inbound",
-            runtime_servers.core_type(protocol));
-        if (feature != "")
-            refuse_without(feature, core_tags, "Server '" + server_label(name) + "' uses " + protocol);
-        if (runtime_servers.effective_security(server, protocol) == "reality")
-            refuse_without("utls", core_tags, "Server '" + server_label(name) + "' uses Reality");
-        if ((protocol == "naive" || protocol == "trusttunnel") &&
-            index(runtime_servers.listen_transports(server), "udp") >= 0)
-            refuse_without("quic", core_tags, "Server '" + server_label(name) + "' serves " +
-                (protocol == "naive" ? "NaiveProxy" : "TrustTunnel") + " over QUIC");
-        if (runtime_servers.serves_xhttp_http3(server))
-            refuse_without("quic", core_tags, "Server '" + server_label(name) + "' serves XHTTP over HTTP/3");
-    }
-
+function validate_core_features(settings, sections, core_tags) {
     for (let section in sections) {
         if (!section_enabled(section) || !connections.is_connections_action(rule_action(section)))
             continue;
@@ -1695,13 +1210,11 @@ function validate_core_features(settings, sections, servers, core_tags) {
 function validate_runtime_config(context) {
     let settings = settings_section();
     let sections = sections_by_type("section");
-    let servers = sections_by_type("server");
 
     let display_names = {};
     validate_runtime_display_names(sections, "Section", display_names);
-    validate_runtime_display_names(servers, "Server", display_names);
     if (context.core_tags != null)
-        validate_core_features(settings, sections, servers, context.core_tags);
+        validate_core_features(settings, sections, context.core_tags);
     validate_runtime_mark_ranges_context(context);
     validate_dns_settings(settings, sections, context);
     validate_native_rule_set_update_settings(settings);
@@ -1715,9 +1228,6 @@ function validate_runtime_config(context) {
 
     validate_cascades(sections);
     validate_subscription_download_sections(sections, context);
-    validate_json_inbound_values();
-    validate_server_routing_sections(sections);
-    validate_server_clients_and_ports();
 
     for (let section in sections) {
         validate_subscription_tags(section);

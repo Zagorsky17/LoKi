@@ -4,7 +4,6 @@ export enum DIAGNOSTICS_CHECKS {
   DNS = 'DNS',
   TRAFFIC = 'TRAFFIC',
   SECTIONS = 'SECTIONS',
-  SERVERS = 'SERVERS',
 }
 
 export const DIAGNOSTICS_CHECKS_ORDER = [
@@ -12,7 +11,6 @@ export const DIAGNOSTICS_CHECKS_ORDER = [
   DIAGNOSTICS_CHECKS.DNS,
   DIAGNOSTICS_CHECKS.TRAFFIC,
   DIAGNOSTICS_CHECKS.SECTIONS,
-  DIAGNOSTICS_CHECKS.SERVERS,
 ];
 
 export function diagnosticsCheckTitle(code: DIAGNOSTICS_CHECKS) {
@@ -25,7 +23,5 @@ export function diagnosticsCheckTitle(code: DIAGNOSTICS_CHECKS) {
       return _('Traffic');
     case DIAGNOSTICS_CHECKS.SECTIONS:
       return _('Sections');
-    case DIAGNOSTICS_CHECKS.SERVERS:
-      return _('VPN server');
   }
 }

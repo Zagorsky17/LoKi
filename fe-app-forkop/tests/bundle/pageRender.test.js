@@ -126,7 +126,6 @@ const SNAPSHOT = {
 
 const EXPECTED_TABS = [
   'section',
-  'server',
   'settings',
   'diagnostic',
   'dashboard',
@@ -151,6 +150,8 @@ describe('the shipped page', () => {
     }
     harness.operations.length = 0;
 
+    expect(Object.keys(harness.bundle)).not.toContain('createServerContent');
+    expect(Object.keys(harness.bundle)).not.toContain('configureServerSection');
     const view = harness.bundle.ForkopView;
     expect(
       typeof view?.render,

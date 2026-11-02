@@ -41,7 +41,7 @@ import {
 } from './coreUsage';
 import type { CoreUsageReading } from './coreUsage';
 import { resolveOutboundProxyLink } from './resolveOutboundProxyLink';
-import { showTailscaleDetailsModal } from '../servers/tailscale';
+import { showTailscaleDetailsModal } from './tailscale';
 import { E } from '../../../helpers/element';
 
 const SECTIONS_REFRESH_INTERVAL_MS = 10000;
@@ -1535,7 +1535,7 @@ function handleShowFallbackInfo(outbound: Forkop.Outbound) {
   );
 }
 
-// The Servers tab's Tailscale dialog, which polls the core itself rather than follow the sections.
+// The Tailscale dialog polls the core while open.
 function handleShowTailscaleInfo(outbound: Forkop.Outbound) {
   closeDetailsModal();
   showTailscaleDetailsModal(

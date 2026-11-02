@@ -28,33 +28,27 @@ function removed_by(data) {
     return sort(removed);
 }
 
-t.test("a server and a tunnel keep their state under names the generator gives them", () => {
+t.test("a tunnel keeps its state under the name the generator gives it", () => {
     let root = states([]);
-    t.eq(tailscale.server_state_directory("server_1"), root + "/server_1");
-    t.eq(tailscale.server_state_directory("odd name"), root + "/odd_name");
     t.eq(tailscale.tunnel_state_directory("vpn", "tunnel_2"), root + "/vpn-tunnel_2");
 });
 
-t.test("the identity of a removed server or tunnel goes, a disabled one keeps its own", () => {
-    states([ "kept_server", "off_server", "gone_server", "vpn-tun_1", "vpn-gone", "custom" ]);
+t.test("the identity of a removed tunnel goes, a disabled one keeps its own", () => {
+    states([ "vpn-tun_1", "vpn-off", "vpn-gone", "custom" ]);
     t.eq(removed_by({
         settings: {},
-        server: [
-            { ".name": "kept_server", protocol: "tailscale" },
-            { ".name": "off_server", protocol: "tailscale", enabled: "0" },
-            { ".name": "vless", protocol: "vless" }
-        ],
         tunnel: [
             { ".name": "tun_1", section: "vpn", kind: "tailscale" },
+            { ".name": "off", section: "vpn", kind: "tailscale", enabled: "0" },
             { ".name": "tun_json", section: "vpn", kind: "json",
                 endpoint_json: sprintf("{\"type\":\"tailscale\",\"state_directory\":\"%s/custom/\"}", tailscale.paths.state_root) }
         ]
-    }), [ "gone_server", "vpn-gone" ]);
+    }), [ "vpn-gone" ]);
 });
 
 t.test("a configuration without its settings section is not read as one without Tailscale", () => {
-    states([ "kept_server" ]);
-    t.eq(removed_by({ server: [] }), []);
+    states([ "vpn-tun_1" ]);
+    t.eq(removed_by({ tunnel: [] }), []);
 });
 
 t.done();

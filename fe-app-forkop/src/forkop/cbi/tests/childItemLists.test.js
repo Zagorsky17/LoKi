@@ -5,7 +5,6 @@ import {
   installLuciStubs,
 } from '../../../helpers/tests/luciStubs';
 import { createSectionContent } from '../../tabs/sections';
-import { addClientListOption } from '../../tabs/servers/form/clients';
 import { childPendingSettingsStore } from '../itemSettings';
 
 const SECTIONS = {
@@ -24,8 +23,6 @@ const SECTIONS = {
   },
   urltest_stored: { '.type': 'urltest', section: 'vpn', name: 'Fastest' },
   group_stored: { '.type': 'fallback_group', section: 'vpn', name: 'Backup' },
-  srv: { '.type': 'server', label: 'Home', protocol: 'vless' },
-  client_stored: { '.type': 'server_client', server: 'srv', name: 'Laptop' },
 };
 
 function optionNamed(build, name) {
@@ -37,9 +34,7 @@ function optionNamed(build, name) {
 }
 
 function listOption(name) {
-  return name === 'clients'
-    ? optionNamed(addClientListOption, name)
-    : optionNamed(createSectionContent, name);
+  return optionNamed(createSectionContent, name);
 }
 
 function hasDialog(option, owner, value) {
@@ -51,7 +46,6 @@ const LISTS = [
   ['interfaces', 'iface_stored', 'eth1', 'vpn'],
   ['urltest', 'urltest_stored', 'Fastest', 'vpn'],
   ['fallback_group', 'group_stored', 'Backup', 'vpn'],
-  ['clients', 'client_stored', 'Laptop', 'srv'],
 ];
 
 describe('child item lists', () => {
@@ -78,37 +72,34 @@ describe('child item lists', () => {
     },
   );
 
-  it.each([
-    ['urltest', 'vpn'],
-    ['clients', 'srv'],
-  ])('%s hands a draft entry the settings its dialog took', (name, owner) => {
-    const option = listOption(name);
-    childPendingSettingsStore(option, owner).Draft = {
-      name: 'Draft',
-      staged: 'yes',
-    };
+  it.each([['urltest', 'vpn']])(
+    '%s hands a draft entry the settings its dialog took',
+    (name, owner) => {
+      const option = listOption(name);
+      childPendingSettingsStore(option, owner).Draft = {
+        name: 'Draft',
+        staged: 'yes',
+      };
 
-    expect(option.stagedChildSettings(owner, 'Draft')).toEqual({
-      name: 'Draft',
-      staged: 'yes',
-    });
-    expect(hasDialog(option, owner, 'Draft')).toBe(true);
-  });
+      expect(option.stagedChildSettings(owner, 'Draft')).toEqual({
+        name: 'Draft',
+        staged: 'yes',
+      });
+      expect(hasDialog(option, owner, 'Draft')).toBe(true);
+    },
+  );
 
-  it.each([
-    ['urltest', 'vpn'],
-    ['clients', 'srv'],
-  ])('%s shows the name a draft dialog holds', (name, owner) => {
-    const option = listOption(name);
-    childPendingSettingsStore(option, owner).Renamed = { name: 'Renamed' };
+  it.each([['urltest', 'vpn']])(
+    '%s shows the name a draft dialog holds',
+    (name, owner) => {
+      const option = listOption(name);
+      childPendingSettingsStore(option, owner).Renamed = { name: 'Renamed' };
 
-    expect(option.inputValueForItem(owner, 'Renamed')).toBe('Renamed');
-  });
+      expect(option.inputValueForItem(owner, 'Renamed')).toBe('Renamed');
+    },
+  );
 
-  it.each([
-    ['urltest', 'urltest_stored', 'Fastest', 'vpn'],
-    ['clients', 'client_stored', 'Laptop', 'srv'],
-  ])(
+  it.each([['urltest', 'urltest_stored', 'Fastest', 'vpn']])(
     '%s shows the stored name of a saved entry',
     (name, itemId, shown, owner) => {
       expect(listOption(name).inputValueForItem(owner, itemId)).toBe(shown);
@@ -124,7 +115,6 @@ describe('child item lists', () => {
   it.each([
     ['urltest', 'vpn'],
     ['fallback_group', 'vpn'],
-    ['clients', 'srv'],
   ])('%s offers no dialog for an entry with no text', (name, owner) => {
     expect(hasDialog(listOption(name), owner, '')).toBe(false);
   });
@@ -140,7 +130,6 @@ describe('child item lists', () => {
     ['subscription_url', 'vpn'],
     ['interfaces', 'vpn'],
     ['urltest', 'vpn'],
-    ['clients', 'srv'],
   ])('%s forgets what it staged once the list is written', (name, owner) => {
     const option = listOption(name);
     childPendingSettingsStore(option, owner).Draft = { name: 'Draft' };

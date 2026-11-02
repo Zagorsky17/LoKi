@@ -6,7 +6,7 @@ import {
   FORKOP_SERVICE_OBJECT,
 } from './forkopWaitTransport';
 
-type CoreTypeKind = 'outbound' | 'inbound' | 'endpoint';
+type CoreTypeKind = 'outbound' | 'endpoint';
 
 // What the installed sing-box can do, as singbox/features.uc reads it. Until the router answers,
 // and without a core, everything counts as available: the router still refuses what it cannot run.

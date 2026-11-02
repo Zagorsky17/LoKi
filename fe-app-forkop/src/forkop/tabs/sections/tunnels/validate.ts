@@ -178,6 +178,9 @@ export function validateTunnelSettings(
   if (!endpoint) {
     return message.fixSettings();
   }
+  if (`${endpoint.type || ''}`.trim().toLowerCase() === 'openvpn-server') {
+    return _('VPN server endpoints are not supported');
+  }
   if (kind === 'json') {
     return typeof endpoint.tag === 'string' && endpoint.tag.trim()
       ? true

@@ -33,7 +33,4 @@ features:
   - title: Fallback
     details: Запасные серверы, которые включаются сами, если основной упал
     link: /connections/fallback
-  - title: VPN-сервер
-    details: Роутер как VPN для телефона и ноутбука вне дома
-    link: /servers/
 ---

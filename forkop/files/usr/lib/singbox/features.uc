@@ -42,14 +42,9 @@ const OUTBOUND_TYPES = {
     vmess: "vmess", snell: "snell", ssh: "ssh", shadowtls: "shadowtls", tor: "tor",
     anytls: "anytls", mieru: "mieru"
 };
-const INBOUND_TYPES = {
-    hysteria: "quic", hysteria2: "quic", tuic: "quic",
-    naive: "naive", trusttunnel: "trusttunnel",
-    vmess: "vmess", snell: "snell", shadowtls: "shadowtls", anytls: "anytls", mieru: "mieru"
-};
 const ENDPOINT_TYPES = {
     wireguard: "wireguard", amneziawg: "wireguard", warp: "wireguard",
-    tailscale: "tailscale", "openvpn-client": "openvpn", "openvpn-server": "openvpn",
+    tailscale: "tailscale", "openvpn-client": "openvpn",
     openconnect: "openconnect"
 };
 
@@ -141,7 +136,7 @@ function core_problem(present) {
 }
 
 function type_feature(kind, type_name) {
-    let table = kind == "inbound" ? INBOUND_TYPES : kind == "endpoint" ? ENDPOINT_TYPES : OUTBOUND_TYPES;
+    let table = kind == "endpoint" ? ENDPOINT_TYPES : OUTBOUND_TYPES;
     return table[lc(trim("" + (type_name ?? "")))] ?? "";
 }
 
@@ -264,14 +259,14 @@ function report(present) {
         known: current != null,
         tags: current ?? [],
         features,
-        types: { outbound: OUTBOUND_TYPES, inbound: INBOUND_TYPES, endpoint: ENDPOINT_TYPES },
+        types: { outbound: OUTBOUND_TYPES, endpoint: ENDPOINT_TYPES },
         // The type each share link scheme dials, so the page reads a link the way this does.
         links: singbox_constants.LINK_SCHEME_OUTBOUND_TYPES
     };
 }
 
 return {
-    paths, REQUIRED, FEATURES, OUTBOUND_TYPES, INBOUND_TYPES, ENDPOINT_TYPES,
+    paths, REQUIRED, FEATURES, OUTBOUND_TYPES, ENDPOINT_TYPES,
     parse_tags, tags, version, available, missing_tags, unavailable_reason, core_problem, type_feature, link_features,
     link_uses_xhttp_http3, report
 };

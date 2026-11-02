@@ -1,4 +1,3 @@
-# Modified for LoKi on 2026-11-01: DNS settings and diagnostic report privacy.
 # RU translations for FORKOP package.
 # Copyright (C) 2026 THE FORKOP COPYRIGHT HOLDER
 # This file is distributed under the same license as the FORKOP package.
@@ -8,8 +7,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: FORKOP\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-01 01:04+0300\n"
-"PO-Revision-Date: 2026-11-01 01:04+0300\n"
+"POT-Creation-Date: 2026-11-02 12:59+0300\n"
+"PO-Revision-Date: 2026-11-02 12:59+0300\n"
 "Last-Translator: ushan0v\n"
 "Language-Team: none\n"
 "Language: ru\n"
@@ -60,8 +59,8 @@ msgstr "%s не находит %s"
 msgid "%s does not answer"
 msgstr "%s не отвечает"
 
-msgid "%s does not resolve"
-msgstr "%s не резолвится"
+msgid "%s error messages found in the last 60 seconds"
+msgstr "Найдено сообщений об ошибках за последние 60 секунд: %s"
 
 msgid "%s holds a configuration of Forkop %s, which is brought to %s as an update would bring it."
 msgstr "В файле %s — конфигурация Forkop %s. Её переведут на %s, как при обновлении."
@@ -78,14 +77,8 @@ msgstr "%s уже входит в %s"
 msgid "%s is already in %s: remove it first"
 msgstr "%s уже входит в %s. Сначала уберите его"
 
-msgid "%s is closed in the firewall"
-msgstr "%s закрыт в файерволе"
-
 msgid "%s is empty"
 msgstr "%s: пусто"
-
-msgid "%s is not a public address"
-msgstr "%s — не публичный адрес"
 
 msgid "%s is PKCS#12: export it as PEM with openssl pkcs12 -in %s -out client.pem -nodes"
 msgstr "%s — контейнер PKCS#12, экспортируйте его в PEM: openssl pkcs12 -in %s -out client.pem -nodes"
@@ -93,17 +86,11 @@ msgstr "%s — контейнер PKCS#12, экспортируйте его в 
 msgid "%s is set by the cascade connection"
 msgstr "%s задаётся каскадным подключением"
 
-msgid "%s leads to %s, the router has %s"
-msgstr "%s ведёт на %s, а у роутера %s"
-
 msgid "%s of %s free"
 msgstr "свободно %s из %s"
 
 msgid "%s takes DNS queries before Forkop"
 msgstr "%s забирает DNS-запросы раньше Forkop"
-
-msgid "%s waiting for approval in the console"
-msgstr "%s ждёт одобрения в консоли"
 
 msgid "%s, direct %s"
 msgstr "%s, напрямую %s"
@@ -122,9 +109,6 @@ msgstr "%s: нужно целое число"
 
 msgid "%s: unsupported protocol %s"
 msgstr "%s: протокол %s не поддерживается"
-
-msgid "+ Add client"
-msgstr "+ Добавить клиента"
 
 msgid "+ Add fallback"
 msgstr "+ Добавить Fallback"
@@ -165,14 +149,8 @@ msgstr "Пользовательский объект sing-box outbound"
 msgid "A JSON object merged into every server. Parameters a server does not support are skipped, matching parameters are overwritten"
 msgstr "JSON-объект, добавляемый к каждому серверу. Неподдерживаемые параметры пропускаются, совпадающие перезаписываются"
 
-msgid "A link cannot be built from these settings."
-msgstr "Из этих настроек ссылку собрать нельзя."
-
 msgid "A path only with https:// and h3://"
 msgstr "Путь допустим только с https:// и h3://"
-
-msgid "A routing mode of this client's own instead of the server's"
-msgstr "Свой режим маршрутизации для этого клиента вместо режима сервера"
 
 msgid "A session signed in elsewhere, such as after a browser sign-in. When the server refuses it, the login above is used"
 msgstr "Сессия, в которую вошли в другом месте, например после входа через браузер. Если сервер её не примет, используется логин выше"
@@ -216,9 +194,6 @@ msgstr "Активные"
 msgid "Add"
 msgstr "Добавить"
 
-msgid "Add a client to this server to get a link."
-msgstr "Добавьте клиента, чтобы получить ссылку."
-
 msgid "Add a connection URI, subscription, interface, tunnel or JSON outbound"
 msgstr "Добавьте URI подключения, подписку, интерфейс, туннель или JSON outbound"
 
@@ -230,9 +205,6 @@ msgstr "Добавить секцию"
 
 msgid "Add a section to configure routing"
 msgstr "Добавьте секцию чтобы настроить маршрутизацию"
-
-msgid "Add a server inbound"
-msgstr "Добавить серверный inbound"
 
 msgid "Add a username, a client certificate or a session cookie"
 msgstr "Добавьте имя пользователя, сертификат клиента или cookie сессии"
@@ -279,9 +251,6 @@ msgstr "Кроме выбранных"
 msgid "All main DNS servers use the selected protocol. Enter https://host/path for DoH, tls://host for DoT, or an IP address for UDP."
 msgstr "Все основные DNS-серверы используют выбранный протокол. Для DoH укажите https://host/path, для DoT — tls://host, для UDP — IP-адрес."
 
-msgid "All of the clients' traffic goes to the selected routing mode"
-msgstr "Весь трафик клиентов уходит в выбранный режим маршрутизации"
-
 msgid "All remaining"
 msgstr "Все оставшиеся"
 
@@ -294,20 +263,11 @@ msgstr "Все серверы"
 msgid "All traffic from the device is forced through the section"
 msgstr "Весь трафик устройства принудительно пойдёт через секцию"
 
-msgid "All traffic through the server"
-msgstr "Весь трафик через сервер"
-
 msgid "Allowed IPs"
 msgstr "Разрешённые IP-адреса"
 
-msgid "ALPN"
-msgstr "ALPN"
-
 msgid "Also deflate"
 msgstr "Также deflate"
-
-msgid "An even number of hex digits, up to 16"
-msgstr "Чётное число hex-цифр, не больше 16"
 
 msgid "An OpenWrt network interface"
 msgstr "Сетевой интерфейс OpenWrt"
@@ -336,23 +296,17 @@ msgstr "Применение..."
 msgid "Approved"
 msgstr "Одобрено"
 
+msgid "At least %s error messages in the last 60 seconds; log data incomplete"
+msgstr "Не менее %s сообщений об ошибках за последние 60 секунд; данные журнала неполны"
+
 msgid "At most %d KB, this is %d KB"
 msgstr "Не больше %d КБ, здесь %d КБ"
-
-msgid "At most one IPv4 subnet"
-msgstr "Не больше одной подсети IPv4"
-
-msgid "At most one IPv6 subnet"
-msgstr "Не больше одной подсети IPv6"
 
 msgid "auth in the profile"
 msgstr "auth в профиле"
 
 msgid "Auth token"
 msgstr "Токен авторизации"
-
-msgid "Authentication"
-msgstr "Аутентификация"
 
 msgid "Authorization key"
 msgstr "Ключ авторизации"
@@ -372,14 +326,8 @@ msgstr "Доступны: %s"
 msgid "Back"
 msgstr "Назад"
 
-msgid "BBR profile"
-msgstr "Профиль BBR"
-
 msgid "Before a letter, write ${1} instead of $1"
 msgstr "Перед буквой пишите ${1} вместо $1"
-
-msgid "behind the provider's NAT (%s), unreachable from the internet"
-msgstr "за NAT провайдера (%s), из интернета недоступен"
 
 msgid "Bootstrap DNS"
 msgstr "Bootstrap DNS"
@@ -395,6 +343,9 @@ msgstr "Bootstrap DNS-серверы"
 
 msgid "Both directions"
 msgstr "Оба направления"
+
+msgid "Browser check did not confirm FakeIP; router results are shown separately"
+msgstr "Проверка браузера не подтвердила FakeIP; результаты роутера показаны отдельно"
 
 msgid "Browser sign-in"
 msgstr "Вход через браузер"
@@ -507,26 +458,14 @@ msgstr "Запрос к Clash API был отправлен, но ответ п�
 msgid "Click a node to pin it, and click it again to unpin it."
 msgstr "Нажмите на узел, чтобы закрепить его, и ещё раз, чтобы открепить."
 
-msgid "Client"
-msgstr "Клиент"
-
 msgid "Client certificate"
 msgstr "Сертификат клиента"
-
-msgid "Client fingerprint"
-msgstr "Отпечаток клиента"
 
 msgid "Client key"
 msgstr "Ключ клиента"
 
 msgid "Client version"
 msgstr "Версия клиента"
-
-msgid "Client: %s"
-msgstr "Клиент: %s"
-
-msgid "Clients"
-msgstr "Клиенты"
 
 msgid "Close"
 msgstr "Закрыть"
@@ -581,9 +520,6 @@ msgstr "Конфигурация"
 
 msgid "Conflicts"
 msgstr "Конфликты"
-
-msgid "Congestion control"
-msgstr "Управление перегрузкой"
 
 msgid "Connect through"
 msgstr "Подключаться через"
@@ -648,20 +584,17 @@ msgstr "Скопировать ссылку прокси"
 msgid "Copy the output"
 msgstr "Копировать вывод"
 
-msgid "Copy the profile"
-msgstr "Скопировать профиль"
-
 msgid "Core"
 msgstr "Ядро"
+
+msgid "Core log"
+msgstr "Журнал ядра"
 
 msgid "Could not disable autostart"
 msgstr "Не удалось отключить автостарт"
 
 msgid "Could not enable autostart"
 msgstr "Не удалось включить автостарт"
-
-msgid "Could not generate a Reality key pair"
-msgstr "Не удалось сгенерировать пару ключей Reality"
 
 msgid "Could not get the check results"
 msgstr "Не удалось получить результаты проверки"
@@ -696,9 +629,6 @@ msgstr "data-ciphers в профиле"
 msgid "Dead peer detection, seconds"
 msgstr "Проверка связи (DPD), секунд"
 
-msgid "Default"
-msgstr "По умолчанию"
-
 msgid "Default (1.2)"
 msgstr "По умолчанию (1.2)"
 
@@ -717,9 +647,6 @@ msgstr "По умолчанию (SHA1)"
 msgid "Delay in milliseconds before reloading Forkop after interface UP"
 msgstr "Задержка в миллисекундах перед перезапуском Forkop после поднятия интерфейса"
 
-msgid "Delete"
-msgstr "Удалить"
-
 msgid "Device"
 msgstr "Устройство"
 
@@ -731,9 +658,6 @@ msgstr "Имя устройства"
 
 msgid "Device or IP"
 msgstr "Устройство или IP"
-
-msgid "device waiting for approval in the console"
-msgstr "устройство ждёт одобрения в консоли"
 
 msgid "Devices"
 msgstr "Устройства"
@@ -795,9 +719,6 @@ msgstr "Не проверять сертификат сервера"
 msgid "Does not expire"
 msgstr "Без срока"
 
-msgid "does not listen on %s"
-msgstr "не слушает %s"
-
 msgid "DoH (HTTPS)"
 msgstr "DoH (HTTPS)"
 
@@ -836,9 +757,6 @@ msgstr "Скачать найденное"
 
 msgid "Download the built-in lists and remote rule sets through the selected section"
 msgstr "Скачивать встроенные списки и удалённые наборы правил через выбранную секцию"
-
-msgid "Download the profile"
-msgstr "Скачать профиль"
 
 msgid "Download the subscription through another section instead of directly"
 msgstr "Загружать подписку через другую секцию, а не напрямую"
@@ -885,9 +803,6 @@ msgstr "Включено"
 msgid "Encrypted DNS protocol"
 msgstr "Протокол шифрования DNS"
 
-msgid "Ephemeral node"
-msgstr "Временный узел"
-
 msgid "Exclude by pattern"
 msgstr "Исключить по шаблону"
 
@@ -909,9 +824,6 @@ msgstr "IP выхода"
 msgid "Exit node"
 msgstr "Выходной узел"
 
-msgid "exit node waiting for approval in the console"
-msgstr "выходной узел ждёт одобрения в консоли"
-
 msgid "Exit through"
 msgstr "Выход через"
 
@@ -932,6 +844,12 @@ msgstr "Истекает"
 
 msgid "Expires %s"
 msgstr "Истекает %s"
+
+msgid "External list %s may overlap %s; compare domains and subnets before removing a list"
+msgstr "Внешний список %s может пересекаться с %s; сравните домены и подсети перед удалением списка"
+
+msgid "External list %s uses the same source as %s; review the section lists"
+msgstr "Внешний список %s использует тот же источник, что и %s; проверьте списки секции"
 
 msgid "failed"
 msgstr "ошибка"
@@ -1005,9 +923,6 @@ msgstr "Настройки Fallback"
 msgid "Fallback: %s"
 msgstr "Fallback: %s"
 
-msgid "Fill in the credentials of this client to get a link."
-msgstr "Заполните учётные данные клиента, чтобы получить ссылку."
-
 msgid "Finding the exit…"
 msgstr "Определяем выход…"
 
@@ -1016,9 +931,6 @@ msgstr "Исправьте настройки"
 
 msgid "Fixed addresses for domains in the hosts format"
 msgstr "Постоянные адреса для доменов в формате hosts"
-
-msgid "Flow"
-msgstr "Flow"
 
 msgid "For a field the server asks besides the login, as openconnect --form-entry takes it: FORM:NAME=VALUE"
 msgstr "Для поля, которое сервер спрашивает помимо логина, в формате openconnect --form-entry: ФОРМА:ИМЯ=ЗНАЧЕНИЕ"
@@ -1041,23 +953,14 @@ msgstr "Конфигурация Forkop"
 msgid "Forkop diagnostic report"
 msgstr "Отчёт диагностики Forkop"
 
-msgid "Forkop DNS"
-msgstr "DNS Forkop"
-
 msgid "Forkop Error"
 msgstr "Ошибка Forkop"
 
 msgid "Forkop ignores these devices entirely: their traffic is not routed and their DNS is not captured"
 msgstr "Forkop полностью игнорирует эти устройства, их трафик не маршрутизируется, а DNS не перехватывается"
 
-msgid "Forkop service proxy"
-msgstr "служебный прокси Forkop"
-
 msgid "Forkop system logs"
 msgstr "Системные логи Forkop"
-
-msgid "Forkop transparent proxy"
-msgstr "прозрачный прокси Forkop"
 
 msgid "form-entry: format FORM:NAME=VALUE"
 msgstr "form-entry: формат ФОРМА:ИМЯ=ЗНАЧЕНИЕ"
@@ -1079,9 +982,6 @@ msgstr "Формат: 30m, 12h, 1d"
 
 msgid "Format: 80 or 1000-2000"
 msgstr "Формат: 80 или 1000-2000"
-
-msgid "Format: file:///www"
-msgstr "Формат: file:///www"
 
 msgid "Format: FORM:NAME=VALUE"
 msgstr "Формат: ФОРМА:ИМЯ=ЗНАЧЕНИЕ"
@@ -1110,9 +1010,6 @@ msgstr "Из файла…"
 msgid "Generate"
 msgstr "Сгенерировать"
 
-msgid "Generate a key pair"
-msgstr "Сгенерировать пару ключей"
-
 msgid "Generate parameters"
 msgstr "Сгенерировать параметры"
 
@@ -1133,9 +1030,6 @@ msgstr "переход на главную LuCI"
 
 msgid "Group name"
 msgstr "Имя группы"
-
-msgid "gRPC service"
-msgstr "gRPC-сервис"
 
 msgid "H1-H4 must not overlap"
 msgstr "H1-H4 не должны пересекаться"
@@ -1181,9 +1075,6 @@ msgstr "Через сколько остановить проверки, есл�
 
 msgid "How often every server of the group is checked"
 msgstr "Как часто проверяются все серверы группы"
-
-msgid "HTTP"
-msgstr "HTTP"
 
 msgid "HTTP error"
 msgstr "Ошибка HTTP"
@@ -1386,12 +1277,6 @@ msgstr "Jmin больше Jmax"
 msgid "JSON endpoint"
 msgstr "JSON endpoint"
 
-msgid "JSON inbound"
-msgstr "JSON inbound"
-
-msgid "JSON Inbound"
-msgstr "JSON Inbound"
-
 msgid "JSON outbound"
 msgstr "JSON outbound"
 
@@ -1415,9 +1300,6 @@ msgstr "Смена ключей, секунд"
 
 msgid "key without cert"
 msgstr "key без cert"
-
-msgid "LAN subnets that tailnet devices can reach"
-msgstr "LAN-подсети, доступные устройствам сети"
 
 msgid "Last online %s"
 msgstr "Последний раз в сети %s"
@@ -1446,9 +1328,6 @@ msgstr "Лицензионный ключ"
 msgid "Line breaks are not allowed"
 msgstr "Переносы строк недопустимы"
 
-msgid "Link"
-msgstr "Ссылка"
-
 msgid "Linux, 32-bit"
 msgstr "Linux, 32-бит"
 
@@ -1458,11 +1337,8 @@ msgstr "Linux, 64-бит"
 msgid "List update interval"
 msgstr "Период обновления списков"
 
-msgid "Listen address"
-msgstr "Адрес прослушивания"
-
-msgid "Listen port"
-msgstr "Порт"
+msgid "Lists in %s"
+msgstr "Списки в %s"
 
 msgid "Lists updated"
 msgstr "Списки успешно обновлены"
@@ -1491,6 +1367,9 @@ msgstr "Локальный порт"
 msgid "Log"
 msgstr "Журнал"
 
+msgid "Log data unavailable"
+msgstr "Данные журнала недоступны"
+
 msgid "Log Level"
 msgstr "Уровень логов"
 
@@ -1499,9 +1378,6 @@ msgstr "Группа входа"
 
 msgid "Logs"
 msgstr "Логи"
-
-msgid "LuCI web interface"
-msgstr "веб-интерфейс LuCI"
 
 msgid "Main DNS"
 msgstr "Основной DNS"
@@ -1512,20 +1388,11 @@ msgstr "Режим опроса основного DNS"
 msgid "MASKED REPORT: review before sharing."
 msgstr "ЗАМАСКИРОВАННЫЙ ОТЧЁТ: проверьте перед отправкой."
 
-msgid "Masquerade"
-msgstr "Маскировка"
-
 msgid "Match destination domains and addresses"
 msgstr "Совпадение по доменам и адресам назначения"
 
 msgid "Match the domains of DNS queries"
 msgstr "Совпадение по доменам DNS-запросов"
-
-msgid "Max speed from a client, Mbps"
-msgstr "Макс. скорость от клиента, Мбит/с"
-
-msgid "Max speed to a client, Mbps"
-msgstr "Макс. скорость к клиенту, Мбит/с"
 
 msgid "Maximum time to wait for a DNS response"
 msgstr "Максимальное время ожидания ответа DNS"
@@ -1535,9 +1402,6 @@ msgstr "Память"
 
 msgid "Memory: %s of %s free"
 msgstr "Память: свободно %s из %s"
-
-msgid "Method"
-msgstr "Метод"
 
 msgid "Minimum TLS version"
 msgstr "Минимальная версия TLS"
@@ -1563,14 +1427,8 @@ msgstr "Ограничение MSS"
 msgid "MTU"
 msgstr "MTU"
 
-msgid "Multiplex"
-msgstr "Multiplex"
-
 msgid "N/A"
 msgstr "Н/Д"
-
-msgid "Name"
-msgstr "Имя"
 
 msgid "Name already taken"
 msgstr "Имя уже занято"
@@ -1589,15 +1447,6 @@ msgstr "Суффикс имени"
 
 msgid "Narrows the section's conditions to these ports. Without conditions, takes all traffic to them"
 msgstr "Сужает условия секции до этих портов. Без условий ловит весь трафик на них"
-
-msgid "Needs a base64 key of %d bytes"
-msgstr "Нужен ключ base64 длиной %d байт"
-
-msgid "Needs an IPv4 subnet"
-msgstr "Нужна подсеть IPv4"
-
-msgid "Network"
-msgstr "Сеть"
 
 msgid "Network interface"
 msgstr "Сетевой интерфейс"
@@ -1641,9 +1490,6 @@ msgstr "Нет сертификата CA (ca)"
 msgid "No closed connections"
 msgstr "Нет закрытых подключений"
 
-msgid "no connection to the coordination server"
-msgstr "нет связи с сервером координации"
-
 msgid "No connection to the coordination server"
 msgstr "Нет связи с сервером координации"
 
@@ -1652,6 +1498,9 @@ msgstr "Ни одно устройство сети не одобрено как
 
 msgid "No domain"
 msgstr "Нет домена"
+
+msgid "No error messages found in the last 60 seconds"
+msgstr "Сообщений об ошибках за последние 60 секунд не найдено"
 
 msgid "No Forkop release wrote configuration version %s"
 msgstr "Конфигурации версии %s нет ни в одном выпуске Forkop"
@@ -1674,9 +1523,6 @@ msgstr "Нет логов, соответствующих текущим фил�
 msgid "No other devices in the tailnet"
 msgstr "В сети нет других устройств"
 
-msgid "no public address"
-msgstr "публичный адрес не указан"
-
 msgid "No remote directive"
 msgstr "Нет директивы remote"
 
@@ -1686,17 +1532,11 @@ msgstr "Нет секций с прокси"
 msgid "No server"
 msgstr "Не указан сервер"
 
-msgid "No servers to check"
-msgstr "Нет серверов для проверки"
-
 msgid "No tag field"
 msgstr "Нет поля tag"
 
 msgid "Node key"
 msgstr "Ключ узла"
-
-msgid "node key expired"
-msgstr "ключ узла истёк"
 
 msgid "Node list is empty"
 msgstr "Список узлов пуст"
@@ -1743,12 +1583,6 @@ msgstr "не запущен: %s"
 msgid "Not set"
 msgstr "Не задан"
 
-msgid "not started"
-msgstr "не запущен"
-
-msgid "Not supported by this protocol"
-msgstr "Не поддерживается этим протоколом"
-
 msgid "Nothing after %s"
 msgstr "Пусто после %s"
 
@@ -1758,14 +1592,8 @@ msgstr "Загружать нечего: в файле текущая конфи
 msgid "Number or range from 0 to 4294967295"
 msgstr "Число или диапазон от 0 до 4294967295"
 
-msgid "Obfuscation"
-msgstr "Обфускация"
-
 msgid "Obfuscation parameters"
 msgstr "Параметры обфускации"
-
-msgid "Obfuscation password"
-msgstr "Пароль обфускации"
 
 msgid "Off"
 msgstr "Выключено"
@@ -1784,9 +1612,6 @@ msgstr "Одноразовый код"
 
 msgid "Online"
 msgstr "В сети"
-
-msgid "online · %s"
-msgstr "в сети · %s"
 
 msgid "Online now"
 msgstr "Онлайн"
@@ -1824,9 +1649,6 @@ msgstr "Только для устройств"
 msgid "Only https:// or no scheme"
 msgstr "Только https:// или без схемы"
 
-msgid "Only https://, http:// or file://"
-msgstr "Только https://, http:// или file://"
-
 msgid "Only if the server uses it too (fragment in the profile)"
 msgstr "Только если сервер тоже его использует (fragment в профиле)"
 
@@ -1835,12 +1657,6 @@ msgstr "Только буквы, цифры и . _ -"
 
 msgid "Only selected"
 msgstr "Только выбранные"
-
-msgid "Open the port"
-msgstr "Открыть порт"
-
-msgid "Opens the port in the router's firewall to connections from the internet"
-msgstr "Открывает порт в файерволе роутера для подключений из интернета"
 
 msgid "Operation timed out"
 msgstr "Время ожидания истекло"
@@ -1851,14 +1667,8 @@ msgstr "ОС"
 msgid "Output Network Interface"
 msgstr "Выходной сетевой интерфейс"
 
-msgid "Override routing"
-msgstr "Переопределить маршрутизацию"
-
 msgid "Packet authentication"
 msgstr "Аутентификация пакетов"
-
-msgid "Padding"
-msgstr "Padding"
 
 msgid "Parallel"
 msgstr "Параллельно"
@@ -1878,9 +1688,6 @@ msgstr "MTU пути"
 msgid "Path must end with %s"
 msgstr "Путь должен заканчиваться на %s"
 
-msgid "Path must start with /"
-msgstr "Путь должен начинаться с /"
-
 msgid "Paused while text is selected"
 msgstr "Пауза, пока выделен текст"
 
@@ -1896,20 +1703,11 @@ msgstr "peer-fingerprint: только SHA-256"
 msgid "Peers"
 msgstr "Пиры"
 
-msgid "PEM text or the path of a file on the router"
-msgstr "Текст PEM или путь к файлу на роутере"
-
 msgid "Pending"
 msgstr "Ожидает запуска"
 
 msgid "Persistent keepalive"
 msgstr "Постоянный keepalive"
-
-msgid "Pick a domain"
-msgstr "Выбрать домен"
-
-msgid "Pick a free port"
-msgstr "Выбрать свободный порт"
 
 msgid "PIN"
 msgstr "PIN"
@@ -1928,12 +1726,6 @@ msgstr "Пинговать устройство"
 
 msgid "PKCS#12 is not supported: export the certificate and the key as PEM"
 msgstr "PKCS#12 не поддерживается: экспортируйте сертификат и ключ в PEM"
-
-msgid "port %s is taken by %s"
-msgstr "порт %s занят: %s"
-
-msgid "Port taken by %s"
-msgstr "Порт занят: %s"
 
 msgid "Ports"
 msgstr "Порты"
@@ -1980,14 +1772,8 @@ msgstr "Ссылка прокси недоступна"
 msgid "PSKC token files are not supported: use the base32 secret"
 msgstr "Файлы токенов PSKC не поддерживаются: укажите секрет base32"
 
-msgid "Public address"
-msgstr "Публичный адрес"
-
 msgid "Public key"
 msgstr "Публичный ключ"
-
-msgid "QR code"
-msgstr "QR-код"
 
 msgid "Random server order"
 msgstr "Случайный порядок серверов"
@@ -1997,15 +1783,6 @@ msgstr "Подключаться к серверу координации чер
 
 msgid "Ready-made lists of domains and subnets from %s"
 msgstr "Готовые списки доменов и подсетей из %s"
-
-msgid "Reality private key"
-msgstr "Приватный ключ Reality"
-
-msgid "Reality public key"
-msgstr "Публичный ключ Reality"
-
-msgid "Reality short ID"
-msgstr "Reality short ID"
 
 msgid "Reconnect after silence, seconds"
 msgstr "Переподключение после тишины, секунд"
@@ -2033,9 +1810,6 @@ msgstr "Убрать серверы из выборки выше"
 
 msgid "Remove servers whose names match the regular expression"
 msgstr "Убрать серверы, чьи имена совпадают с регулярным выражением"
-
-msgid "Remove the device from the tailnet once it goes offline"
-msgstr "Удалять устройство из сети после отключения"
 
 msgid "Remove the key passphrase: openssl pkey -in key.pem -out plain.pem"
 msgstr "Снимите пароль с ключа: openssl pkey -in key.pem -out plain.pem"
@@ -2103,26 +1877,14 @@ msgstr "Маршрутизировать DNS-запросы резолвера �
 msgid "Router"
 msgstr "Роутер"
 
-msgid "router SSH"
-msgstr "SSH роутера"
-
 msgid "Router up for %s"
 msgstr "Роутер работает %s"
-
-msgid "Routes"
-msgstr "Маршруты"
-
-msgid "Routing mode"
-msgstr "Режим маршрутизации"
 
 msgid "Routing rules"
 msgstr "Правила маршрутизации"
 
 msgid "Routing rules are checked from top to bottom"
 msgstr "Правила маршрутизации проверяются сверху вниз"
-
-msgid "Routing section"
-msgstr "Секция маршрутизации"
 
 msgid "Rule set auto update"
 msgstr "Автообновление наборов правил"
@@ -2136,9 +1898,6 @@ msgstr "Набор правил: %s"
 msgid "Rule sets"
 msgstr "Наборы правил"
 
-msgid "Rules"
-msgstr "Правила"
-
 msgid "Run Diagnostic"
 msgstr "Запустить диагностику"
 
@@ -2150,9 +1909,6 @@ msgstr "работает"
 
 msgid "running for %s"
 msgstr "работает %s"
-
-msgid "Same file as the certificate"
-msgstr "Тот же файл, что и сертификат"
 
 msgid "Save"
 msgstr "Сохранить"
@@ -2174,9 +1930,6 @@ msgstr "Секция недоступна"
 
 msgid "Sections"
 msgstr "Секции"
-
-msgid "Security"
-msgstr "Защита"
 
 msgid "Select a .ovpn, .conf, .xml or .nmconnection file"
 msgstr "Выберите файл .ovpn, .conf, .xml или .nmconnection"
@@ -2205,9 +1958,6 @@ msgstr "Выбирает первый доступный узел по прио�
 msgid "Selects the node with the lowest latency"
 msgstr "Выбирает узел с наименьшей задержкой"
 
-msgid "Self-signed"
-msgstr "Самоподписанный"
-
 msgid "Send BitTorrent traffic past the proxy"
 msgstr "Пропускать торрент-трафик мимо прокси"
 
@@ -2217,14 +1967,8 @@ msgstr "Последовательно"
 msgid "Server"
 msgstr "Сервер"
 
-msgid "server %s"
-msgstr "сервер %s"
-
 msgid "Server address"
 msgstr "Адрес сервера"
-
-msgid "Server certificate"
-msgstr "Сертификат сервера"
 
 msgid "Server certificate fingerprints"
 msgstr "Отпечатки сертификата сервера"
@@ -2234,12 +1978,6 @@ msgstr "Имя в сертификате сервера"
 
 msgid "Server certificate purpose"
 msgstr "Назначение сертификата сервера"
-
-msgid "Server details"
-msgstr "Детали сервера"
-
-msgid "Server details: %s"
-msgstr "Детали сервера: %s"
 
 msgid "Server filter"
 msgstr "Фильтр серверов"
@@ -2252,9 +1990,6 @@ msgstr "Группа серверов: %s"
 
 msgid "Server groups"
 msgstr "Группы серверов"
-
-msgid "Server key"
-msgstr "Ключ сервера"
 
 msgid "Server name"
 msgstr "Имя сервера"
@@ -2298,12 +2033,6 @@ msgstr "Список сервисов"
 msgid "Session cookie"
 msgstr "Cookie сессии"
 
-msgid "Set the public host and the port to get a link."
-msgstr "Укажите публичный адрес и порт, чтобы получить ссылку."
-
-msgid "Set the public host and the port to get a profile."
-msgstr "Укажите публичный адрес и порт, чтобы получить профиль."
-
 msgid "Set the User-Agent under Headers"
 msgstr "User-Agent задаётся в «Заголовках»"
 
@@ -2318,9 +2047,6 @@ msgstr "Несколько серверов дают автоматическо�
 
 msgid "Shorter than the check interval"
 msgstr "Меньше интервала проверки"
-
-msgid "Show a QR code"
-msgstr "Показать QR-код"
 
 msgid "Show an unmasked report? It contains keys and passwords. Do not share it."
 msgstr "Показать отчёт без маскирования? Он содержит ключи и пароли. Не публикуйте его."
@@ -2343,9 +2069,6 @@ msgstr "Вход по сертификату, отдельно или вмест
 msgid "sing-box %s, not sing-box-forkop"
 msgstr "sing-box %s, а не sing-box-forkop"
 
-msgid "sing-box Clash API"
-msgstr "Clash API sing-box"
-
 msgid "sing-box is built without %s"
 msgstr "sing-box собран без %s"
 
@@ -2366,12 +2089,6 @@ msgstr "sing-box-forkop не установлен"
 
 msgid "Skipped: Forkop is not running"
 msgstr "Пропущено: Forkop не запущен"
-
-msgid "SNI"
-msgstr "SNI"
-
-msgid "SOCKS5"
-msgstr "SOCKS5"
 
 msgid "Sort by latency"
 msgstr "Сортировать по задержке"
@@ -2487,9 +2204,6 @@ msgstr "Детали Tailscale"
 msgid "TAP (layer 2) is not supported, only TUN"
 msgstr "TAP (уровень 2) не поддерживается, только TUN"
 
-msgid "TCP and UDP"
-msgstr "TCP и UDP"
-
 msgid "Terminal"
 msgstr "Терминал"
 
@@ -2504,9 +2218,6 @@ msgstr "Символ / недопустим"
 
 msgid "The <%s> block is not closed"
 msgstr "Блок <%s> не закрыт"
-
-msgid "The address links and profiles point at"
-msgstr "Адрес, на который указывают ссылки и профили"
 
 msgid "The AnyConnect version reported to the server"
 msgstr "Версия AnyConnect, которую видит сервер"
@@ -2583,18 +2294,6 @@ msgstr "Начало диапазона больше конца"
 msgid "The router answers the request for a code itself"
 msgstr "Роутер сам отвечает на запрос кода"
 
-msgid "The router issues the certificate of this client when the settings are applied. Apply them to get a profile."
-msgstr "Роутер выпускает сертификат клиента при применении настроек. Примените их, чтобы получить профиль."
-
-msgid "The router issues the certificate of this server when the settings are applied. Apply them to get a link."
-msgstr "Роутер выпускает сертификат сервера при применении настроек. Примените их, чтобы получить ссылку."
-
-msgid "The router issues the keys of this client when the settings are applied. Apply them to get a profile."
-msgstr "Роутер выпускает ключи этого клиента при применении настроек. Примените их, чтобы получить профиль."
-
-msgid "The router itself becomes a proxy server for your devices"
-msgstr "Роутер сам становится прокси-сервером для ваших устройств"
-
 msgid "The router itself: its services and programs"
 msgstr "Сам роутер: его службы и программы"
 
@@ -2606,15 +2305,6 @@ msgstr "Второй адрес ifconfig-ipv6 в профиле"
 
 msgid "The section's other conditions apply only to these devices"
 msgstr "Остальные условия секции действуют только для этих устройств"
-
-msgid "The server is disabled."
-msgstr "Сервер выключен."
-
-msgid "The server is not running yet. Apply the settings, or start Forkop."
-msgstr "Сервер ещё не запущен. Примените настройки или запустите Forkop."
-
-msgid "The server's address in the subnet, such as %s"
-msgstr "Адрес сервера в подсети, например %s"
 
 msgid "The servers that are imported"
 msgstr "Серверы, которые импортируются"
@@ -2703,12 +2393,6 @@ msgstr "Всего трафика"
 msgid "Transport"
 msgstr "Транспорт"
 
-msgid "Transport host"
-msgstr "Хост транспорта"
-
-msgid "Transport path"
-msgstr "Путь транспорта"
-
 msgid "Trust only the CA certificate above"
 msgstr "Доверять только сертификату CA выше"
 
@@ -2726,9 +2410,6 @@ msgstr "Имя туннеля"
 
 msgid "Tunnel settings"
 msgstr "Настройки туннеля"
-
-msgid "Tunnel subnet"
-msgstr "Подсеть туннеля"
 
 msgid "Tunnel type"
 msgstr "Тип туннеля"
@@ -2777,9 +2458,6 @@ msgstr "Непринятые изменения Forkop, сделанные ра�
 
 msgid "Unsupported link"
 msgstr "Ссылка не поддерживается"
-
-msgid "Up to %d characters"
-msgstr "Не длиннее %d символов"
 
 msgid "Update interval"
 msgstr "Интервал обновления"
@@ -2844,9 +2522,6 @@ msgstr "Использовать подсети, анонсированные д
 msgid "Use the tunnel's DNS for the domains its server declares. Add those domains to the section so that devices reach them through the tunnel"
 msgstr "Использовать DNS туннеля для доменов, которые объявляет его сервер. Добавьте эти домены в секцию, чтобы устройства ходили к ним через туннель"
 
-msgid "User name"
-msgstr "Имя пользователя"
-
 msgid "User-Agent"
 msgstr "User-Agent"
 
@@ -2855,9 +2530,6 @@ msgstr "Имя пользователя"
 
 msgid "Username and password"
 msgstr "Имя пользователя и пароль"
-
-msgid "UUID"
-msgstr "UUID"
 
 msgid "verify-x509-name in the profile"
 msgstr "verify-x509-name в профиле"
@@ -2868,14 +2540,11 @@ msgstr "verify-x509-name: не указано имя"
 msgid "verify-x509-name: unsupported type %s"
 msgstr "verify-x509-name: тип %s не поддерживается"
 
-msgid "VPN server"
-msgstr "VPN-сервер"
+msgid "VPN server endpoints are not supported"
+msgstr "Серверные endpoint VPN не поддерживаются"
 
 msgid "Waiting for approval in the console"
 msgstr "Ждёт одобрения в консоли"
-
-msgid "waiting for sign-in"
-msgstr "ждёт входа"
 
 msgid "Waiting for sign-in"
 msgstr "Ждёт входа"
@@ -2897,9 +2566,6 @@ msgstr "Что изменится при переводе:"
 
 msgid "What to do when this section's conditions match"
 msgstr "Что делать при совпадении условий этой секции"
-
-msgid "Where to send the traffic of this server's connections"
-msgstr "Куда направлять трафик подключений этого сервера"
 
 msgid "Which servers end up in the group"
 msgstr "Какие серверы попадут в группу"
@@ -2931,9 +2597,6 @@ msgstr "Пир WireGuard: %s"
 msgid "With fingerprints the CA certificate is not needed (peer-fingerprint in the profile)"
 msgstr "С отпечатками сертификат CA не нужен (peer-fingerprint в профиле)"
 
-msgid "XHTTP mode"
-msgstr "Режим XHTTP"
-
 msgid "YACD and other Clash API clients log in with it"
 msgstr "С ним входят YACD и другие клиенты Clash API"
 
@@ -2945,42 +2608,3 @@ msgstr "Да"
 
 msgid "yesterday %s"
 msgstr "вчера %s"
-
-msgid "Your own certificate"
-msgstr "Свой сертификат"
-
-#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts
-msgid "Core log"
-msgstr "Журнал ядра"
-
-#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts
-msgid "Log data unavailable"
-msgstr "Данные журнала недоступны"
-
-#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts
-msgid "At least %s error messages in the last 60 seconds; log data incomplete"
-msgstr "Не менее %s сообщений об ошибках за последние 60 секунд; данные журнала неполны"
-
-#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts
-msgid "%s error messages found in the last 60 seconds"
-msgstr "Найдено сообщений об ошибках за последние 60 секунд: %s"
-
-#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts
-msgid "No error messages found in the last 60 seconds"
-msgstr "Сообщений об ошибках за последние 60 секунд не найдено"
-
-#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/traffic.ts
-msgid "Browser check did not confirm FakeIP; router results are shown separately"
-msgstr "Проверка браузера не подтвердила FakeIP; результаты роутера показаны отдельно"
-
-#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts
-msgid "Lists in %s"
-msgstr "Списки в %s"
-
-#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts
-msgid "External list %s uses the same source as %s; review the section lists"
-msgstr "Внешний список %s использует тот же источник, что и %s; проверьте списки секции"
-
-#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts
-msgid "External list %s may overlap %s; compare domains and subnets before removing a list"
-msgstr "Внешний список %s может пересекаться с %s; сравните домены и подсети перед удалением списка"

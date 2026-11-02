@@ -3,9 +3,9 @@ import { describe, expect, it } from 'vitest';
 import { getDiagnosticsChecks } from '../diagnostic.store';
 
 describe('the order of the Status checks', () => {
-  it('follows what traffic depends on, with the servers last', () => {
-    const checks = getDiagnosticsChecks('', { includeServers: true });
-    const expected = ['SERVICE', 'DNS', 'TRAFFIC', 'SECTIONS', 'SERVERS'];
+  it('follows what traffic depends on, without a server group', () => {
+    const checks = getDiagnosticsChecks('');
+    const expected = ['SERVICE', 'DNS', 'TRAFFIC', 'SECTIONS'];
 
     expect(checks.map((check) => check.code)).toEqual(expected);
     expect(
@@ -13,7 +13,7 @@ describe('the order of the Status checks', () => {
     ).toEqual(expected);
   });
 
-  it('lists the servers only for a configuration that has one', () => {
+  it('lists only the remaining diagnostics', () => {
     expect(getDiagnosticsChecks('').map((check) => check.code)).toEqual([
       'SERVICE',
       'DNS',
@@ -22,12 +22,11 @@ describe('the order of the Status checks', () => {
     ]);
   });
 
-  it('lists no sections for a configuration without one, such as a VPN server alone', () => {
+  it('omits sections for a configuration without one', () => {
     expect(
       getDiagnosticsChecks('', {
-        includeServers: true,
         includeSections: false,
       }).map((check) => check.code),
-    ).toEqual(['SERVICE', 'DNS', 'TRAFFIC', 'SERVERS']);
+    ).toEqual(['SERVICE', 'DNS', 'TRAFFIC']);
   });
 });

@@ -16,6 +16,13 @@ ${LogsTab.styles}
 ${ComponentsTab.styles}
 ${PartialStyles}
 
+.fkp-generate-row{column-gap:4px;display:flex}
+.fkp-generate-row > :first-child{display:contents}
+.fkp-generate-row > :first-child > *{min-inline-size:0}
+.fkp-generate-row .control-group > input{flex-grow:1}
+.fkp-generate-row > .fkp-generate{align-items:center;box-sizing:border-box;display:inline-flex;flex:none;inline-size:2.5em !important;justify-content:center;line-height:1;margin:0 !important;min-block-size:0;min-inline-size:0;padding:0 !important;float:none !important;user-select:none}
+.fkp-generate-row > .fkp-generate > svg{display:block}
+
 
 /* The theme draws h2 small in its lowest text colour, nearly black on black in its dark variant. */
 #cbi-${FORKOP_CBI_PREFIX} > h2 > small {

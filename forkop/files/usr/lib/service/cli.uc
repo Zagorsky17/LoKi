@@ -133,7 +133,6 @@ const COMMANDS = {
     check_service: { help: "Check the service, memory, clock and conflicting interceptors in JSON format", run: json(() => checks().service()) },
     check_dns: { help: "Check the DNS servers sing-box resolves with in JSON format", run: json(() => checks().dns()) },
     check_traffic: { help: "Check that the router's own traffic goes through Forkop in JSON format", run: json(() => checks().traffic()) },
-    check_servers: { help: "Check the listeners of the enabled servers in JSON format", run: json(() => checks().servers()) },
     check_logs: { help: "Show Forkop logs from system journal", run: () => {
         print(diagnostics().logs());
         return 0;
@@ -157,7 +156,6 @@ const COMMANDS = {
     installer_status: { args: 1, usage: "[offset]", help: "Show the Components tab's run of install.sh in JSON format", run: json((offset) => installer().status(offset)) },
     installer_run: { args: 1, run: (args) => installer().run(args[0]) },
     installer_log: { help: "Print the log of install.sh's last run", run: installer_log },
-    generate_reality_keypair: { help: "Generate a sing-box Reality key pair in JSON format", run: reply(() => require("server.service").reality_keypair()) },
     generate_warp_profile: { help: "Generate a Cloudflare WARP profile in JSON format", run: warp_profile },
     package_prerm: { args: 1, run: (args) => require("service.package").prerm(args[0]) },
     package_postinst: { run: () => require("service.package").postinst() },

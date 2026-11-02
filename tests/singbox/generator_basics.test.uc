@@ -11,18 +11,18 @@ function refused(data) {
     return t.throws(() => build(data)).message;
 }
 
-t.test("a configuration without an enabled section or server is refused", () => {
-    t.eq(refused({ settings: fixture.settings(), section: [] }), "no usable sections or servers");
+t.test("a configuration without an enabled section is refused", () => {
+    t.eq(refused({ settings: fixture.settings(), section: [] }), "no usable sections");
 });
 
 t.test("a connection section without a single source does not count as usable", () => {
     t.eq(refused({
         settings: fixture.settings(),
         section: [ { ".name": "main", action: "connection" } ]
-    }), "no usable sections or servers");
+    }), "no usable sections");
 });
 
-t.test("sing-box has something to run in a section that needs no source, one with a source, or an enabled server", () => {
+t.test("sing-box has something to run in a section that needs no source, or one with a source", () => {
     let runnable = (data) => {
         fixture.seed({ settings: fixture.settings(), ...data });
         return generator.runnable();
@@ -34,7 +34,7 @@ t.test("sing-box has something to run in a section that needs no source, one wit
     t.ok(runnable({ section: [ { ".name": "main", action: "connection" } ], connection_link: link }));
     t.ok(runnable({ section: [ { ".name": "ads", action: "block", destinations: "ads.example" } ] }));
     t.ok(!runnable({ server: [ { ".name": "in", protocol: "vless" } ] }), "a server never switched on");
-    t.ok(runnable({ server: [ { ".name": "in", protocol: "vless", enabled: "1" } ] }));
+    t.ok(!runnable({ server: [ { ".name": "in", protocol: "vless", enabled: "1" } ] }));
 });
 
 t.test("a disabled section is left out", () => {

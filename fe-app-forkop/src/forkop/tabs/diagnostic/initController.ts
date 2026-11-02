@@ -5,7 +5,6 @@ import { runServiceCheck } from './checks/service';
 import { runDnsCheck } from './checks/dns';
 import { runTrafficCheck } from './checks/traffic';
 import { runSectionsCheck } from './checks/sections';
-import { runServersCheck } from './checks/servers';
 import { CheckOutcome, skipped, unanswered } from './checks/present';
 import { DIAGNOSTICS_CHECKS } from './checks/groups';
 import {
@@ -68,7 +67,6 @@ let forkopRunningInRun = true;
 let runServiceData: Forkop.ServiceCheckResult | undefined;
 
 const UNKNOWN_COUNTS = {
-  server_inbounds_enabled_count: -1,
   sections_enabled_count: -1,
 };
 
@@ -78,15 +76,14 @@ type DiagnosticRunner = {
   run: () => Promise<CheckOutcome>;
 };
 
-// Idle, an unknown count lists the sections, which most configurations have, and not the servers.
+// Idle, an unknown count lists the sections.
 function getDiagnosticsCheckOptions(
   systemInfo: Pick<
     StoreType['diagnosticsSystemInfo'],
-    'server_inbounds_enabled_count' | 'sections_enabled_count'
+    'sections_enabled_count'
   > = store.get().diagnosticsSystemInfo,
 ): DiagnosticsCheckOptions {
   return {
-    includeServers: systemInfo.server_inbounds_enabled_count > 0,
     includeSections: systemInfo.sections_enabled_count !== 0,
   };
 }
@@ -215,8 +212,6 @@ async function fetchDiagnosticsCapabilities({
       const nextSystemInfo = {
         ...currentSystemInfo,
         capabilitiesLoaded: true,
-        server_inbounds_enabled_count:
-          uiState.capabilities.server_inbounds_enabled_count,
         sections_enabled_count: uiState.capabilities.sections_enabled_count,
       };
 
@@ -553,7 +548,6 @@ function getDiagnosticRunners(
     [DIAGNOSTICS_CHECKS.DNS]: runDnsCheck,
     [DIAGNOSTICS_CHECKS.TRAFFIC]: runTrafficCheck,
     [DIAGNOSTICS_CHECKS.SECTIONS]: runSectionsCheck,
-    [DIAGNOSTICS_CHECKS.SERVERS]: runServersCheck,
   };
 
   return diagnosticsCheckCodes(checkOptions).map((code) => ({
@@ -584,11 +578,9 @@ async function runChecks() {
   try {
     await fetchDiagnosticsCapabilities({ resetChecks: false });
 
-    // A run checks the servers and sections unless it knows there are none.
-    const { server_inbounds_enabled_count, sections_enabled_count } =
-      store.get().diagnosticsSystemInfo;
+    // A run checks the sections unless it knows there are none.
+    const { sections_enabled_count } = store.get().diagnosticsSystemInfo;
     const checkOptions = {
-      includeServers: server_inbounds_enabled_count !== 0,
       includeSections: sections_enabled_count !== 0,
     };
 

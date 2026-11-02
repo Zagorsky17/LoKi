@@ -23,9 +23,8 @@ t.test("a lone connection section without sources leaves nothing usable", () => 
     let e = t.throws(() => build({
         settings: settings(),
         section: [ { ".name": "unfinished", enabled: "1", action: "connection", destinations: "unfinished.example" } ],
-        server: []
     }));
-    t.eq(e.message, "no usable sections or servers");
+    t.eq(e.message, "no usable sections");
 });
 
 t.test("an empty connection section is omitted without suppressing its neighbours", () => {
@@ -186,136 +185,6 @@ t.test("list update settings reach remote rule sets, and ports constrain the who
         r.domain_regex == "^[^.]+$") != null, "the local resolver keeps the zone it is authoritative for");
 });
 
-t.test("server inbounds carry their protocol options and their clients", () => {
-    let server = build({
-        settings: settings(),
-        section: [ {
-            ".name": "proxy", enabled: "1", action: "connection",
-            outbound_jsons: [ "{\"type\":\"direct\"}" ], destinations: "example.org"
-        } ],
-        server: [
-            { ".name": "unfinished", protocol: "shadowsocks", shadowsocks_method: "2022-blake3-aes-128-gcm", listen: "0.0.0.0", routing_mode: "direct" },
-            { ".name": "edge", enabled: "1", protocol: "mixed", mixed_auth_enabled: "1", listen: "0.0.0.0", listen_port: "18080", routing_mode: "direct" },
-            {
-                ".name": "tailnet", enabled: "1", protocol: "tailscale", tailscale_auth_key: "tskey-auth-server",
-                tailscale_hostname: "forkop-server", tailscale_detour_enabled: "1", tailscale_detour_section: "proxy",
-                routing_mode: "direct"
-            },
-            { ".name": "open", enabled: "1", protocol: "mixed", listen: "0.0.0.0", listen_port: "18081", mixed_auth_enabled: "0", routing_mode: "direct" },
-            {
-                ".name": "naive", enabled: "1", protocol: "naive", listen: "0.0.0.0", listen_port: "18443", security: "tls",
-                tls_certificate: "/etc/ssl/acme/naive.crt", tls_key: "-----BEGIN PRIVATE KEY-----\nnaive-key\n-----END PRIVATE KEY-----",
-                naive_network: "tcp_udp", routing_mode: "direct"
-            },
-            { ".name": "mieru", enabled: "1", protocol: "mieru", listen: "0.0.0.0", listen_port: "18444", mieru_transport: "UDP", routing_mode: "direct" },
-            {
-                ".name": "anytls", enabled: "1", protocol: "anytls", listen: "0.0.0.0", listen_port: "18445", label: "AnyTLS user",
-                security: "tls", tls_self_signed_certificate: "-----BEGIN CERTIFICATE-----\r\nissued\r\n-----END CERTIFICATE-----",
-                tls_self_signed_key: "-----BEGIN PRIVATE KEY-----\nissued-key\n-----END PRIVATE KEY-----",
-                tls_certificate: "/etc/ssl/ignored.crt", tls_key: "/etc/ssl/ignored.key", routing_mode: "direct"
-            },
-            {
-                ".name": "tuic", enabled: "1", protocol: "tuic", listen: "0.0.0.0", listen_port: "18446", label: "TUIC user",
-                security: "tls", tls_certificate_source: "custom", tls_certificate: "/etc/ssl/tuic.crt", tls_key: "/etc/ssl/tuic.key",
-                tuic_congestion_control: "bbr", routing_mode: "direct"
-            },
-            {
-                ".name": "vlessmux", enabled: "1", protocol: "vless", listen: "0.0.0.0", listen_port: "18447", label: "VLESS mux",
-                security: "reality", reality_private_key: "reality-private", reality_public_key: "reality-public",
-                reality_short_id: [ "abcd" ], multiplex_enabled: "1", multiplex_padding: "1", routing_mode: "direct"
-            },
-            {
-                ".name": "ss2022", enabled: "1", protocol: "shadowsocks", listen: "0.0.0.0", listen_port: "18448",
-                label: "Shadowsocks 2022", shadowsocks_method: "2022-blake3-aes-128-gcm",
-                shadowsocks_psk: "c2VydmVyLXByZXNoYXJlZC1rZXk=", routing_mode: "direct"
-            }
-        ],
-        server_client: [
-            { ".name": "edge_tester", server: "edge", name: "tester", password: "secret" },
-            { ".name": "edge_ruled", server: "edge", name: "ruled", password: "ruled-secret", routing_override: "1", routing_mode: "rules" },
-            { ".name": "open_ignored", server: "open", name: "ignored", password: "ignored" },
-            { ".name": "naive_user", server: "naive", name: "naive-user", password: "naive-password" },
-            { ".name": "mieru_user", server: "mieru", name: "mieru-user", password: "mieru-password" },
-            { ".name": "anytls_user", server: "anytls", name: "anytls-client", password: "anytls-password" },
-            { ".name": "tuic_user", server: "tuic", name: "tuic-client", uuid: "33333333-3333-4333-8333-333333333333", password: "tuic-password" },
-            { ".name": "vlessmux_phone", server: "vlessmux", name: "phone", uuid: "44444444-4444-4444-8444-444444444444", flow: "xtls-rprx-vision" },
-            { ".name": "vlessmux_laptop", server: "vlessmux", name: "laptop", uuid: "55555555-5555-4555-8555-555555555555", routing_override: "1", routing_mode: "direct" },
-            { ".name": "ss2022_phone", server: "ss2022", name: "phone", password: "Y2xpZW50LXByZXNoYXJlZC1rZXk=" }
-        ]
-    });
-
-    t.eq(q.inbound(server, "unfinished"), null, "a server without the enable switch is not generated");
-
-    let mixed = q.inbound(server, "edge");
-    t.eq([ mixed.type, mixed.listen_port ], [ "mixed", 18080 ]);
-    t.eq([ mixed.users[0].username, mixed.users[0].password ], [ "tester", "secret" ]);
-
-    let tailnet = q.endpoint(server, "tailnet");
-    t.eq(tailnet.type, "tailscale");
-    t.eq(tailnet.detour, "proxy");
-    t.eq(tailnet.advertise_exit_node, true);
-    t.ok(q.route_rule(server, (r) => r.action == "sniff" && r.inbound == "tailnet") != null,
-        "the Tailscale endpoint is sniffed, so the shared rules see the domain of a peer's flow to an address");
-    t.eq(q.dns_server(server, (s) => s.type == "tailscale"), null,
-        "a peer using the router as its exit node resolves through the shared DNS rules, not the tailnet's resolvers");
-    t.eq(q.dns_rule(server, (r) => has(r.inbound, "tailnet")), null);
-
-    let open = q.inbound(server, "open");
-    t.eq([ open.type, open.listen_port, open.users ], [ "mixed", 18081, null ], "disabled mixed authentication omits users");
-
-    let naive = q.inbound(server, "naive");
-    t.eq([ naive.type, naive.network ], [ "naive", [ "tcp", "udp" ] ]);
-    t.eq(naive.users[0].username, "naive-user");
-    t.eq(naive.quic_congestion_control, null);
-    t.eq([ naive.tls.enabled, naive.tls.certificate_path, naive.tls.certificate, naive.tls.key ],
-        [ true, "/etc/ssl/acme/naive.crt", null, [ "-----BEGIN PRIVATE KEY-----", "naive-key", "-----END PRIVATE KEY-----" ] ],
-        "NaiveProxy always serves the user's certificate, a file by path and a pasted key inline");
-
-    let mieru = q.inbound(server, "mieru");
-    t.eq([ mieru.type, mieru.transport, mieru.users[0].password ], [ "mieru", "UDP", "mieru-password" ]);
-    t.eq(mieru.user_hint_is_mandatory, null);
-
-    let anytls = q.inbound(server, "AnyTLS user");
-    t.eq([ anytls.type, anytls.users[0].password, anytls.tls.enabled ], [ "anytls", "anytls-password", true ]);
-    t.eq([ anytls.tls.certificate, anytls.tls.key, anytls.tls.certificate_path ],
-        [ [ "-----BEGIN CERTIFICATE-----", "issued", "-----END CERTIFICATE-----" ],
-            [ "-----BEGIN PRIVATE KEY-----", "issued-key", "-----END PRIVATE KEY-----" ], null ],
-        "a server without a certificate of the user's serves the one the router issued it");
-
-    let tuic = q.inbound(server, "TUIC user");
-    t.eq([ tuic.type, tuic.users[0].uuid ], [ "tuic", "33333333-3333-4333-8333-333333333333" ]);
-    t.eq([ tuic.congestion_control, tuic.heartbeat, tuic.zero_rtt_handshake ], [ "bbr", null, null ],
-        "the core keeps its own heartbeat and never offers 0-RTT, which replays can abuse");
-    t.eq(tuic.auth_timeout, null);
-    t.eq([ tuic.tls.enabled, tuic.tls.certificate_path, tuic.tls.key_path ], [ true, "/etc/ssl/tuic.crt", "/etc/ssl/tuic.key" ]);
-
-    let vless_mux = q.inbound(server, "VLESS mux");
-    t.eq(length(vless_mux.users), 2, "a server accepts every client");
-    t.eq([ vless_mux.users[0].name, vless_mux.users[0].uuid, vless_mux.users[0].flow ],
-        [ "phone", "44444444-4444-4444-8444-444444444444", "xtls-rprx-vision" ]);
-    t.eq([ vless_mux.users[1].name, vless_mux.users[1].flow ], [ "laptop", null ], "VLESS flow is a per-client setting");
-    t.eq([ vless_mux.multiplex.enabled, vless_mux.multiplex.padding, vless_mux.multiplex.brutal ], [ true, true, null ]);
-    t.eq(vless_mux.tls.reality.enabled, true);
-
-    let ss2022 = q.inbound(server, "Shadowsocks 2022");
-    t.eq(ss2022.method, "2022-blake3-aes-128-gcm");
-    t.eq(ss2022.password, "c2VydmVyLXByZXNoYXJlZC1rZXk=", "the server pre-shared key stays on the inbound");
-    t.eq(ss2022.users[0].password, "Y2xpZW50LXByZXNoYXJlZC1rZXk=", "a 2022 account carries its own key alone");
-
-    t.ok(q.route_rule(server, (r) => r.inbound == "edge" && r.outbound == "direct-out") != null, "server direct route");
-    let ruled_at = q.route_rule_index(server, (r) => r.inbound == "edge" && r.auth_user == "ruled");
-    let direct_at = q.route_rule_index(server, (r) => r.inbound == "edge" && r.auth_user == null && r.outbound == "direct-out");
-    t.ok(ruled_at >= 0 && direct_at > ruled_at, "the cloned rules of a client come before the rule of its server");
-
-    let client_at = q.route_rule_index(server, (r) => r.inbound == "VLESS mux" && r.auth_user == "laptop");
-    let mux_server_at = q.route_rule_index(server, (r) => r.inbound == "VLESS mux" && r.auth_user == null && r.action == "route");
-    t.ok(client_at >= 0, "a client that overrides the route gets its own rule");
-    t.eq(server.route.rules[client_at].outbound, "direct-out");
-    t.ok(mux_server_at < 0 || client_at < mux_server_at, "a client rule comes before the rule of its server");
-    for (let rule in server.route.rules)
-        t.eq(rule.user, null, "a route rule names an account with auth_user, never with user");
-});
-
 function matcher_fixture() {
     return build({
         settings: settings({ dns_strategy: "prefer_ipv6" }),
@@ -335,12 +204,7 @@ function matcher_fixture() {
             { ".name": "bypass_global", enabled: "1", action: "bypass", destinations: "full:source-priority.test" }
         ],
         connection_link: fixture.links("proxy", [ "socks5://127.0.0.1:1080" ], { detour_section: "detour" }),
-        server: [ {
-            ".name": "server_proxy_mixed", enabled: "1", label: "proxy - Mixed proxy", protocol: "mixed",
-            mixed_auth_enabled: "1", listen: "0.0.0.0", listen_port: "19090", open_firewall: "0",
-            routing_mode: "section", routing_section: "proxy"
-        } ],
-        server_client: [ { ".name": "client_proxy_mixed", server: "server_proxy_mixed", name: "user", password: "pass" } ]
+
     });
 }
 
@@ -353,10 +217,6 @@ t.test("inbounds, DNS servers and base routing of a matcher-heavy configuration"
     t.eq(q.route_rule(m, (r) => r.action == "reject" && r.ip_version == 6), null, "IPv6 traffic is not rejected globally");
     t.eq(q.outbound(m, "direct-out").type, "direct");
     t.eq(q.outbound(m, "proxy/Node #1").detour, "detour", "a manual link takes its cascade detour");
-
-    let mixed = q.inbound(m, "proxy - Mixed proxy");
-    t.eq([ mixed.listen_port, mixed.users[0].username ], [ 19090, "user" ]);
-    t.ok(q.route_rule(m, (r) => r.inbound == "proxy - Mixed proxy" && r.outbound == "proxy") != null, "a section-routed server follows its section");
 
     let source_dns = q.inbound(m, "source-dns-in");
     t.eq([ source_dns.type, source_dns.listen, source_dns.listen_port ], [ "direct", "::", 1603 ]);
@@ -454,52 +314,6 @@ t.test("route rules carry devices, addresses and ports, and never the System sen
     let text = sprintf("%J", commented);
     for (let dropped in [ "#77.111.247.19", "203.0.113.0/24" ])
         t.excludes(text, dropped, "comments are left out of the rule");
-});
-
-t.test("a server following the rules also follows a rule set narrowed to ports", () => {
-    let d = build({
-        settings: settings(),
-        section: [
-            { ".name": "main", enabled: "1", action: "connection", outbound_jsons: [ "{\"type\":\"direct\"}" ],
-                rule_set: [ "https://example.com/main.srs" ], ports: [ "8000-9000" ] },
-            { ".name": "plain", enabled: "1", action: "connection", outbound_jsons: [ "{\"type\":\"direct\"}" ], destinations: "plain.example" }
-        ],
-        server: [
-            { ".name": "srv", enabled: "1", protocol: "mixed", listen: "0.0.0.0", listen_port: "18090", mixed_auth_enabled: "0", routing_mode: "rules" },
-            { ".name": "own", enabled: "1", protocol: "mixed", listen: "0.0.0.0", listen_port: "18091", mixed_auth_enabled: "1", routing_mode: "direct" }
-        ],
-        server_client: [ { ".name": "own_one", server: "own", name: "one", password: "one-secret", routing_override: "1", routing_mode: "rules" } ]
-    });
-    let server_tag = q.find(d.inbounds, (inbound) => inbound.listen_port == 18090).tag;
-    let narrowed = filter(d.route.rules, (r) => r.type == "logical" && r.outbound == "main");
-    let own_tag = q.find(d.inbounds, (inbound) => inbound.listen_port == 18091).tag;
-    t.eq(length(narrowed), 3, "the section's own rule, the server's copy and the account's");
-    t.ok(has(narrowed[0].rules[0].inbound, "tproxy-in"));
-    let copy = q.find(narrowed, (r) => r.rules[0].inbound == server_tag);
-    t.eq(copy.rules[1].port_range, [ "8000:9000" ], "the copy keeps the ports that narrow it");
-    let account = q.find(narrowed, (r) => r.rules[0].inbound == own_tag);
-    t.eq([ account.rules[0].auth_user, account.auth_user ], [ "one", null ], "the account is matched where the inbound is");
-    t.ok(q.route_rule(d, (r) => r.inbound == server_tag && has(r.domain_suffix, "plain.example")) != null);
-});
-
-t.test("a Mixed server written without the authentication switch asks for its accounts", () => {
-    let d = build({
-        settings: settings(),
-        section: [ { ".name": "main", enabled: "1", action: "connection", outbound_jsons: [ "{\"type\":\"direct\"}" ], destinations: "example.org" } ],
-        server: [ { ".name": "srv", enabled: "1", protocol: "mixed", listen: "0.0.0.0", listen_port: "18092", routing_mode: "direct" } ],
-        server_client: [ { ".name": "srv_one", server: "srv", name: "one", password: "one-secret" } ]
-    });
-    t.eq(q.find(d.inbounds, (inbound) => inbound.listen_port == 18092).users, [ { username: "one", password: "one-secret" } ]);
-});
-
-t.test("a Tailscale server advertises a single address as its own prefix", () => {
-    let d = build({
-        settings: settings(),
-        section: [ { ".name": "main", enabled: "1", action: "connection", outbound_jsons: [ "{\"type\":\"direct\"}" ], destinations: "example.org" } ],
-        server: [ { ".name": "tail", enabled: "1", protocol: "tailscale", tailscale_auth_key: "tskey-auth-test", routing_mode: "direct",
-            tailscale_advertise_routes: [ "192.168.1.10", "192.168.2.0/24", "fd00::10" ] } ]
-    });
-    t.eq(q.find(d.endpoints, (e) => e.type == "tailscale").advertise_routes, [ "192.168.1.10/32", "192.168.2.0/24", "fd00::10/128" ]);
 });
 
 // sing-box merges only a rule set of one plain rule into the rule naming it, and discord has three.
@@ -863,6 +677,50 @@ t.test("universal rule sets are native, independently tagged and shared by route
     t.ok(local.tag != remote.tag);
     t.ok(q.route_rule(l, (r) => has(r.rule_set, local.tag) && has(r.rule_set, remote.tag) && length(q.as_array(r.rule_set)) >= 3) != null);
     t.ok(q.dns_rule(l, (r) => has(r.rule_set, local.tag) && has(r.rule_set, remote.tag)) != null);
+});
+
+t.test("removed server records cannot add listeners, endpoints or routes", () => {
+    let data = {
+        settings: settings(),
+        section: [ { ".name": "proxy", enabled: "1", action: "connection" } ],
+        subscription_url: [ { ".name": "sub", section: "proxy", tag: "subscription", url: "https://example.com/sub" } ]
+    };
+    let expected = build(data);
+    let protocols = [ "vless", "mixed", "shadowsocks", "hysteria2", "tuic", "anytls", "wireguard", "amneziawg", "openvpn", "tailscale", "json_inbound" ];
+    for (let protocol in protocols) {
+        let config = build({ ...data,
+            server: [ { ".name": "unsupported", label: "server-secret", enabled: "1", protocol,
+                listen: "0.0.0.0", listen_port: "18443", reality_private_key: "private-secret",
+                tailscale_auth_key: "auth-secret", routing_mode: "rules",
+                inbound_json: "{\"type\":\"mixed\",\"tag\":\"injected\",\"listen\":\"0.0.0.0\",\"listen_port\":18443}" } ],
+            server_client: [ { ".name": "account", server: "unsupported", name: "client-secret", password: "password-secret" } ]
+        });
+        t.eq(config, expected, protocol);
+        t.excludes(sprintf("%J", config), "secret");
+        t.ok(generator.runnable(), "the subscription section remains usable");
+    }
+});
+
+t.test("server records alone never make a configuration runnable", () => {
+    for (let protocol in [ "vless", "wireguard", "openvpn", "tailscale", "json_inbound" ]) {
+        fixture.seed({ settings: settings(), server: [ { ".name": "unsupported", enabled: "1", protocol, inbound_json: "invalid-secret-json" } ] });
+        t.eq(generator.runnable(), false, protocol);
+        t.eq(t.throws(() => generator.build({ service_address: "127.0.0.1" })).message, "no usable sections");
+    }
+});
+
+t.test("a JSON client tunnel cannot restore an OpenVPN server endpoint", () => {
+    for (let endpoint_type in [ "openvpn-server", " OPENVPN-SERVER " ]) {
+        let result = t.throws(() => build({
+            settings: settings(),
+            section: [ { ".name": "main", enabled: "1", action: "connection" } ],
+            tunnel: [ { ".name": "json", section: "main", kind: "json", endpoint_json: sprintf("%J", {
+                type: endpoint_type, tag: "private-server", listen: "0.0.0.0", listen_port: 18443
+            }) } ]
+        }));
+        t.contains(result.message, "VPN server endpoints are not supported");
+        t.excludes(result.message, "private-server");
+    }
 });
 
 t.done();

@@ -109,7 +109,6 @@ export namespace Forkop {
     CHECK_SERVICE = 'check_service',
     CHECK_DNS = 'check_dns',
     CHECK_TRAFFIC = 'check_traffic',
-    CHECK_SERVERS = 'check_servers',
     REPORT = 'report',
     CLASH_API = 'clash_api',
     CLASH_SUMMARY = 'clash_summary',
@@ -242,8 +241,6 @@ export namespace Forkop {
       | 'node'
       | 'ruleset'
       | 'section'
-      | 'server'
-      | 'server_client'
       | 'subscription_url'
       | 'section_interface'
       | 'connection_link'
@@ -282,8 +279,6 @@ export namespace Forkop {
     urltest_include_regex?: string | string[];
     section?: string;
     protocol?: string;
-    server?: string;
-    wireguard_address?: string | string[];
     id?: string;
     url?: string;
     uri?: string;
@@ -396,45 +391,6 @@ export namespace Forkop {
     exit: { section: string; answered: boolean; ip: string } | null;
   }
 
-  export interface ServerCheckItem {
-    label: string;
-    protocol: string;
-    port: number;
-    transports: string;
-    runtime: boolean;
-    listening: boolean;
-    owners: string;
-    exposed: boolean;
-    // Whether Forkop is asked to open the port in the firewall.
-    open_firewall: boolean;
-    firewall_open: boolean;
-    public_host: string;
-    public_ips: string;
-    resolved: -1 | 0 | 1;
-    public: -1 | 0 | 1;
-    matches_wan: -1 | 0 | 1;
-  }
-
-  // A Tailscale server listens on nothing; the core reports its state in the tailnet.
-  export interface TailscaleServerCheckItem {
-    label: string;
-    protocol: 'tailscale';
-    runtime: boolean;
-    state: string;
-    connected: boolean;
-    name: string;
-    exit_node_pending: boolean;
-    pending_routes: string;
-    key_expired: boolean;
-  }
-
-  export interface ServersCheckResult {
-    wan: string;
-    // The only WAN address is the provider's shared one.
-    behind_cgnat: boolean;
-    items: Array<ServerCheckItem | TailscaleServerCheckItem>;
-  }
-
   export interface ReportAttachments {
     visibility: 'masked' | 'raw';
     notice: string;
@@ -524,12 +480,11 @@ export namespace Forkop {
     known: boolean;
     tags: string[];
     features: Record<string, { available: boolean; tags: string[] }>;
-    types: Record<'outbound' | 'inbound' | 'endpoint', Record<string, string>>;
+    types: Record<'outbound' | 'endpoint', Record<string, string>>;
     links: Record<string, string>;
   }
 
   export interface GetUiCapabilities {
-    server_inbounds_enabled_count: number;
     sections_enabled_count: number;
     core?: CoreFeatures;
   }

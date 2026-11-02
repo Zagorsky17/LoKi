@@ -20,7 +20,7 @@ vi.mock('../../../methods', () => ({
     pingClashApiTailscalePeer: mocks.pingClashApiTailscalePeer,
   },
 }));
-vi.mock('../details', () => ({
+vi.mock('../tailscaleDetails', () => ({
   iconSvg: () => ({ tag: 'svg', attrs: {}, children: [] }),
   injectDetailsStyles: () => {},
   renderCloseRow: () => ({ tag: 'div', attrs: {}, children: [] }),
@@ -170,6 +170,34 @@ describe('the Tailscale dialog', () => {
     expect(stateClasses(content)).toContain('warn:Waiting for sign-in');
     expect(texts(content)).toContain('Sign in');
   });
+
+  it.each([
+    'javascript:alert(1)',
+    'data:text/html,<script>alert(1)</script>',
+    'file:///etc/config/forkop',
+    '//login.example/sign-in',
+    'https://invalid host/sign-in',
+    '',
+  ])(
+    'does not turn an unsafe authentication URL into a link: %s',
+    (authURL) => {
+      const content = render({
+        endpoint: endpoint({ state: 'NeedsLogin', authURL }),
+      });
+      expect(texts(content)).not.toContain('Sign in');
+      expect(stateClasses(content)).toContain('warn:Waiting for sign-in');
+    },
+  );
+
+  it.each(['https://login.example/a/1', 'http://headscale.lan:8080/a/1'])(
+    'keeps a valid coordination-server authentication link: %s',
+    (authURL) => {
+      const content = render({
+        endpoint: endpoint({ state: 'NeedsLogin', authURL }),
+      });
+      expect(texts(content)).toContain('Sign in');
+    },
+  );
 
   it('names the device as the tailnet does, its addresses on one line', () => {
     const content = render({
@@ -419,30 +447,6 @@ describe('the open Tailscale dialog', () => {
 
     overlayShown = false;
     await vi.advanceTimersByTimeAsync(25000);
-    expect(mocks.getClashApiTailscale).toHaveBeenCalledTimes(2);
-  });
-
-  it('tells a disabled server from one not running yet', async () => {
-    mocks.getClashApiTailscale.mockResolvedValue({
-      success: true,
-      data: { endpoints: [] },
-    });
-    options.label = 'office';
-    options.enabled = '0';
-    module.showTailscaleServerDetailsModal('srv');
-    delete options.enabled;
-    module.showTailscaleServerDetailsModal('srv');
-    delete options.label;
-    await vi.advanceTimersByTimeAsync(0);
-
-    const [disabled, stopped] = mocks.showModal.mock.calls;
-    expect(disabled[0]).toBe('Server details: office');
-    expect(texts((disabled[1] as Tree[])[0])).toEqual([
-      'The server is disabled.',
-    ]);
-    expect(texts((stopped[1] as Tree[])[0])).toEqual([
-      'The server is not running yet. Apply the settings, or start Forkop.',
-    ]);
     expect(mocks.getClashApiTailscale).toHaveBeenCalledTimes(2);
   });
 });
