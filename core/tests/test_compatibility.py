@@ -16,12 +16,21 @@ class CompatibilityTests(unittest.TestCase):
 
     def test_only_the_characterized_schema_rejection_is_accepted(self):
         assert_result('manual-json', '1.12.22', 1, 'dns.timeout: unknown field "timeout"')
-        assert_result('manual-json', '1.14.4', 1, 'providers: unknown field "providers"')
+        assert_result('manual-json', '1.14.4', 1, 'experimental.unified_delay: unknown field "unified_delay"')
         assert_result('dns-fallback', '1.14.4', 1, 'unknown transport type: fallback')
         for status, message in [(0, ''), (127, 'command missing'), (-11, 'crash'), (1, 'certificate missing'),
                                 (1, 'unknown transport type: fallback')]:
             with self.subTest(status=status, message=message), self.assertRaises(AssertionError):
                 assert_result('manual-json', '1.14.4', status, message)
+
+    def test_the_limited_native_schema_must_succeed_on_114_and_fail_for_the_known_older_boundary(self):
+        assert_result('manual-json-native', '1.14.4', 0, '')
+        assert_result('manual-json-native', '1.12.22', 1, 'unknown field "timeout"')
+        for status, message in [(1, 'unknown field "providers"'), (-11, 'crash'), (127, 'missing core')]:
+            with self.subTest(status=status), self.assertRaises(AssertionError):
+                assert_result('manual-json-native', '1.14.4', status, message)
+        with self.assertRaises(AssertionError):
+            assert_result('uncharacterized-profile', '1.14.4', 0, '')
 
     def test_a_new_core_is_not_silently_assumed_to_follow_the_same_schema(self):
         for message in ['unknown field "providers"', 'unknown field "timeout"', 'unknown transport type: fallback']:

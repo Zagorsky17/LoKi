@@ -1639,6 +1639,12 @@ function build(context) {
     add_source_aware_dns_fallback(config);
 
     assert_unique_outbound_tags(config);
+    if (length(config.providers) == 0) {
+        delete config.providers;
+        delete config.experimental.cache_file.store_subscriptions;
+    }
+    if (!config.experimental.unified_delay.enabled)
+        delete config.experimental.unified_delay;
     return strip_internal_fields(config);
 }
 
