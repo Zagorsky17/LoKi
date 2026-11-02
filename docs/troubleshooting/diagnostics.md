@@ -45,7 +45,7 @@
 | Сообщение | Что значит |
 | --- | --- |
 | `sing-box was built without with_clash_api …` | в сборке нет обязательного тега `with_clash_api`, без него не работают дашборд, группы и проверки |
-| `sing-box was built with … but without with_gvisor …` | теги туннелей есть, а сетевого стека для них нет |
+| `VPN tunnel and server types are not supported` | JSON outbound задаёт удалённый тип VPN; выберите поддерживаемое прокси-подключение |
 | `Failed to read the tags sing-box was built with …` | ядро не сообщило свои теги, обычно файл повреждён |
 
 Соберите ядро с нужными тегами или поставьте официальную сборку командой установщика с `--variant base`.

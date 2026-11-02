@@ -68,9 +68,7 @@ type ChildType =
   | 'connection_link'
   | 'urltest'
   | 'fallback_group'
-  | 'fallback_level'
-  | 'tunnel'
-  | 'tunnel_peer';
+  | 'fallback_level';
 
 const EXPORTABLE_PROVIDER_PROXY_TYPES = new Set([
   'anytls',
@@ -142,7 +140,6 @@ function hydrateConfigSections(configSections: Forkop.ConfigSection[]) {
   const urltests = childSections(configSections, 'urltest');
   const fallbackGroups = childSections(configSections, 'fallback_group');
   const fallbackLevels = childSections(configSections, 'fallback_level');
-  const tunnels = childSections(configSections, 'tunnel');
   const links = childSections(configSections, 'connection_link');
 
   return configSections.map((section) => {
@@ -155,7 +152,6 @@ function hydrateConfigSections(configSections: Forkop.ConfigSection[]) {
     const interfaceItems = ownedChildSections(next, interfaces);
     const urltestItems = ownedChildSections(next, urltests);
     const fallbackGroupItems = ownedChildSections(next, fallbackGroups);
-    const tunnelItems = ownedChildSections(next, tunnels);
     const linkItems = ownedChildSections(next, links).sort(
       (left, right) => Number(left.order || 0) - Number(right.order || 0),
     );
@@ -240,10 +236,6 @@ function hydrateConfigSections(configSections: Forkop.ConfigSection[]) {
       next.fallback_group_settings = compactSettingsMap(settings);
     }
 
-    if (tunnelItems.length) {
-      next.tunnels = tunnelItems.map((item) => item['.name']);
-    }
-
     return next;
   });
 }
@@ -254,10 +246,6 @@ function getManualProxyLinks(section: Forkop.ConfigSection) {
 
 function getConnectionInterfaces(section: Forkop.ConfigSection) {
   return getListValues(section.interfaces);
-}
-
-function getConnectionTunnels(section: Forkop.ConfigSection) {
-  return getListValues(section.tunnels);
 }
 
 function getJsonOutbounds(section: Forkop.ConfigSection) {
@@ -308,7 +296,6 @@ function shouldUseProxyGroup(section: Forkop.ConfigSection) {
     getManualProxyLinks(section).length > 0 ||
     hasSubscriptionSources(section) ||
     getConnectionInterfaces(section).length > 0 ||
-    getConnectionTunnels(section).length > 0 ||
     getJsonOutbounds(section).length > 0
   );
 }
@@ -323,10 +310,6 @@ function getSectionProxyConfigType(section: Forkop.ConfigSection) {
   }
 
   if (getManualProxyLinks(section).length > 0) {
-    return 'selector' as const;
-  }
-
-  if (getConnectionTunnels(section).length > 0) {
     return 'selector' as const;
   }
 

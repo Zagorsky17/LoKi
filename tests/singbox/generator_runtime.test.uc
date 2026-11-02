@@ -49,106 +49,6 @@ t.test("a subscription-only section becomes a native provider", () => {
     t.ok(q.provider(config, "subscription_only/sub1") != null);
 });
 
-t.test("tunnels become native endpoints with the fields their kind allows", () => {
-    let config = build({
-        settings: settings({ cache_path: "/tmp/sing-box/cache.db" }),
-        section: [
-            { ".name": "tunnels", enabled: "1", action: "connection" },
-            { ".name": "control", enabled: "1", action: "connection", outbound_jsons: [ "{\"type\":\"direct\"}" ] }
-        ],
-        tunnel: [
-            {
-                ".name": "tun_warp", section: "tunnels", order: "0",
-                kind: "warp", name: "Cloudflare WARP", amnezia_jc: "7",
-                warp_profile_id: "profile-id", warp_profile_auth_token: "auth-token",
-                warp_profile_private_key: "private-key", warp_profile_license_key: "license-key",
-                amnezia_i1: "<r 1>", amnezia_content_padding_addition: "8-16", amnezia_disable_cookies: "1",
-                amnezia_s1: "40", amnezia_h1: "100-200",
-                amnezia_header_protection_key: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
-            },
-            {
-                ".name": "tun_amnezia", section: "tunnels", order: "1",
-                kind: "amneziawg", name: "Amnezia", address: [ "10.0.0.2/32" ],
-                private_key: "private-amnezia", amnezia_jc: "5", amnezia_h1: "100",
-                amnezia_random_trailers: "1", amnezia_disable_cookies: "1"
-            },
-            {
-                ".name": "tun_bare", section: "tunnels", order: "5",
-                kind: "wireguard", name: "Bare", address: [ "10.0.0.4/32" ], private_key: "private-bare"
-            },
-            {
-                ".name": "tun_plain", section: "tunnels", order: "4",
-                kind: "wireguard", name: "Plain", address: [ "10.0.0.3/32" ],
-                private_key: "private-plain", amnezia_jc: "3", amnezia_i1: "<r 2>", amnezia_disable_cookies: "1",
-                amnezia_s1: "64", amnezia_h1: "100-200",
-                amnezia_header_protection_key: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
-            },
-            {
-                ".name": "tun_tailnet", section: "tunnels", order: "2",
-                kind: "tailscale", name: "Tailnet", tailscale_auth_key: "tskey-auth-test",
-                tailscale_hostname: "forkop-router", tailscale_exit_node: "100.64.0.1",
-                tailscale_detour_section: "control"
-            },
-            {
-                ".name": "tun_home", section: "tunnels", order: "6",
-                kind: "tailscale", name: "Home", tailscale_auth_key: "tskey-auth-test",
-                tailscale_hostname: "forkop-home"
-            },
-            {
-                ".name": "tun_json", section: "tunnels", order: "3",
-                kind: "json", endpoint_json: "{\"type\":\"vpn-client\",\"tag\":\"custom-endpoint\",\"server\":\"vpn.example.com\"}"
-            }
-        ],
-        tunnel_peer: [
-            { ".name": "peer_amnezia", tunnel: "tun_amnezia", order: "0", address: "vpn.example.com", port: "51820", public_key: "public", allowed_ips: [ "0.0.0.0/0" ] },
-            { ".name": "peer_plain", tunnel: "tun_plain", order: "0", address: "wg.example.com", port: "51820", public_key: "public", allowed_ips: [ "0.0.0.0/0" ] },
-            { ".name": "peer_bare", tunnel: "tun_bare", order: "0", address: "wg.example.com", port: "51820", public_key: "public", allowed_ips: [ "0.0.0.0/0" ] }
-        ]
-    });
-
-    let warp = q.endpoint(config, "tunnels/Cloudflare WARP");
-    t.eq(warp.type, "warp");
-    t.eq(warp.profile.license_key, "license-key");
-    t.eq(warp.profile.recreate, null, "the core keys its profile cache by the profile, so one it already fetched is not asked for again");
-    t.eq(warp.amnezia, { jc: 7, i1: "<r 1>", content_padding_addition: "8-16" },
-        "WARP carries only the obfuscation a plain peer ignores");
-
-    let amnezia = q.endpoint(config, "tunnels/Amnezia");
-    t.eq(amnezia.type, "amneziawg");
-    t.eq(amnezia.amnezia, { jc: 5, h1: 100, random_trailers: true, disable_cookies: true });
-
-    let plain = q.endpoint(config, "tunnels/Plain");
-    t.eq(plain.type, "wireguard");
-    t.eq(plain.amnezia, { jc: 3, i1: "<r 2>" },
-        "a WireGuard endpoint carries only one-sided Amnezia fields");
-    for (let endpoint in config.endpoints)
-        t.ok(endpoint.amnezia == null || length(keys(endpoint.amnezia)) > 0, "empty Amnezia block on " + endpoint.tag);
-
-    let tailscale = q.endpoint(config, "tunnels/Tailnet");
-    t.eq(tailscale.type, "tailscale");
-    t.eq(tailscale.state_directory, "/etc/forkop/tailscale/tunnels-tun_tailnet");
-    t.eq(tailscale.detour, "control");
-    t.eq(tailscale.exit_node, "100.64.0.1");
-    t.eq(tailscale.exit_node_allow_lan_access, true);
-
-    let home = q.endpoint(config, "tunnels/Home");
-    t.eq(home.type, "tailscale");
-    t.ok(!exists(home, "exit_node") && !exists(home, "exit_node_allow_lan_access"),
-        "a Tailscale tunnel without an exit node must not ask for one");
-
-    let custom = q.endpoint(config, "tunnels/custom-endpoint");
-    t.eq(custom.type, "vpn-client");
-    t.eq(custom.detour, null);
-
-    let selector = q.outbound(config, "tunnels");
-    for (let tag in [ warp.tag, amnezia.tag, tailscale.tag, custom.tag ])
-        t.contains(selector.outbounds, tag, "tunnels are selectable connection outbounds");
-
-    t.eq(config.experimental.cache_file.enabled, true);
-    t.eq(config.experimental.cache_file.path, "/tmp/sing-box/cache.db");
-    t.eq(config.experimental.cache_file.store_warp_config, true);
-});
-
 t.test("list update settings reach remote rule sets, and ports constrain the whole rule-set matcher", () => {
     let disabled = build({
         settings: settings({ list_update_enabled: "0", update_interval: "5m" }),
@@ -548,30 +448,6 @@ t.test("downloads through a section get service inbounds and rule-set detours", 
         "lists download through a section as a rule-set detour and open no port for it");
 });
 
-t.test("WARP profile requests go through the chosen section: the tunnel names it, the page's generator gets an inbound", () => {
-    let data = (extra) => ({
-        settings: settings(extra),
-        section: [
-            { ".name": "proxy", enabled: "1", action: "connection", outbound_jsons: [ "{\"type\":\"direct\"}" ], destinations: "example.org" },
-            { ".name": "tunnels", enabled: "1", action: "connection" }
-        ],
-        tunnel: [ {
-            ".name": "tun_warp", section: "tunnels", order: "0", kind: "warp", name: "WARP",
-            warp_profile_id: "profile-id", warp_profile_auth_token: "auth-token", warp_profile_private_key: "private-key"
-        } ]
-    });
-
-    let through = build(data({ warp_profiles_via_proxy: "1", warp_profiles_via_proxy_section: "proxy" }));
-    let warp = q.endpoint(through, "tunnels/WARP");
-    t.eq([ warp.profile.id, warp.profile.detour ], [ "profile-id", "proxy" ]);
-    t.eq(q.inbound(through, "service-warp-in").listen_port, 4536);
-    t.ok(q.route_rule(through, (r) => r.inbound == "service-warp-in" && r.outbound == "proxy") != null);
-
-    let direct = build(data());
-    t.eq([ q.endpoint(direct, "tunnels/WARP").profile.detour, q.inbound(direct, "service-warp-in") ], [ null, null ],
-        "without a section the profile goes the way the router's own traffic goes");
-});
-
 t.test("the Clash API dashboard downloads its interface direct, wherever the lists download", () => {
     let sections = [
         { ".name": "proxy", enabled: "1", action: "connection", outbound_jsons: [ "{\"type\":\"direct\"}" ], destinations: "example.org" },
@@ -706,20 +582,6 @@ t.test("server records alone never make a configuration runnable", () => {
         fixture.seed({ settings: settings(), server: [ { ".name": "unsupported", enabled: "1", protocol, inbound_json: "invalid-secret-json" } ] });
         t.eq(generator.runnable(), false, protocol);
         t.eq(t.throws(() => generator.build({ service_address: "127.0.0.1" })).message, "no usable sections");
-    }
-});
-
-t.test("a JSON client tunnel cannot restore an OpenVPN server endpoint", () => {
-    for (let endpoint_type in [ "openvpn-server", " OPENVPN-SERVER " ]) {
-        let result = t.throws(() => build({
-            settings: settings(),
-            section: [ { ".name": "main", enabled: "1", action: "connection" } ],
-            tunnel: [ { ".name": "json", section: "main", kind: "json", endpoint_json: sprintf("%J", {
-                type: endpoint_type, tag: "private-server", listen: "0.0.0.0", listen_port: 18443
-            }) } ]
-        }));
-        t.contains(result.message, "VPN server endpoints are not supported");
-        t.excludes(result.message, "private-server");
     }
 });
 

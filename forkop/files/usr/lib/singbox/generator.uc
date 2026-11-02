@@ -6,7 +6,6 @@ let runtime_constants = require("singbox.constants");
 let runtime_dns = require("singbox.dns");
 let runtime_route = require("singbox.route");
 let runtime_rulesets = require("singbox.rulesets");
-let runtime_tailscale = require("singbox.tailscale");
 let subscription_headers_module = require("singbox.subscription_headers");
 let runtime_urltest = require("singbox.urltest");
 let connections = require("config.connections");
@@ -24,8 +23,6 @@ let int_option = common.int_option;
 const CONFIG_NAME = "forkop";
 // The FakeIP server answers only address queries and fails every other type.
 const FAKEIP_QUERY_TYPES = [ "A", "AAAA" ];
-const OPENCONNECT_RECONNECT_TIMEOUT = "876000h";
-const TUNNEL_DNS_SERVER_TYPES = { openconnect: "openconnect", "openvpn-client": "openvpn", tailscale: "tailscale" };
 
 function runtime_generate_unsupported(reason) {
     die(reason);
@@ -286,7 +283,6 @@ function base_config(settings, service_address) {
             strategy: option(settings, "dns_strategy", "prefer_ipv4"),
             timeout: option(settings, "dns_timeout", "10s")
         },
-        endpoints: [],
         inbounds,
         providers: [],
         outbounds: [
@@ -302,8 +298,7 @@ function base_config(settings, service_address) {
                 enabled: true,
                 path: cache_path,
                 store_fakeip: true,
-                store_subscriptions: true,
-                store_warp_config: true
+                store_subscriptions: true
             },
             clash_api: clash_api_config(settings, service_address)
         }
@@ -444,53 +439,6 @@ function assert_unique_outbound_tags(config) {
         if (seen[tag_name])
             runtime_generate_unsupported("generated sing-box config has duplicate outbound tag '" + tag_name + "'");
         seen[tag_name] = true;
-    }
-}
-
-function canonical_json(value) {
-    if (type(value) == "object")
-        return "{" + join(",", map(sort(keys(value)), (key) => sprintf("%J", key) + ":" + canonical_json(value[key]))) + "}";
-    if (type(value) == "array")
-        return "[" + join(",", map(value, (item) => canonical_json(item))) + "]";
-    return sprintf("%J", value);
-}
-
-function wireguard_identities(endpoint) {
-    let type_name = lc(as_string(endpoint.type || ""));
-    if (type_name == "warp") {
-        let key = as_string(object_or_empty(endpoint.profile).private_key || "");
-        return key == "" ? [] : [ "warp/" + key ];
-    }
-    if (type_name != "wireguard" && type_name != "amneziawg")
-        return [];
-    return map(array_or_empty(endpoint.peers), (peer) =>
-        as_string(endpoint.private_key || "") + "/" + as_string(object_or_empty(peer).public_key || ""));
-}
-
-// The core runs endpoints equal apart from their tag on one device; the same client key with
-// other settings would be two devices taking one session from each other.
-function assert_compatible_wireguard_endpoints(config) {
-    let holders = {};
-    for (let endpoint in array_or_empty(config.endpoints)) {
-        if (type(endpoint) != "object")
-            continue;
-        for (let identity in wireguard_identities(endpoint)) {
-            let first = holders[identity];
-            if (first == null) {
-                holders[identity] = endpoint;
-                continue;
-            }
-            let names = {};
-            for (let name in keys(first)) names[name] = true;
-            for (let name in keys(endpoint)) names[name] = true;
-            let differences = filter(sort(keys(names)), (name) =>
-                name != "tag" && canonical_json(first[name]) != canonical_json(endpoint[name]));
-            if (length(differences) > 0)
-                runtime_generate_unsupported("endpoints '" + first.tag + "' and '" + endpoint.tag +
-                    "' use the same WireGuard key for the same server with different " + join(", ", differences) +
-                    ", so they would take the one session the server keeps per key from each other." +
-                    " Make these settings the same, or give one of them its own client on the server");
-        }
     }
 }
 
@@ -668,14 +616,13 @@ function outbound_effective_type(outbound) {
 
 function candidate_outbound_types(config) {
     let result = {};
-    for (let group in [ array_or_empty(config.outbounds), array_or_empty(config.endpoints) ])
-        for (let outbound in group) {
-            if (type(outbound) != "object")
-                continue;
-            let tag_name = as_string(outbound.tag || "");
-            if (tag_name != "")
-                result[tag_name] = outbound_effective_type(outbound);
-        }
+    for (let outbound in array_or_empty(config.outbounds)) {
+        if (type(outbound) != "object")
+            continue;
+        let tag_name = as_string(outbound.tag || "");
+        if (tag_name != "")
+            result[tag_name] = outbound_effective_type(outbound);
+    }
     return result;
 }
 
@@ -1036,33 +983,12 @@ function add_proxy_selector(config, section, selector_tags, urltest_candidate_ta
     push(config.outbounds, selector);
 }
 
-function add_service_mixed_proxy_inbound(config, tag_name, listen_port, outbound) {
-    push(config.inbounds, {
-        type: "mixed",
-        tag: tag_name,
-        listen: runtime_constants.SERVICE_MIXED_INBOUND_ADDRESS,
-        listen_port
-    });
-    push(config.route.rules, {
-        action: "route",
-        inbound: tag_name,
-        outbound
-    });
-}
-
 function first_outbound_section(sections) {
     for (let section in sections) {
         if (connections.is_connections_action(option(section, "action", "")))
             return section;
     }
     return null;
-}
-
-// For what runs outside the core and cannot name an outbound: the page's WARP profile requests.
-function add_service_mixed_proxy(config, settings) {
-    if (connections.download_via_proxy_enabled(settings, "warp_profiles"))
-        add_service_mixed_proxy_inbound(config, runtime_constants.WARP_PROFILES_MIXED_INBOUND_TAG,
-            runtime_constants.WARP_PROFILES_MIXED_INBOUND_PORT, download_detour(settings, "warp_profiles"));
 }
 
 function interface_domain_resolver_detour_tag(section, interface_name, interface_tag) {
@@ -1127,60 +1053,6 @@ function parse_outbound_json(value) {
     return type(value) == "object" ? value : null;
 }
 
-function add_connection_tunnels(config, section, selector_tags, urltest_candidate_tags) {
-    let items = connections.tunnel_items(section);
-    let section_name = section[".name"];
-
-    for (let i = 0; i < length(items); i++) {
-        let tunnel = items[i];
-        let endpoint = connections.tunnel_endpoint(tunnel);
-        let endpoint_type = lc(as_string(endpoint.type || ""));
-        let wrapper_kind = lc(as_string(connections.option(tunnel, "kind", "wireguard")));
-        if (trim(endpoint_type) == "openvpn-server")
-            runtime_generate_unsupported("VPN server endpoints are not supported");
-        if (wrapper_kind != "json" &&
-            (endpoint_type != "wireguard" && endpoint_type != "amneziawg" && endpoint_type != "warp" && endpoint_type != "tailscale" &&
-                endpoint_type != "openvpn-client" && endpoint_type != "openconnect"))
-            runtime_generate_unsupported("tunnel " + (i + 1) + " has an unsupported endpoint type");
-
-        let tag_name = child_outbound_tag(section, connections.tunnel_display_name(tunnel, i + 1));
-        endpoint.tag = tag_name;
-
-        if (wrapper_kind != "json" && (endpoint_type == "wireguard" || endpoint_type == "amneziawg" || endpoint_type == "warp" ||
-            endpoint_type == "openvpn-client" || endpoint_type == "openconnect")) {
-            let detour = cascade_tag(tunnel);
-            if (detour != "")
-                endpoint.detour = detour;
-        }
-
-        // The core gives up on an OpenConnect server after five minutes of failed reconnects.
-        if (wrapper_kind != "json" && endpoint_type == "openconnect" && endpoint.reconnect_timeout == null)
-            endpoint.reconnect_timeout = OPENCONNECT_RECONNECT_TIMEOUT;
-
-        if (wrapper_kind != "json" && endpoint_type == "warp" && endpoint.profile != null &&
-            connections.download_via_proxy_enabled(runtime_settings(), "warp_profiles"))
-            endpoint.profile.detour = download_detour(runtime_settings(), "warp_profiles");
-
-        if (wrapper_kind != "json" && endpoint_type == "tailscale") {
-            let detour_section = connections.option(tunnel, "tailscale_detour_section", "");
-            if (detour_section != "")
-                endpoint.detour = outbound_tag(detour_section);
-            if (as_string(endpoint.state_directory || "") == "")
-                endpoint.state_directory = runtime_tailscale.tunnel_state_directory(section_name, as_string(tunnel[".name"] || (i + 1)));
-            if (as_string(endpoint.exit_node || "") != "")
-                endpoint.exit_node_allow_lan_access = true;
-        }
-
-        push(config.endpoints, endpoint);
-        push(selector_tags, tag_name);
-        push(urltest_candidate_tags, tag_name);
-
-        let dns_type = TUNNEL_DNS_SERVER_TYPES[endpoint_type];
-        if (wrapper_kind != "json" && dns_type != null && bool_option(tunnel, "accept_server_dns", true))
-            push(config.dns.servers, { type: dns_type, tag: tag_name, endpoint: tag_name, __tunnel: true });
-    }
-}
-
 function json_outbound_reference_tag(reference, tag_map) {
     reference = as_string(reference);
     if (tag_map[reference])
@@ -1224,6 +1096,9 @@ function prepare_json_connection_outbounds(section) {
         if (outbound == null)
             runtime_generate_unsupported("JSON outbound is invalid");
 
+        if (runtime_constants.removed_vpn_type(outbound.type))
+            runtime_generate_unsupported("VPN tunnel and server types are not supported");
+
         let display_name = connections.outbound_json_display_name(outbound, i + 1);
         let tag_name = child_outbound_tag(section, display_name);
         tag_map[display_name] = tag_name;
@@ -1257,12 +1132,10 @@ function add_connections_outbound(config, section) {
     let provider_refs = add_subscription_providers(config, section);
     add_manual_link_outbounds(config, section, selector_tags, urltest_candidate_tags);
     let interface_tags = [];
-    let tunnel_tags = [];
     let json_tags = [];
     add_connection_interfaces(config, section, interface_tags, urltest_candidate_tags);
-    add_connection_tunnels(config, section, tunnel_tags, urltest_candidate_tags);
     add_connection_json_outbounds(config, section, json_tags, urltest_candidate_tags);
-    for (let tags in [ interface_tags, tunnel_tags, json_tags ])
+    for (let tags in [ interface_tags, json_tags ])
         for (let tag_name in tags)
             push(selector_tags, tag_name);
 
@@ -1443,14 +1316,6 @@ function add_static_hosts_dns_rule(config, hosts) {
 function add_source_aware_dns_fallback(config) {
     let rewrite_ttl = int_option(runtime_settings(), "dns_rewrite_ttl", "60");
     add_device_dns_rules(config, { inbound: captured_dns_inbound_matcher() }, unmatched_dns_server_tag(), rewrite_ttl);
-}
-
-// The names a tunnel's server declares resolve through that server when the tunnel dials
-// them: the endpoint's lookups pass every captured-query rule, a device's stop before this.
-function add_tunnel_dns_rules(config) {
-    for (let server in config.dns.servers)
-        if (server.__tunnel)
-            push_dns_matcher_rule(config, { preferred_by: server.tag, action: "route", server: server.tag });
 }
 
 function dns_action_server_tag(section_name) {
@@ -1772,11 +1637,8 @@ function build(context) {
         add_route_for_section(config, section);
     add_static_hosts_dns_rule(config, static_hosts);
     add_source_aware_dns_fallback(config);
-    add_tunnel_dns_rules(config);
-    add_service_mixed_proxy(config, settings);
 
     assert_unique_outbound_tags(config);
-    assert_compatible_wireguard_endpoints(config);
     return strip_internal_fields(config);
 }
 

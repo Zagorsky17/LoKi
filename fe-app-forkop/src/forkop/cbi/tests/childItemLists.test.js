@@ -119,11 +119,11 @@ describe('child item lists', () => {
     expect(hasDialog(listOption(name), owner, '')).toBe(false);
   });
 
-  it('keeps a tunnel entry addressed by its section id', () => {
-    const option = listOption('tunnels');
-    childPendingSettingsStore(option, 'vpn').tunnel_abc = { name: 'Office' };
+  it('keeps a connection link addressed by its section id', () => {
+    const option = listOption('connection_link');
+    childPendingSettingsStore(option, 'vpn').link_abc = { name: 'Office' };
 
-    expect(option.inputValueForItem('vpn', 'tunnel_abc')).toBe('tunnel_abc');
+    expect(option.inputValueForItem('vpn', 'link_abc')).toBe('link_abc');
   });
 
   it.each([

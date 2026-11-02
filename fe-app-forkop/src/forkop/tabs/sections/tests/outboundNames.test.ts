@@ -135,7 +135,6 @@ describe('the server choices of a section', () => {
     expect(choiceValues(currentOutboundNameChoices('main'))).toEqual([
       'Germany',
       'Uplink',
-      'Warp',
       'Hop',
       'Zurich',
       'Amsterdam',
@@ -147,7 +146,7 @@ describe('the server choices of a section', () => {
     section(['second', 'first']);
     await loadProviderServerNames();
 
-    expect(choiceValues(currentOutboundNameChoices('main')).slice(4)).toEqual([
+    expect(choiceValues(currentOutboundNameChoices('main')).slice(3)).toEqual([
       'Berlin',
       'Zurich',
       'Amsterdam',
@@ -199,7 +198,6 @@ describe('the server choices of a section', () => {
     expect(choiceValues(currentOutboundNameChoices('main'))).toEqual([
       'Germany',
       'Uplink',
-      'Warp',
       'Hop',
     ]);
     expect(mocks.providers).not.toHaveBeenCalled();
@@ -215,7 +213,6 @@ describe('the server choices of a section', () => {
     expect(choiceValues(currentOutboundNameChoices('main'))).toEqual([
       'Germany',
       'Uplink',
-      'Warp',
       'Hop',
     ]);
   });
@@ -255,7 +252,7 @@ describe('the server choices of a section', () => {
     forgetOutboundNameChoices();
     currentOutboundNameChoices('main');
     await loadProviderServerNames();
-    expect(choiceValues(currentOutboundNameChoices('main')).slice(4)).toEqual([
+    expect(choiceValues(currentOutboundNameChoices('main')).slice(3)).toEqual([
       'Oslo',
     ]);
   });
@@ -375,13 +372,11 @@ describe('a name in a section', () => {
   it('belongs to one server or group of whatever kind', () => {
     section();
 
-    expect(validateSectionChildName('main', 'tunnel', 'Germany')).toBe(TAKEN);
+    expect(validateSectionChildName('main', 'json', 'Germany')).toBe(TAKEN);
     expect(validateSectionChildName('main', 'link', 'Fastest')).toBe(TAKEN);
     expect(validateSectionChildName('main', 'fallback', 'Hop')).toBe(TAKEN);
     expect(validateSectionChildName('main', 'json', 'Uplink')).toBe(TAKEN);
-    expect(validateSectionChildName('main', 'tunnel', 'Netherlands')).toBe(
-      true,
-    );
+    expect(validateSectionChildName('main', 'json', 'Netherlands')).toBe(true);
   });
 
   it('leaves two of one list to the list, and knows an interface by its own name', () => {
@@ -405,7 +400,7 @@ describe('a name in a section', () => {
   });
 });
 
-describe('the name offered to a new group or tunnel', () => {
+describe('the name offered to a new group', () => {
   function section(urltests: Record<string, string>, linkName: string) {
     installLuciStubs({
       main: { '.type': 'section', label: 'Main' },

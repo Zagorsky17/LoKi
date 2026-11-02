@@ -14,19 +14,12 @@ let paths = {
 // The dashboard, groups, latency tests and the nft subnet sync all need the Clash API.
 const REQUIRED = "clash_api";
 
-// The tunnels Forkop runs on gVisor's network stack.
-const GVISOR_TAGS = [ "with_wireguard", "with_openvpn", "with_openconnect", "with_tailscale" ];
-
 const FEATURES = {
     clash_api: { name: "the Clash API", tags: [ "with_clash_api" ] },
-    wireguard: { name: "WireGuard, AmneziaWG and WARP", tags: [ "with_wireguard", "with_gvisor" ] },
     utls: { name: "uTLS and Reality", tags: [ "with_utls" ] },
     quic: { name: "QUIC", tags: [ "with_quic" ] },
-    openvpn: { name: "OpenVPN", tags: [ "with_openvpn", "with_gvisor" ] },
-    tailscale: { name: "Tailscale", tags: [ "with_tailscale", "with_gvisor" ] },
     naive: { name: "NaiveProxy", tags: [ "with_naive" ] },
     trusttunnel: { name: "TrustTunnel", tags: [ "with_trusttunnel" ] },
-    openconnect: { name: "OpenConnect", tags: [ "with_openconnect", "with_gvisor" ] },
     vmess: { name: "VMess", tags: [ "with_vmess" ] },
     snell: { name: "Snell", tags: [ "with_snell" ] },
     ssh: { name: "SSH", tags: [ "with_ssh" ] },
@@ -41,11 +34,6 @@ const OUTBOUND_TYPES = {
     naive: "naive", trusttunnel: "trusttunnel",
     vmess: "vmess", snell: "snell", ssh: "ssh", shadowtls: "shadowtls", tor: "tor",
     anytls: "anytls", mieru: "mieru"
-};
-const ENDPOINT_TYPES = {
-    wireguard: "wireguard", amneziawg: "wireguard", warp: "wireguard",
-    tailscale: "tailscale", "openvpn-client": "openvpn",
-    openconnect: "openconnect"
 };
 
 let known = { signature: null, tags: null, version: "" };
@@ -127,17 +115,11 @@ function core_problem(present) {
         return "Failed to read the tags sing-box was built with from 'sing-box version'. Reinstall sing-box-forkop";
     if (!available(REQUIRED, present))
         return "sing-box was built without with_clash_api. Forkop runs its dashboard, groups, latency tests and subnet sync through the Clash API and cannot start without it. Install a sing-box-forkop package or a core built with with_clash_api";
-    if (index(present, "with_gvisor") < 0) {
-        let stranded = filter(GVISOR_TAGS, (tag) => index(present, tag) >= 0);
-        if (length(stranded) > 0)
-            return "sing-box was built with " + join(", ", stranded) + " but without with_gvisor, the network stack Forkop runs these tunnels on. Install a sing-box-forkop package or a core built with with_gvisor";
-    }
     return "";
 }
 
 function type_feature(kind, type_name) {
-    let table = kind == "endpoint" ? ENDPOINT_TYPES : OUTBOUND_TYPES;
-    return table[lc(trim("" + (type_name ?? "")))] ?? "";
+    return OUTBOUND_TYPES[lc(trim("" + (type_name ?? "")))] ?? "";
 }
 
 function link_query(link) {
@@ -259,14 +241,14 @@ function report(present) {
         known: current != null,
         tags: current ?? [],
         features,
-        types: { outbound: OUTBOUND_TYPES, endpoint: ENDPOINT_TYPES },
+        types: { outbound: OUTBOUND_TYPES },
         // The type each share link scheme dials, so the page reads a link the way this does.
         links: singbox_constants.LINK_SCHEME_OUTBOUND_TYPES
     };
 }
 
 return {
-    paths, REQUIRED, FEATURES, OUTBOUND_TYPES, ENDPOINT_TYPES,
+    paths, REQUIRED, FEATURES, OUTBOUND_TYPES,
     parse_tags, tags, version, available, missing_tags, unavailable_reason, core_problem, type_feature, link_features,
     link_uses_xhttp_http3, report
 };

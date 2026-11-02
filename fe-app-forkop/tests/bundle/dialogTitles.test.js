@@ -88,7 +88,6 @@ describe('a dialog under a section is titled by its kind and name', () => {
     ['interfaces', 'iface1', 'Network interface: lan3'],
     ['urltest', 'ut1', 'URLTest: URLTest #1'],
     ['fallback_group', 'grp1', 'Fallback: Fallback #1'],
-    ['tunnels', 'tun1', 'Tunnel: wg'],
     ['outbound_jsons', JSON_OUTBOUND, 'JSON outbound: local'],
     ['rule_set', RULE_SET, 'Rule set: youtube.srs'],
   ])('the %s dialog', async (listName, itemId, title) => {
@@ -113,25 +112,5 @@ describe('a dialog under a section is titled by its kind and name', () => {
       'lvl1',
     );
     expect(level.title).toBe('Server group: Group #1');
-
-    const tunnel = await harness.openDialog(
-      sectionList('tunnels'),
-      'sec',
-      'tun1',
-    );
-    const peer = await harness.openDialog(
-      dialogList(tunnel, 'peer_ids'),
-      'tun1',
-      'peer1',
-    );
-    expect(peer.title).toBe('WireGuard peer: 203.0.113.1:51820');
-  });
-
-  it('keeps the plain title for an item being added', async () => {
-    const dialog = await harness.openDialog(sectionList('tunnels'), 'sec', '', {
-      adding: true,
-    });
-
-    expect(dialog.title).toBe('Tunnel settings');
   });
 });

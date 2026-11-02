@@ -100,17 +100,6 @@ import {
 } from './subscriptions/model';
 import { showSubscriptionUrlSettingsModal } from './subscriptions/options';
 import {
-  canAddTunnel,
-  showTunnelSettingsModal,
-  tunnelKindsDescription,
-} from './tunnels/dialog';
-import { normalizeDynamicListItems } from '../../cbi/listValues';
-import { removeTunnelPeers, tunnelListItemLabel } from './tunnels/model';
-import {
-  validateTunnelItem,
-  validateTunnelItemsBeforeSave,
-} from './tunnels/validate';
-import {
   showUrlTestSettingsModal,
   urlTestChildDefaults,
   validateUrlTestItemsBeforeSave,
@@ -412,49 +401,6 @@ export function createSectionContent(section: CBISection) {
   };
   o.onListChange = refreshLiveChoiceWidgets;
   outboundNameSourceOptions.set('interfaces', o);
-
-  o = section.taboption(
-    'settings',
-    ButtonAddSettingsDynamicList,
-    'tunnels',
-    _('Tunnel'),
-    tunnelKindsDescription(),
-  );
-  o.depends('action', 'connection');
-  // A core that builds no tunnel leaves the list only to remove saved ones. LuCI deletes the
-  // sections of a list it hides on save, so the list hides only once it is empty.
-  const dependsOnAction = o.checkDepends;
-  o.checkDepends = function (section_id: string) {
-    return (
-      dependsOnAction.call(this, section_id) &&
-      (canAddTunnel() ||
-        normalizeDynamicListItems(
-          this.formvalue(section_id) ?? this.cfgvalue(section_id),
-        ).length > 0)
-    );
-  };
-  o.addable = canAddTunnel;
-  o.rmempty = true;
-  o.modalonly = true;
-  o.addButtonLabel = _('+ Add tunnel');
-  o.childType = 'tunnel';
-  o.entriesAreSections = true;
-  o.ownerOption = 'section';
-  o.removeNestedChildItems = removeTunnelPeers;
-  o.childValueOption = undefined;
-  o.createId = () => nextSectionId('tunnel');
-  o.renderItemSettingsModal = showTunnelSettingsModal;
-  o.renderListItemLabel = function (section_id: string, value: unknown) {
-    return tunnelListItemLabel(section_id, `${value ?? ''}`);
-  };
-  o.validateItemsOnSave = validateTunnelItemsBeforeSave;
-  o.validate = function (section_id: string, value: unknown) {
-    const tunnelId = `${value || ''}`.trim();
-    return tunnelId ? validateTunnelItem(section_id, tunnelId) : true;
-  };
-  o.onListChange = refreshLiveChoiceWidgets;
-  o.afterMaterializeChildItems = orderChildItemsByPosition;
-  outboundNameSourceOptions.set('tunnels', o);
 
   o = section.taboption(
     'settings',

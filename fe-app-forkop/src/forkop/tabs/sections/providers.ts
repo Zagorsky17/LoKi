@@ -21,18 +21,13 @@ export function providerTypeChoices() {
   ].map(([value, label]) => ({ value, label }));
 }
 
-// Groups also hold a section's own servers, the only way tunnels and interfaces become members.
+// Groups also hold the section's interface connections.
 export function groupTypeChoices() {
   return [
     ...providerTypeChoices(),
-    ...[
-      ['wireguard', 'WireGuard'],
-      ['amneziawg', 'AmneziaWG'],
-      ['warp', 'WARP'],
-      ['tailscale', 'Tailscale'],
-      ['openvpn-client', 'OpenVPN'],
-      ['openconnect', 'OpenConnect'],
-      ['direct', _('Network interface')],
-    ].map(([value, label]) => ({ value, label })),
+    ...[['direct', _('Network interface')]].map(([value, label]) => ({
+      value,
+      label,
+    })),
   ];
 }

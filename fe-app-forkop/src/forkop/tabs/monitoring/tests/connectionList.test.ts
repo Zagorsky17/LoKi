@@ -279,7 +279,7 @@ describe('the Monitoring connection list', () => {
       'Direct',
     ]);
     expect(direct.attrs.title).toBe(
-      'Straight from the router, without a proxy or tunnel',
+      'Straight from the router, without a proxy',
     );
   });
 

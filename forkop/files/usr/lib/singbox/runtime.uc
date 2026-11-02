@@ -2,11 +2,9 @@
 let fs = require("fs");
 let common = require("core.common");
 let exec = require("core.exec");
-let netstat = require("core.netstat");
 let uci = require("core.uci");
 let singbox_constants = require("singbox.constants");
 let packages = require("core.packages");
-let connections = require("config.connections");
 let generator = require("singbox.generator");
 let core_ip = require("core.ip");
 
@@ -173,7 +171,7 @@ function write_config(checked) {
 // The devices the running configuration binds the core's own sockets to.
 function bound_devices() {
     let config = common.read_json_file(common.option(settings(), "config_path", ""));
-    let bound = map([ ...(config?.outbounds ?? []), ...(config?.endpoints ?? []) ], (item) => item?.bind_interface);
+    let bound = map(config?.outbounds ?? [], (item) => item?.bind_interface);
     let devices = [];
     for (let name in [ config?.route?.default_interface, ...bound ])
         if (type(name) == "string" && name != "" && index(devices, name) < 0)
@@ -191,41 +189,7 @@ function process_running() {
     return exec.ok([ "pgrep", "-f", "^/usr/bin/sing-box[[:space:]]+run([[:space:]]|$)" ]);
 }
 
-// Cloudflare's registration API is blocked on some networks: with a section chosen the request
-// goes through the core's inbound for it, never directly; without one it is the router's own.
-function warp_profile() {
-    let values = settings();
-    let section = connections.download_via_proxy_enabled(values, "warp_profiles")
-        ? connections.download_via_proxy_section(values, "warp_profiles") : null;
-    let through = section == null ? "" : " through section '" + connections.section_display_name(section) + "'";
-    let fail = function(detail) {
-        let message = "Failed to generate WARP profile" + detail;
-        exec.log("error", message);
-        die(message);
-    };
-
-    let argv = [ "sing-box", "--disable-color", "generate", "warp-profile", "--json" ];
-    if (section != null) {
-        let proxy = singbox_constants.SERVICE_MIXED_INBOUND_ADDRESS + ":" + singbox_constants.WARP_PROFILES_MIXED_INBOUND_PORT;
-        if (!netstat.tcp_endpoint_in_use(exec.output([ "netstat", "-lnt" ]), proxy))
-            fail(": profiles are requested through section '" + connections.section_display_name(section) +
-                "', and its service proxy is not running. Apply the settings or start Forkop");
-        argv = [ "env", "HTTPS_PROXY=http://" + proxy, ...argv ];
-    }
-    let output = exec.combined(argv);
-    if (output.status != 0)
-        fail(through + ": " + failure_reason(output) + (section == null
-            ? ". If the Cloudflare API is blocked on this network, choose a section in Settings to request WARP profiles through" : ""));
-
-    let profile = common.parse_json(output.output);
-    let result = { id: profile?.id, auth_token: profile?.auth_token, private_key: profile?.private_key };
-    for (let key, value in result)
-        if (type(value) != "string" || value == "")
-            fail(through + ": the core returned an incomplete profile");
-    return result;
-}
-
 return {
     configure_service, write_config, listen_address, device_ipv4_address,
-    mwan3_active, bound_devices, version, process_running, warp_profile
+    mwan3_active, bound_devices, version, process_running
 };

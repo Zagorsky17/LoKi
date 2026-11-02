@@ -40,8 +40,6 @@ describe('nextSectionId', () => {
     ['server', 'server'],
     ['server_client', 'client'],
     ['subscription_url', 'sub'],
-    ['tunnel', 'tunnel'],
-    ['tunnel_peer', 'peer'],
     ['urltest', 'urltest'],
   ])('names a %s section %s_<suffix>', (typeName, prefix) => {
     queue('0a1b2c');
@@ -66,9 +64,9 @@ describe('nextSectionId', () => {
 
   it('skips a name it has already handed out in this dialog', () => {
     queue('0ccccc');
-    expect(nextSectionId('tunnel_peer')).toBe('peer_0ccccc');
+    expect(nextSectionId('fallback_level')).toBe('level_0ccccc');
     queue('0ccccc', '0ddddd');
-    expect(nextSectionId('tunnel_peer')).toBe('peer_0ddddd');
+    expect(nextSectionId('fallback_level')).toBe('level_0ddddd');
   });
 
   it('produces a valid uci name from real randomness', () => {

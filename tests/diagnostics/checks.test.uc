@@ -178,8 +178,7 @@ CGO: disabled
     t.eq([ old.version, old.outdated ], [ "1.13.18-extended-2.6.5-f165", true ], "sing-box-forkop older than Forkop needs");
 
     t.contains(core_of("1.14.4-r1", "with_utls,with_quic").problem, "sing-box was built without with_clash_api");
-    t.contains(core_of("1.14.4-r1", "with_clash_api,with_wireguard,with_openvpn").problem,
-        "sing-box was built with with_wireguard, with_openvpn but without with_gvisor");
+    t.eq(core_of("1.14.4-r1", "with_clash_api,with_wireguard,with_openvpn").problem, "");
 });
 
 t.test("a DNS reply counts when the server resolved the name, whatever the name turned out to be", () => {

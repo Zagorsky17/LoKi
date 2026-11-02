@@ -41,7 +41,6 @@ import {
 } from './coreUsage';
 import type { CoreUsageReading } from './coreUsage';
 import { resolveOutboundProxyLink } from './resolveOutboundProxyLink';
-import { showTailscaleDetailsModal } from './tailscale';
 import { E } from '../../../helpers/element';
 
 const SECTIONS_REFRESH_INTERVAL_MS = 10000;
@@ -1535,16 +1534,6 @@ function handleShowFallbackInfo(outbound: Forkop.Outbound) {
   );
 }
 
-// The Tailscale dialog polls the core while open.
-function handleShowTailscaleInfo(outbound: Forkop.Outbound) {
-  closeDetailsModal();
-  showTailscaleDetailsModal(
-    `${_('Tailscale details')}: ${outbound.displayName}`,
-    outbound.code,
-    _('The tunnel is not running yet. Apply the settings, or start Forkop.'),
-  );
-}
-
 async function runToolbarAction(
   action: 'testAll' | 'subscriptions' | 'lists',
   run: () => Promise<void>,
@@ -1718,9 +1707,6 @@ async function renderSectionsWidget() {
       },
       onShowFallbackInfo: (outbound) => {
         handleShowFallbackInfo(outbound);
-      },
-      onShowTailscaleInfo: (outbound) => {
-        handleShowTailscaleInfo(outbound);
       },
       exitPanel:
         exitPanel?.sectionName === section.sectionName

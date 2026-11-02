@@ -35,7 +35,6 @@ interface IRenderSectionsProps {
   ) => void;
   onShowUrlTestInfo: (outbound: Forkop.Outbound) => void;
   onShowFallbackInfo: (outbound: Forkop.Outbound) => void;
-  onShowTailscaleInfo: (outbound: Forkop.Outbound) => void;
   onSortByLatencyChange?: (sectionName: string, enabled: boolean) => void;
   onCollapsedChange?: (sectionName: string, collapsed: boolean) => void;
   latencyFetching: boolean;
@@ -296,7 +295,6 @@ function renderDefaultState({
   onCopyOutbound,
   onShowUrlTestInfo,
   onShowFallbackInfo,
-  onShowTailscaleInfo,
   onTestLatency,
   onTestOutboundLatency,
   onSortByLatencyChange,
@@ -458,25 +456,6 @@ function renderDefaultState({
                     click: (event: MouseEvent) => {
                       event.stopPropagation();
                       onShowFallbackInfo(outbound);
-                    },
-                  },
-                  renderInfoIcon24(),
-                ),
-              ]
-            : []),
-          ...(outbound.type === 'Tailscale'
-            ? [
-                E(
-                  'button',
-                  {
-                    type: 'button',
-                    class:
-                      'btn fkp_dashboard-page__outbound-grid__item__copy-button',
-                    title: _('Tailscale details'),
-                    'aria-label': _('Tailscale details'),
-                    click: (event: MouseEvent) => {
-                      event.stopPropagation();
-                      onShowTailscaleInfo(outbound);
                     },
                   },
                   renderInfoIcon24(),
@@ -707,7 +686,6 @@ export function renderSectionsPlaceholder(state: {
     onCopyOutbound: () => {},
     onShowUrlTestInfo: () => {},
     onShowFallbackInfo: () => {},
-    onShowTailscaleInfo: () => {},
     latencyFetching: false,
   });
 }

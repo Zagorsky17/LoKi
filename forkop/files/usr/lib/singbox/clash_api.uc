@@ -49,7 +49,7 @@ function allowed(method, path, body) {
     if (method == "GET") {
         if (body != "")
             return false;
-        if (path == "/proxies" || path == "/providers/proxies" || path == "/connections" || path == "/tailscale")
+        if (path == "/proxies" || path == "/providers/proxies" || path == "/connections")
             return true;
         let query = index(path, "?");
         if (query < 0) {
@@ -61,8 +61,6 @@ function allowed(method, path, body) {
             return false;
         if (target[0] == "proxies" && target[2] == "exit")
             return match(substr(path, query), /^\?timeout=[0-9]+$/) != null;
-        if (target[0] == "tailscale" && target[2] == "ping")
-            return match(substr(path, query), /^\?address=[0-9A-Fa-f.:%]+&timeout=[0-9]+$/) != null;
         return target[2] == "delay" && (target[0] == "proxies" || target[0] == "group") &&
             match(substr(path, query), /^\?url=[^&]+&timeout=[0-9]+$/) != null;
     }

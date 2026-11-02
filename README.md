@@ -16,7 +16,7 @@ The source still uses the technical names `forkop`, `luci-app-forkop` and `/etc/
 
 ## Planned scope
 
-LoKi will retain connection links, subscriptions, routing sections, DNS, monitoring and diagnostics. Hosting VPN/proxy servers on the router has been removed: there is no server tab, server listener generation, client profile issuance, server key generation or server diagnostics. Built-in DNS/TProxy listeners and outbound connections remain. Client tunnels and legacy migrations are still present and scheduled for removal.
+LoKi will retain connection links, subscriptions, routing sections, DNS, monitoring and diagnostics. Hosting VPN/proxy servers on the router has been removed: there is no server tab, server listener generation, client profile issuance, server key generation or server diagnostics. Built-in DNS/TProxy listeners and outbound connections remain. Built-in client VPN tunnels (WireGuard, AmneziaWG, WARP, Tailscale, OpenVPN and OpenConnect) and JSON endpoints have also been removed. Connection links, subscriptions, JSON outbounds and existing network interfaces remain; custom JSON outbounds cannot restore the removed VPN types. Legacy migrations are still present and scheduled for removal.
 
 The target platforms are OpenWrt 24.10 and 25.12. Compatibility with stock sing-box packages and newer versions remains unverified. Current development uses the patched LoKi core in the `sing-box-forkop` package.
 

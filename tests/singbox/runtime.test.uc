@@ -162,9 +162,9 @@ t.test("the devices the core binds are the default interface and every bind_inte
         route: { default_interface: "eth1", final: "direct-out" },
         outbounds: [ { type: "direct", tag: "direct-out" }, { type: "direct", tag: "lte", bind_interface: "wwan0" },
             { type: "vless", tag: "json", bind_interface: "eth1", server: "a.example" } ],
-        endpoints: [ { type: "wireguard", tag: "wg", bind_interface: "pppoe-wan" } ]
+        endpoints: [ { type: "wireguard", tag: "ignored", bind_interface: "pppoe-wan" } ]
     }));
-    t.eq(runtime.bound_devices(), [ "eth1", "pppoe-wan", "wwan0" ]);
+    t.eq(runtime.bound_devices(), [ "eth1", "wwan0" ]);
 });
 
 t.test("the core version is the package's, with the release spelling", () => {
@@ -175,75 +175,6 @@ t.test("the core version is the package's, with the release spelling", () => {
     stub.commands([ [ "sh -c command -v apk", { status: 1 } ] ]);
     t.eq(runtime.version(), "1.13.14-extended-2.5.3-f1");
     stub.restore();
-});
-
-const WARP_COMMAND = "sing-box --disable-color generate warp-profile --json";
-const PROXIED_WARP_COMMAND = "env HTTPS_PROXY=http://127.0.0.1:4536 " + WARP_COMMAND;
-const WARP_PROXY_LISTENING = [ "netstat -lnt", { stdout: "tcp 0 0 127.0.0.1:4536 0.0.0.0:* LISTEN\n" } ];
-const NOTHING_LISTENING = [ "netstat -lnt", { stdout: "tcp 0 0 127.0.0.1:53 0.0.0.0:* LISTEN\n" } ];
-const PROFILE = "{\"id\":\"profile-id\",\"auth_token\":\"auth-token\",\"private_key\":\"private-key\"}";
-
-function warp_settings(through_section) {
-    fixture.seed({
-        settings: through_section ? { warp_profiles_via_proxy: "1", warp_profiles_via_proxy_section: "proxy" } : {},
-        section: [ { ".name": "proxy", label: "Proxy", enabled: "1", action: "connection" } ],
-        connection_link: fixture.links("proxy", [ "vless://u@a.example:443#A" ])
-    });
-    require("config.connections").load();
-}
-
-function generate() {
-    return stub.capture(() => cli.main([ "generate_warp_profile" ], "/lib"));
-}
-
-t.test("a WARP profile is the three fields the core returned, and a failure says nothing of its output", () => {
-    warp_settings(false);
-    tools([ [ WARP_COMMAND, { stdout: "{\"id\":\"profile-id\",\"auth_token\":\"auth-token\",\"private_key\":\"private-key\",\"extra\":1}" } ] ]);
-    let good = generate();
-    tools([ [ WARP_COMMAND, { stdout: "{\"id\":\"secret-leak\"}" } ] ]);
-    let bad = generate();
-    stub.restore();
-
-    t.eq([ good.result, json(good.stdout) ], [ 0, { id: "profile-id", auth_token: "auth-token", private_key: "private-key" } ]);
-    t.eq([ bad.result, bad.stdout, bad.stderr ], [ 1, "", "Failed to generate WARP profile: the core returned an incomplete profile\n" ]);
-    t.eq(logs, [ "[error] Failed to generate WARP profile: the core returned an incomplete profile" ]);
-});
-
-t.test("a WARP profile is registered through the chosen section's service proxy", () => {
-    warp_settings(true);
-    tools([ WARP_PROXY_LISTENING, [ PROXIED_WARP_COMMAND, { stdout: PROFILE } ] ]);
-    let result = generate();
-    stub.restore();
-    t.eq([ result.result, json(result.stdout).id ], [ 0, "profile-id" ]);
-});
-
-t.test("a WARP registration that cannot reach its section says so, and never goes out directly instead", () => {
-    warp_settings(true);
-    tools([ NOTHING_LISTENING ]);
-    let result = generate();
-    stub.restore();
-    let message = "Failed to generate WARP profile: profiles are requested through section 'Proxy', " +
-        "and its service proxy is not running. Apply the settings or start Forkop";
-    t.eq([ result.result, result.stderr ], [ 1, message + "\n" ]);
-    t.eq(logs, [ "[error] " + message ]);
-});
-
-t.test("a WARP registration the core gave up on is logged with the core's reason and the way it went", () => {
-    let reason = "FATAL[0010] Post \"https://api.cloudflareclient.com/v0a4471/reg\": net/http: TLS handshake timeout";
-    warp_settings(false);
-    tools([ [ WARP_COMMAND, { status: 1, stdout: reason + "\n" } ] ]);
-    let direct = generate();
-    let direct_logs = logs;
-    warp_settings(true);
-    tools([ WARP_PROXY_LISTENING, [ PROXIED_WARP_COMMAND, { status: 1, stdout: reason + "\n" } ] ]);
-    let proxied = generate();
-    stub.restore();
-
-    let hint = ". If the Cloudflare API is blocked on this network, choose a section in Settings to request WARP profiles through";
-    t.eq([ direct.result, direct.stderr ], [ 1, "Failed to generate WARP profile: " + reason + hint + "\n" ]);
-    t.eq(direct_logs, [ "[error] Failed to generate WARP profile: " + reason + hint ]);
-    t.eq(proxied.result, 1);
-    t.eq(logs, [ "[error] Failed to generate WARP profile through section 'Proxy': " + reason ]);
 });
 
 t.test("LAN prefix discovery is limited to configured devices and refreshed on reload", () => {

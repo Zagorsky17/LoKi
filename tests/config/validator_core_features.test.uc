@@ -22,30 +22,6 @@ function needs(data, tags, message) {
         "a core with every tag refused it: " + result.error);
 }
 
-t.test("a tunnel of a type the build lacks is refused by name", () => {
-    for (let kind in [ "wireguard", "amneziawg", "warp" ])
-        needs({ section: [ section() ], tunnel: [ { ".name": "tun", section: "proxy", kind, name: "Home" } ] },
-            without(BASE, "with_gvisor"), "Section 'Proxy' has a " + kind + " tunnel 'Home', but this sing-box build lacks WireGuard, AmneziaWG and WARP (built without with_gvisor)");
-    needs({ section: [ section() ], tunnel: [ { ".name": "tun", section: "proxy", kind: "tailscale", name: "Net" } ] },
-        BASE, "has a tailscale tunnel 'Net'");
-    needs({ section: [ section() ], tunnel: [ { ".name": "tun", section: "proxy", kind: "openvpn-client", name: "Office" } ] },
-        without(BASE, "with_openvpn"), "has a openvpn-client tunnel 'Office'");
-    needs({ section: [ section() ], tunnel: [ { ".name": "tun", section: "proxy", kind: "openconnect", name: "Work" } ] },
-        BASE, "has a openconnect tunnel 'Work', but this sing-box build lacks OpenConnect (built without with_openconnect)");
-});
-
-t.test("a JSON endpoint is judged by the type it declares", () => {
-    let json = (type) => ({
-        section: [ section() ],
-        tunnel: [ { ".name": "tun", section: "proxy", kind: "json", endpoint_json: "{\"type\":\"" + type + "\",\"tag\":\"raw\"}" } ]
-    });
-    needs(json("wireguard"), without(BASE, "with_gvisor"),
-        "Section 'Proxy' has a JSON endpoint 'raw' of type wireguard, but this sing-box build lacks WireGuard, AmneziaWG and WARP (built without with_gvisor)");
-    needs(json("tailscale"), BASE, "has a JSON endpoint 'raw' of type tailscale");
-    let unknown = v.run(json("custom"), { core_tags: [ "with_clash_api" ] });
-    t.ok(unknown.error == null || index(unknown.error, "this sing-box build lacks") < 0, "a type the table lacks is left to the core: " + unknown.error);
-});
-
 t.test("a link the build cannot dial is refused, without printing its secrets", () => {
     let hy2 = "hy2://secret-password@example.com:443?sni=example.com#Fast";
     needs({ section: [ section() ], connection_link: fixture.links("proxy", [ hy2 ]) }, without(BASE, "with_quic"),
@@ -89,15 +65,6 @@ t.test("DNS over QUIC and HTTP/3 need QUIC", () => {
 t.test("a DNS section's servers need QUIC for DNS over QUIC too", () => {
     needs({ section: [ { ".name": "dns", enabled: "1", action: "dns", dns_server: [ "quic://dns.example.com" ], destinations: "example.org" } ] },
         without(BASE, "with_quic"), "DNS server 'quic://dns.example.com' uses DNS over QUIC");
-});
-
-t.test("requesting WARP profiles through a section needs WARP", () => {
-    needs({
-        settings: { warp_profiles_via_proxy: "1", warp_profiles_via_proxy_section: "proxy" },
-        section: [ section() ],
-        connection_link: fixture.links("proxy", [ "vless://u@a.example:443#A" ])
-    }, without(BASE, "with_wireguard"),
-        "Requesting WARP profiles through a section is on, but this sing-box build lacks WireGuard, AmneziaWG and WARP (built without with_wireguard)");
 });
 
 t.done();

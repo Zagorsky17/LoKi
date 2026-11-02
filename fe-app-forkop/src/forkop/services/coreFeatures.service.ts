@@ -6,7 +6,7 @@ import {
   FORKOP_SERVICE_OBJECT,
 } from './forkopWaitTransport';
 
-type CoreTypeKind = 'outbound' | 'endpoint';
+type CoreTypeKind = 'outbound';
 
 // What the installed sing-box can do, as singbox/features.uc reads it. Until the router answers,
 // and without a core, everything counts as available: the router still refuses what it cannot run.
@@ -28,10 +28,10 @@ export function coreFeatureTags(feature: string) {
   return report?.features[feature]?.tags || [];
 }
 
-// A group member is an outbound or an endpoint, so both are checked unless a kind is named.
+// Group members use outbound features reported by the backend.
 export function coreFeatureOfType(
   type: string,
-  kinds: CoreTypeKind[] = ['outbound', 'endpoint'],
+  kinds: CoreTypeKind[] = ['outbound'],
 ) {
   for (const kind of kinds) {
     const feature = report?.types[kind]?.[type];
@@ -45,15 +45,6 @@ export function coreFeatureOfType(
 export function coreSupportsType(type: string, kinds?: CoreTypeKind[]) {
   const feature = coreFeatureOfType(type, kinds);
   return !feature || coreHas(feature);
-}
-
-export function coreHasAnyEndpoint() {
-  return (
-    !report ||
-    Object.values(report.types.endpoint || {}).some((feature) =>
-      coreHas(feature),
-    )
-  );
 }
 
 // The tags a feature needs that the installed core was built without.

@@ -3,8 +3,6 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { coreFeatures } from '../lib/coreFeatures.js';
 import { createHarness } from '../lib/luciForm.js';
 
-const WG_KEY = 'zz5/p+jwYqPFlg9mWcOP5ad8xXa4XfOOlrzouVD6E1w=';
-
 let harness;
 
 function add(type, sid, values) {
@@ -56,19 +54,6 @@ const ITEMS = [
     'subscription_url',
     'subscription_url',
     { url: '/etc/forkop/sub.txt', tag: 'sub1', server_filter_mode: 'all' },
-  ],
-  [
-    'a WARP tunnel',
-    'tunnel',
-    'tunnels',
-    {
-      kind: 'warp',
-      name: 'WARP',
-      order: '0',
-      warp_profile_id: 'id',
-      warp_profile_auth_token: 'token',
-      warp_profile_private_key: WG_KEY,
-    },
   ],
 ];
 
@@ -131,20 +116,4 @@ it('a pasted link keeps its cascade once the section is saved', async () => {
   const [stored] = harness.uci.sections('forkop', 'connection_link');
   expect(stored).toMatchObject({ uri: link, name: 'A', detour_section: 'hop' });
   expect(stored._cascade).toBeUndefined();
-});
-
-describe('the cascade of a tunnel', () => {
-  it('is offered for the kinds that dial a server of their own', async () => {
-    add('tunnel', 'item', { section: 'sec', ...ITEMS[2][3] });
-    const dialog = await open('tunnels', 'item');
-    const shownFor = (kind) => {
-      dialog.set('tunnel_type', kind);
-      return dialog.shown('_cascade');
-    };
-
-    for (const kind of ['wireguard', 'amneziawg', 'warp', 'openvpn-client'])
-      expect(shownFor(kind), kind).toBe(true);
-    for (const kind of ['tailscale', 'json'])
-      expect(shownFor(kind), kind).toBe(false);
-  });
 });

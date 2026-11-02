@@ -2,6 +2,29 @@ import { describe, expect, it } from 'vitest';
 import { validateOutboundJson } from '../validateOutboundJson';
 
 describe('validateOutboundJson', () => {
+  it.each([
+    'wireguard',
+    'amneziawg',
+    'warp',
+    'tailscale',
+    'openvpn',
+    'openvpn-client',
+    'openvpn-server',
+    'openconnect',
+  ])('refuses retired %s even through a custom outbound', (type) => {
+    for (const spelling of [type, ` ${type.toUpperCase()} `]) {
+      const result = validateOutboundJson(
+        JSON.stringify({
+          type: spelling,
+          tag: 'Retired',
+          private_key: 'synthetic-private-key',
+        }),
+      );
+      expect(result).toBe('VPN tunnel and server types are not supported');
+      expect(result).not.toContain('synthetic-private-key');
+    }
+  });
+
   it('accepts a direct outbound with type and tag', () => {
     expect(validateOutboundJson('{"type":"direct","tag":"direct"}')).toBe(true);
   });

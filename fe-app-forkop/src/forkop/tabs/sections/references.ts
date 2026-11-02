@@ -75,33 +75,6 @@ export function refreshOutboundDetourSectionOptionValues(
   });
 }
 
-export function tailscaleDetourSectionValue(
-  detour: unknown,
-  currentSectionId: string,
-): string {
-  const wanted = `${detour || ''}`.trim();
-  if (!wanted) {
-    return '';
-  }
-
-  const target = getOutboundDetourTargetSections(currentSectionId).find(
-    (section) => getUciSectionLabel(section) === wanted,
-  );
-  return target ? getUciSectionName(target) : wanted;
-}
-
-export function tailscaleDetourTag(sectionId: string) {
-  sectionId = `${sectionId || ''}`.trim();
-  if (!sectionId) {
-    return '';
-  }
-
-  const target = (uci.sections(FORKOP_UCI_PACKAGE, 'section') || []).find(
-    (section) => getUciSectionName(section) === sectionId,
-  );
-  return target ? getUciSectionLabel(target) : sectionId;
-}
-
 export function refreshDnsDetourSectionOptionValues(
   option: CBIOption,
   sectionId: string,

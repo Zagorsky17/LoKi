@@ -21,8 +21,6 @@ const SECTION_ID_PREFIXES: Record<string, string> = {
   server: 'server',
   server_client: 'client',
   subscription_url: 'sub',
-  tunnel: 'tunnel',
-  tunnel_peer: 'peer',
   urltest: 'urltest',
 };
 
@@ -67,11 +65,7 @@ export function getChildItemIds(
     .sections(FORKOP_UCI_PACKAGE, typeName)
     .filter((item) => item[ownerKey] === section_id);
 
-  if (
-    ['connection_link', 'fallback_level', 'tunnel', 'tunnel_peer'].includes(
-      typeName as string,
-    )
-  ) {
+  if (['connection_link', 'fallback_level'].includes(typeName as string)) {
     items.sort((a, b) => {
       const orderDiff = childItemOrder(a) - childItemOrder(b);
       if (orderDiff !== 0) {

@@ -3,8 +3,6 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { coreFeatures } from '../lib/coreFeatures.js';
 import { createHarness } from '../lib/luciForm.js';
 
-const WG_PUB = 'AKR8dq2b9o7/cO8d5mAzxvuxRhhw4DXi1pfUC3IPGWo=';
-
 let harness;
 
 function add(type, sid, values) {
@@ -30,14 +28,6 @@ beforeEach(() => {
   add('urltest', 'ut1', { section: 'sec', name: 'Fast' });
   add('fallback_group', 'grp1', { section: 'sec', name: 'Backup' });
   add('fallback_level', 'lvl1', { group: 'grp1', name: 'First', order: '0' });
-  add('tunnel', 'tun1', { section: 'sec', kind: 'wireguard', name: 'wg' });
-  add('tunnel_peer', 'peer1', {
-    tunnel: 'tun1',
-    address: '203.0.113.1',
-    port: '51820',
-    public_key: WG_PUB,
-    allowed_ips: ['0.0.0.0/0'],
-  });
   add('settings', 'settings', {});
 });
 
@@ -63,7 +53,6 @@ async function everyForm() {
   harness.bundle.createSettingsContent(settings);
 
   const open = (list, owner, item) => harness.openDialog(list, owner, item);
-  const tunnel = await open(option(sections, 'tunnels'), 'sec', 'tun1');
   const group = await open(option(sections, 'fallback_group'), 'sec', 'grp1');
   return {
     sections,
@@ -81,10 +70,6 @@ async function everyForm() {
     fallback: fields(group),
     level: fields(
       await open(option(fields(group), 'fallback_level'), 'grp1', 'lvl1'),
-    ),
-    tunnel: fields(tunnel),
-    peer: fields(
-      await open(option(fields(tunnel), 'peer_ids'), 'tun1', 'peer1'),
     ),
   };
 }
@@ -116,14 +101,6 @@ describe('a field that must not stay empty', () => {
     ['urltest', 'testing_url'],
     ['fallback', 'name'],
     ['level', 'name'],
-    ['tunnel', 'name'],
-    ['tunnel', 'address'],
-    ['tunnel', 'private_key'],
-    ['tunnel', 'peer_ids'],
-    ['peer', 'address'],
-    ['peer', 'port'],
-    ['peer', 'public_key'],
-    ['peer', 'allowed_ips'],
     ['settings', 'dns_server'],
     ['settings', 'bootstrap_dns_server'],
     ['settings', 'dns_rewrite_ttl'],
@@ -134,28 +111,5 @@ describe('a field that must not stay empty', () => {
     field.formvalue = () => [];
 
     expect(field.validate(id, '')).toBe('Required');
-  });
-});
-
-describe('a value LuCI used to check', () => {
-  it('lets a tunnel pick its own local port, and a peer not', async () => {
-    const { tunnel, peer } = await everyForm();
-    const check = (form, name, value) =>
-      option(form, name).validate('settings', value);
-
-    expect(check(tunnel, 'listen_port', '0')).toBe(true);
-    expect(check(tunnel, 'warp_port', '0')).toBe(true);
-    expect(check(tunnel, 'listen_port', '65536')).toBe('Invalid port');
-    expect(check(peer, 'port', '0')).toBe('Invalid port');
-  });
-
-  it('says which half of a range is wrong', async () => {
-    const { tunnel } = await everyForm();
-    const keepalive = (value) =>
-      option(tunnel, 'warp_keepalive').validate('settings', value);
-
-    expect(keepalive('25-35')).toBe(true);
-    expect(keepalive('35-25')).toBe('The range starts after it ends');
-    expect(keepalive('a-b')).toBe('Number or range from 0 to 4294967295');
   });
 });

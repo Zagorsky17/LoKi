@@ -1,3 +1,4 @@
+import { REMOVED_VPN_TYPES } from '../constants';
 import { message } from './messages';
 import { Check } from './types';
 
@@ -22,6 +23,13 @@ export function validateOutboundJson(
 
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
     return message.invalidJson();
+  }
+
+  const type = `${(parsed as { type?: unknown }).type ?? ''}`
+    .trim()
+    .toLowerCase();
+  if (REMOVED_VPN_TYPES.includes(type)) {
+    return _('VPN tunnel and server types are not supported');
   }
 
   const tag = (parsed as { tag?: unknown }).tag;

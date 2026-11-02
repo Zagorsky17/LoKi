@@ -47,14 +47,14 @@ t.test("without a binary there is nothing to ask and nothing is available", () =
 
 t.test("a feature is there when every tag it needs is", () => {
     let tags = split(BASE, ",");
-    for (let name in [ "clash_api", "wireguard", "utls", "quic", "openvpn", "trusttunnel", "vmess", "anytls" ])
+    for (let name in [ "clash_api", "utls", "quic", "trusttunnel", "vmess", "anytls" ])
         t.ok(features.available(name, tags), name + " is in the base build");
-    for (let name in [ "snell", "ssh", "shadowtls", "tor", "tailscale", "naive", "openconnect", "mieru" ])
+    for (let name in [ "snell", "ssh", "shadowtls", "tor", "naive", "mieru" ])
         t.ok(!features.available(name, tags), name + " is only in the full build");
     let tiny = split(TINY, ",");
     for (let name in [ "clash_api", "utls", "quic" ])
         t.ok(features.available(name, tiny), name + " is in the tiny build");
-    for (let name in [ "wireguard", "openvpn", "trusttunnel", "vmess", "anytls" ])
+    for (let name in [ "trusttunnel", "vmess", "anytls" ])
         t.ok(!features.available(name, tiny), name + " is not in the tiny build");
     t.ok(!features.available("wireguard", [ "with_wireguard", "with_clash_api" ]), "WireGuard runs on gVisor");
     t.eq(features.unavailable_reason("quic", [ "with_clash_api" ]), "this sing-box build lacks QUIC (built without with_quic)");
@@ -64,19 +64,18 @@ t.test("a feature is there when every tag it needs is", () => {
 
 t.test("types name the feature they need by the kind of object they are", () => {
     t.eq(features.type_feature("outbound", "naive"), "naive");
-    t.eq(features.type_feature("endpoint", "warp"), "wireguard");
-    t.eq(features.type_feature("endpoint", "openvpn-client"), "openvpn");
+    t.eq(features.type_feature("outbound", "warp"), "");
+    t.eq(features.type_feature("outbound", "openvpn-client"), "");
     t.eq(features.type_feature("outbound", "vless"), "");
     t.eq(features.type_feature("outbound", "vmess"), "vmess");
     t.eq(features.type_feature("outbound", "ssh"), "ssh");
 });
 
-t.test("Forkop runs on a core with the Clash API whose tunnels have their gVisor stack", () => {
+t.test("LoKi requires the Clash API without requiring a tunnel stack", () => {
     t.eq(features.core_problem(split(BASE, ",")), "");
     t.eq(features.core_problem(split(TINY, ",")), "");
     t.contains(features.core_problem([ "with_utls", "with_quic" ]), "sing-box was built without with_clash_api");
-    t.contains(features.core_problem([ "with_clash_api", "with_openconnect" ]),
-        "sing-box was built with with_openconnect but without with_gvisor");
+    t.eq(features.core_problem([ "with_clash_api", "with_openconnect" ]), "");
 });
 
 t.test("the page is told each feature, the tags that make it and the types that need it", () => {
@@ -84,8 +83,8 @@ t.test("the page is told each feature, the tags that make it and the types that 
     let report = features.report();
     t.eq(report.known, true);
     t.eq(report.features.quic, { available: true, tags: [ "with_quic" ] });
-    t.eq(report.features.tailscale, { available: false, tags: [ "with_tailscale", "with_gvisor" ] });
-    t.eq(report.types.endpoint.amneziawg, "wireguard");
+    t.eq(report.features.tailscale, null);
+    t.eq(report.types.endpoint, null);
     t.eq(report.types.outbound.hysteria2, "quic");
     t.eq(report.links.hy2, "hysteria2");
     stub.restore();

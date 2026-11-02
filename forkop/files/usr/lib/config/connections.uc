@@ -3,7 +3,6 @@
 let common = require("core.common");
 let uci_core = require("core.uci");
 let rule_config = require("config.rule");
-let amnezia = require("singbox.amnezia");
 
 let as_string = common.as_string;
 let object_or_empty = common.object_or_empty;
@@ -18,9 +17,7 @@ const ITEM_TYPES = [
     "connection_link",
     "urltest",
     "fallback_group",
-    "fallback_level",
-    "tunnel",
-    "tunnel_peer"
+    "fallback_level"
 ];
 let item_sections = null;
 
@@ -245,114 +242,6 @@ function connection_link_items(section) {
     return result;
 }
 
-function tunnel_items(section) {
-    let result = child_items(section, "tunnel");
-    sort(result, child_order_sort);
-    return result;
-}
-
-function tunnels(section) {
-    return section_names(tunnel_items(section));
-}
-
-function tunnel_child(section, value) {
-    return owned_child_section(section, "tunnel", value);
-}
-
-function tunnel_peer_items(tunnel_id) {
-    let result = child_items_by_owner("tunnel_peer", "tunnel", tunnel_id);
-    sort(result, child_order_sort);
-    return result;
-}
-
-function tunnel_endpoint(tunnel) {
-    tunnel = object_or_empty(tunnel);
-    let kind = lc(trim(as_string(option(tunnel, "kind", "wireguard"))));
-
-    if (kind == "json" || kind == "openvpn-client" || kind == "openconnect") {
-        try {
-            let endpoint = json(option(tunnel, "endpoint_json", ""));
-            return type(endpoint) == "object" ? endpoint : {};
-        }
-        catch (e) {
-            return {};
-        }
-    }
-
-    let endpoint = { type: kind };
-
-    if (kind == "tailscale") {
-        endpoint.auth_key = trim(as_string(option(tunnel, "tailscale_auth_key", "")));
-        endpoint.hostname = trim(as_string(option(tunnel, "tailscale_hostname", "")));
-        endpoint.control_url = trim(as_string(option(tunnel, "tailscale_control_url", "https://controlplane.tailscale.com")));
-        endpoint.accept_routes = bool_option(tunnel, "tailscale_accept_routes", true);
-        let exit_node = trim(as_string(option(tunnel, "tailscale_exit_node", "")));
-        if (exit_node != "")
-            endpoint.exit_node = exit_node;
-        let detour = trim(as_string(option(tunnel, "tailscale_detour_section", "")));
-        if (detour != "")
-            endpoint.detour = detour;
-        return endpoint;
-    }
-
-    if (kind == "warp") {
-        let address = trim(as_string(option(tunnel, "warp_address", "")));
-        let port = trim(as_string(option(tunnel, "warp_port", "")));
-        if (address != "") endpoint.address = address;
-        if (port != "") endpoint.port = int(port, 10);
-        let keepalive = trim(as_string(option(tunnel, "warp_keepalive", "")));
-        if (keepalive != "")
-            endpoint.persistent_keepalive_interval = index(keepalive, "-") >= 0 ? keepalive : int(keepalive, 10);
-        let profile = {};
-        for (let key in [ "id", "auth_token", "private_key", "license_key" ]) {
-            let value = trim(as_string(option(tunnel, "warp_profile_" + key, "")));
-            if (value != "")
-                profile[key] = value;
-        }
-        if (length(keys(profile)) > 0)
-            endpoint.profile = profile;
-        let one_sided = amnezia.object(tunnel, amnezia.ONE_SIDED_KEYS);
-        if (one_sided)
-            endpoint.amnezia = one_sided;
-        return endpoint;
-    }
-
-    endpoint.address = list_value(tunnel, "address");
-    endpoint.private_key = trim(as_string(option(tunnel, "private_key", "")));
-    let listen_port = int(option(tunnel, "listen_port", "0"), 10);
-    if (listen_port > 0)
-        endpoint.listen_port = listen_port;
-    let mtu = int(option(tunnel, "mtu", "0"), 10);
-    if (mtu > 0)
-        endpoint.mtu = mtu;
-
-    endpoint.peers = [];
-    for (let peer in tunnel_peer_items(section_name(tunnel))) {
-        let item = {
-            address: trim(as_string(option(peer, "address", ""))),
-            port: int(option(peer, "port", "0"), 10),
-            public_key: trim(as_string(option(peer, "public_key", ""))),
-            allowed_ips: list_value(peer, "allowed_ips")
-        };
-        let pre_shared_key = trim(as_string(option(peer, "pre_shared_key", "")));
-        if (pre_shared_key != "")
-            item.pre_shared_key = pre_shared_key;
-        let keepalive = trim(as_string(option(peer, "persistent_keepalive_interval", "")));
-        if (keepalive != "")
-            item.persistent_keepalive_interval = index(keepalive, "-") >= 0 ? keepalive : int(keepalive, 10);
-        push(endpoint.peers, item);
-    }
-
-    // AmneziaWG takes the whole parameter set, plain WireGuard only what one side can add alone.
-    if (kind == "amneziawg" || kind == "wireguard") {
-        let parameters = amnezia.object(tunnel, kind == "amneziawg" ? amnezia.KEYS : amnezia.ONE_SIDED_KEYS);
-        if (parameters)
-            endpoint.amnezia = parameters;
-    }
-
-    return endpoint;
-}
-
 function urltests(section) {
     return section_names(child_items(section, "urltest"));
 }
@@ -402,8 +291,6 @@ function download_via_proxy_flag_option(purpose) {
     purpose = as_string(purpose || "lists");
     if (purpose == "lists")
         return "download_lists_via_proxy";
-    if (purpose == "warp_profiles")
-        return "warp_profiles_via_proxy";
     return "";
 }
 
@@ -417,8 +304,6 @@ function download_via_proxy_section(settings, purpose) {
         return "";
 
     purpose = as_string(purpose || "lists");
-    if (purpose == "warp_profiles")
-        return option(settings, "warp_profiles_via_proxy_section", "");
     return option(settings, "download_lists_via_proxy_section", "");
 }
 
@@ -439,8 +324,7 @@ function has_connection_sources(section) {
     return length(connection_link_items(section)) > 0 ||
         length(subscription_items(section)) > 0 ||
         length(interfaces(section)) > 0 ||
-        length(outbound_jsons(section)) > 0 ||
-        length(tunnels(section)) > 0;
+        length(outbound_jsons(section)) > 0;
 }
 
 function cascade_section(item) {
@@ -458,14 +342,6 @@ function interface_display_name(section, value) {
 
 function link_display_name(link) {
     return trim(option(link, "name", ""));
-}
-
-function tunnel_display_name(tunnel, index) {
-    let name = lc(trim(option(tunnel, "kind", "wireguard"))) == "json"
-        ? as_string(tunnel_endpoint(tunnel).tag || "")
-        : option(tunnel, "name", "");
-    name = trim(as_string(name));
-    return name != "" ? name : "Tunnel #" + index;
 }
 
 function outbound_json_display_name(outbound, index) {
@@ -693,9 +569,6 @@ function section_child_names(section) {
         push(result, { kind: "link", name: link_display_name(link) });
     for (let value in interfaces(section))
         push(result, { kind: "interface", name: interface_display_name(section, value) });
-    let tunnel_list = tunnel_items(section);
-    for (let i = 0; i < length(tunnel_list); i++)
-        push(result, { kind: "tunnel", name: tunnel_display_name(tunnel_list[i], i + 1) });
     let jsons = outbound_jsons(section);
     for (let i = 0; i < length(jsons); i++)
         push(result, { kind: "json", name: outbound_json_display_name(common.parse_json(jsons[i]), i + 1) });
@@ -723,10 +596,6 @@ return {
     subscription_source_type,
     interfaces,
     outbound_jsons,
-    tunnels,
-    tunnel_items,
-    tunnel_child,
-    tunnel_endpoint,
     urltests,
     community_lists,
     rule_sets,
@@ -745,7 +614,6 @@ return {
     subscription_download_section,
     interface_display_name,
     link_display_name,
-    tunnel_display_name,
     outbound_json_display_name,
     section_child_names,
     interface_domain_resolver_enabled,

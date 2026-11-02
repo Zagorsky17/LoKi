@@ -25,9 +25,6 @@ const SYSTEM_DNS_INBOUND_TAG = "system-dns-in";
 const SYSTEM_DNS_INBOUND_ADDRESS = "::";
 const SYSTEM_DNS_INBOUND_PORT = 1605;
 
-const SERVICE_MIXED_INBOUND_ADDRESS = "127.0.0.1";
-const WARP_PROFILES_MIXED_INBOUND_TAG = "service-warp-in";
-const WARP_PROFILES_MIXED_INBOUND_PORT = 4536;
 const DIRECT_OUTBOUND_TAG = "direct-out";
 const CLASH_API_CONTROLLER_PORT = 9090;
 // The mark sing-box puts on its own traffic is the one the nft table lets pass.
@@ -50,10 +47,10 @@ const FILTERABLE_PROVIDER_TYPES = [
     "ssh", "tor", "socks", "http"
 ];
 
-// Groups also hold a section's own servers, the only way tunnels and interfaces become members.
+// Groups also hold the section's interface connections.
 const FILTERABLE_GROUP_TYPES = [
     ...FILTERABLE_PROVIDER_TYPES,
-    "wireguard", "amneziawg", "warp", "tailscale", "openvpn-client", "openconnect", "direct"
+    "direct"
 ];
 
 // A manual link is parsed at runtime, so its outbound is typed by the link's scheme. These are
@@ -85,6 +82,9 @@ const LINK_SCHEME_OUTBOUND_TYPES = {
     "tt": "trusttunnel"
 };
 
+// A JSON outbound must not restore protocols removed from the application.
+const REMOVED_VPN_TYPES = [ "wireguard", "amneziawg", "warp", "tailscale", "openvpn", "openvpn-client", "openvpn-server", "openconnect" ];
+
 // A subscription sets every imported server's detour from its cascade, so a patch may not.
 const RESERVED_OVERRIDE_PATCH_PATHS = [ "detour" ];
 
@@ -104,12 +104,15 @@ const RESERVED_TAGS = {
     [SYSTEM_TPROXY_INBOUND_TAG]: true,
     [SYSTEM_TPROXY_INBOUND6_TAG]: true,
     [SYSTEM_DNS_INBOUND_TAG]: true,
-    [WARP_PROFILES_MIXED_INBOUND_TAG]: true,
     [DIRECT_OUTBOUND_TAG]: true
 };
 
 function as_string(value) {
     return value == null ? "" : "" + value;
+}
+
+function removed_vpn_type(value) {
+    return index(REMOVED_VPN_TYPES, lc(trim(as_string(value)))) >= 0;
 }
 
 function tag(base, postfix) {
@@ -152,9 +155,6 @@ return {
     SYSTEM_DNS_INBOUND_TAG,
     SYSTEM_DNS_INBOUND_ADDRESS,
     SYSTEM_DNS_INBOUND_PORT,
-    SERVICE_MIXED_INBOUND_ADDRESS,
-    WARP_PROFILES_MIXED_INBOUND_TAG,
-    WARP_PROFILES_MIXED_INBOUND_PORT,
     DIRECT_OUTBOUND_TAG,
     CLASH_API_CONTROLLER_PORT,
     OUTBOUND_MARK,
@@ -166,6 +166,8 @@ return {
     TMP_SING_BOX_FOLDER,
     FILTERABLE_PROVIDER_TYPES,
     FILTERABLE_GROUP_TYPES,
+    REMOVED_VPN_TYPES,
+    removed_vpn_type,
     RESERVED_OVERRIDE_PATCH_PATHS,
     LINK_SCHEME_OUTBOUND_TYPES,
     RESERVED_TAGS,

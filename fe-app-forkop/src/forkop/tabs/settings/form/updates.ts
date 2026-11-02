@@ -9,10 +9,6 @@ import {
   configureDownloadViaProxyFlag,
 } from '../sectionChoices';
 import { validateUrlField } from '../../../../validators/validateUrl';
-import {
-  coreHas,
-  validateCoreFeature,
-} from '../../../services/coreFeatures.service';
 
 export function addUpdateOptions(section: CBISection) {
   let o = section.option(
@@ -85,30 +81,4 @@ export function addUpdateOptions(section: CBISection) {
   o.depends('download_lists_via_proxy', '1');
   o.retain = true;
   configureDownloadSectionOption(o, 'download_lists_via_proxy_section');
-
-  // A WARP tunnel requests its profile on every start, and the dialog registers new ones. Shown only
-  // with a WARP-capable core, or while on, so it can be switched off.
-  o = section.option(
-    form.Flag,
-    'warp_profiles_via_proxy',
-    _('Request WARP through a section'),
-    _(
-      "Create and fetch Cloudflare WARP profiles through the selected section. The tunnels' own traffic does not go through it",
-    ),
-  );
-  configureDownloadViaProxyFlag(o, 'warp_profiles_via_proxy_section');
-  o.checkDepends = function (sectionId: string) {
-    return coreHas('wireguard') || this.cfgvalue(sectionId) === '1';
-  };
-  o.validate = (_sectionId: string, value: string) =>
-    value === '1' ? validateCoreFeature('wireguard') : true;
-
-  o = section.option(
-    form.ListValue,
-    'warp_profiles_via_proxy_section',
-    _('Request WARP through'),
-  );
-  o.depends('warp_profiles_via_proxy', '1');
-  o.retain = true;
-  configureDownloadSectionOption(o, 'warp_profiles_via_proxy_section');
 }

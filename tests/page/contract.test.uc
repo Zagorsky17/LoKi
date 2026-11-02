@@ -11,7 +11,6 @@ let connections = require("config.connections");
 let mask = require("diagnostics.mask");
 let state_service = require("service.state_service");
 let features = require("singbox.features");
-let amnezia = require("singbox.amnezia");
 let installer = require("service.installer");
 let ubus = require("ubus");
 let uloop = require("uloop");
@@ -40,6 +39,7 @@ t.test("the community rule sets are the ones the generator can download, each fr
 t.test("the filterable server types are the ones the validator accepts", () => {
     t.eq(constants.FILTERABLE_PROVIDER_TYPES, contract.provider_types);
     t.eq(constants.FILTERABLE_GROUP_TYPES, contract.group_types);
+    t.eq(constants.REMOVED_VPN_TYPES, contract.removed_vpn_types);
 });
 
 t.test("the reserved override paths are the ones the validator refuses", () => {
@@ -90,7 +90,7 @@ t.test("the page may call every method the state service publishes", () => {
 });
 
 t.test("the option every password field is stored in is masked in diagnostics", () => {
-    for (let field, stored in contract.password_fields) {
+    for (let field, stored in { ...contract.password_fields, ...contract.retired_password_fields }) {
         let masked = mask.forkop_config("config tunnel 'probe'\n\toption " + stored + " 'secret-value'\n");
         t.excludes(masked, "secret-value", field);
     }
@@ -99,10 +99,6 @@ t.test("the option every password field is stored in is masked in diagnostics", 
 t.test("a link needs what the core needs to dial it", () => {
     for (let entry in contract.link_features)
         t.eq(features.link_features(entry[0]), entry[1], entry[0]);
-});
-
-t.test("the AmneziaWG parameters are read by the kinds and sides the page writes them with", () => {
-    t.eq(amnezia.PARAMETERS, contract.amnezia_parameters);
 });
 
 t.test("the core report the page is built against is the backend's for the base build", () => {

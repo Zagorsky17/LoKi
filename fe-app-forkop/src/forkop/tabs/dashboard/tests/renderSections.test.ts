@@ -125,7 +125,7 @@ describe('renderSections latency actions', () => {
       onCopyOutbound: vi.fn(),
       onShowUrlTestInfo: vi.fn(),
       onShowFallbackInfo: vi.fn(),
-      onShowTailscaleInfo: vi.fn(),
+
       latencyFetching: false,
     }) as unknown as FakeNode;
     const button = findNode(
@@ -188,7 +188,7 @@ describe('renderSections latency actions', () => {
         onCopyOutbound: vi.fn(),
         onShowUrlTestInfo: vi.fn(),
         onShowFallbackInfo: vi.fn(),
-        onShowTailscaleInfo: vi.fn(),
+
         onSortByLatencyChange,
         sortByLatency,
         latencyFetching: false,
@@ -259,7 +259,7 @@ describe('renderSections latency actions', () => {
       onCopyOutbound: vi.fn(),
       onShowUrlTestInfo: vi.fn(),
       onShowFallbackInfo: vi.fn(),
-      onShowTailscaleInfo: vi.fn(),
+
       latencyFetching: false,
     }) as unknown as FakeNode;
 
@@ -296,7 +296,7 @@ describe('renderSections latency actions', () => {
       onCopyOutbound: vi.fn(),
       onShowUrlTestInfo: vi.fn(),
       onShowFallbackInfo: vi.fn(),
-      onShowTailscaleInfo: vi.fn(),
+
       latencyFetching: false,
     }) as unknown as FakeNode;
     const card = findNode(root, (node) =>
@@ -369,7 +369,7 @@ describe('renderSections latency actions', () => {
       onCopyOutbound: vi.fn(),
       onShowUrlTestInfo: vi.fn(),
       onShowFallbackInfo: vi.fn(),
-      onShowTailscaleInfo: vi.fn(),
+
       latencyFetching: false,
     }) as unknown as FakeNode;
     const button = findNode(
@@ -446,7 +446,7 @@ describe('renderSections latency actions', () => {
       onCopyOutbound: vi.fn(),
       onShowUrlTestInfo: vi.fn(),
       onShowFallbackInfo: vi.fn(),
-      onShowTailscaleInfo: vi.fn(),
+
       latencyFetching: false,
     }) as unknown as FakeNode;
     const buttons = findNodes(root, (node) => node.type === 'button');
@@ -511,7 +511,7 @@ describe('renderSections latency actions', () => {
       onCopyOutbound: vi.fn(),
       onShowUrlTestInfo: vi.fn(),
       onShowFallbackInfo: vi.fn(),
-      onShowTailscaleInfo: vi.fn(),
+
       latencyFetching: true,
     };
     const root = renderSections(props) as unknown as FakeNode;
@@ -599,7 +599,7 @@ describe('renderSections latency actions', () => {
       onCopyOutbound: vi.fn(),
       onShowUrlTestInfo: vi.fn(),
       onShowFallbackInfo: vi.fn(),
-      onShowTailscaleInfo: vi.fn(),
+
       latencyFetching: false,
       latencyFetchingTargets: new Set(['main/URLTest']),
     }) as unknown as FakeNode;
@@ -661,7 +661,7 @@ describe('renderSections latency actions', () => {
       onCopyOutbound: vi.fn(),
       onShowUrlTestInfo: vi.fn(),
       onShowFallbackInfo: vi.fn(),
-      onShowTailscaleInfo: vi.fn(),
+
       latencyFetching: false,
     }) as unknown as FakeNode;
     const latency = findNode(
@@ -686,126 +686,6 @@ describe('renderSections latency actions', () => {
     expect(onChooseOutbound).not.toHaveBeenCalled();
   }, 15000);
 
-  it('opens the details of a Tailscale tunnel from its card, keeping its latency', async () => {
-    installElementFactory();
-    const { renderSections } = await import('../partials/renderSections');
-    const onShowTailscaleInfo = vi.fn();
-    const onChooseOutbound = vi.fn();
-    const tailnet = {
-      code: 'home/tailnet',
-      displayName: 'tailnet',
-      latency: 0,
-      type: 'Tailscale',
-      selected: true,
-    };
-    const root = renderSections({
-      loading: false,
-      failed: false,
-      section: {
-        code: 'home',
-        sectionName: 'home',
-        displayName: 'home',
-        withTagSelect: true,
-        outbounds: [
-          tailnet,
-          {
-            code: 'home/wg',
-            displayName: 'wg',
-            latency: 0,
-            type: 'WireGuard',
-            selected: false,
-          },
-        ],
-      },
-      onTestLatency: vi.fn(),
-      onTestOutboundLatency: vi.fn(),
-      onChooseOutbound,
-      onCopyOutbound: vi.fn(),
-      onShowUrlTestInfo: vi.fn(),
-      onShowFallbackInfo: vi.fn(),
-      onShowTailscaleInfo,
-      latencyFetching: false,
-    }) as unknown as FakeNode;
-    const cards = findNodes(root, (node) =>
-      String(node.attrs.class || '')
-        .split(' ')
-        .includes('fkp_dashboard-page__outbound-grid__item'),
-    );
-    const details = cards.map((card) =>
-      findNodes(card, (node) => node.attrs.title === 'Tailscale details'),
-    );
-    const latencies = cards.map((card) =>
-      findNodes(
-        card,
-        (node) =>
-          node.type === 'button' &&
-          String(node.attrs.class || '').includes(
-            'fkp_dashboard-page__outbound-grid__item__latency',
-          ),
-      ),
-    );
-
-    expect(details.map((buttons) => buttons.length)).toEqual([1, 0]);
-    expect(latencies.map((buttons) => buttons.length)).toEqual([1, 1]);
-    (details[0][0].attrs.click as (event: object) => void)({
-      stopPropagation: () => {},
-    });
-    expect(onShowTailscaleInfo).toHaveBeenCalledWith(tailnet);
-    expect(onChooseOutbound).not.toHaveBeenCalled();
-  }, 15000);
-});
-
-describe('renderSections subscription metadata', () => {
-  it('renders metadata URLs as compact text links', async () => {
-    installElementFactory();
-    const { renderSections } = await import('../partials/renderSections');
-    const root = renderSections({
-      loading: false,
-      failed: false,
-      section: {
-        code: 'proxy-out',
-        sectionName: 'main',
-        displayName: 'Main',
-        withTagSelect: true,
-        outbounds: [],
-        subscriptionMetadata: [
-          {
-            title: 'Subscription',
-            webPageUrl: 'https://subscription.example/profile',
-            supportUrl: 'https://subscription.example/support',
-            announceUrl: 'https://subscription.example/announce',
-          },
-        ],
-      },
-      onTestLatency: vi.fn(),
-      onTestOutboundLatency: vi.fn(),
-      onChooseOutbound: vi.fn(),
-      onCopyOutbound: vi.fn(),
-      onShowUrlTestInfo: vi.fn(),
-      onShowFallbackInfo: vi.fn(),
-      onShowTailscaleInfo: vi.fn(),
-      latencyFetching: false,
-    }) as unknown as FakeNode;
-    const links = findNodes(
-      root,
-      (node) =>
-        node.type === 'a' &&
-        String(node.attrs.class || '') ===
-          'fkp_dashboard-page__subscription-meta__action',
-    );
-
-    expect(links.map((link) => link.children[0])).toEqual([
-      'Profile ↗',
-      'Support ↗',
-      'More details ↗',
-    ]);
-    expect(links.map((link) => link.attrs.href)).toEqual([
-      'https://subscription.example/profile',
-      'https://subscription.example/support',
-      'https://subscription.example/announce',
-    ]);
-  });
-
   it('keeps the subscription tag as the metadata heading', async () => {
     installElementFactory();
     const { renderSections } = await import('../partials/renderSections');
@@ -828,7 +708,7 @@ describe('renderSections subscription metadata', () => {
       onCopyOutbound: vi.fn(),
       onShowUrlTestInfo: vi.fn(),
       onShowFallbackInfo: vi.fn(),
-      onShowTailscaleInfo: vi.fn(),
+
       latencyFetching: false,
     }) as unknown as FakeNode;
     const heading = findNodes(
@@ -867,7 +747,7 @@ describe('renderSections subscription metadata', () => {
       onCopyOutbound: vi.fn(),
       onShowUrlTestInfo: vi.fn(),
       onShowFallbackInfo: vi.fn(),
-      onShowTailscaleInfo: vi.fn(),
+
       latencyFetching: false,
     }) as unknown as FakeNode;
     const heading = findNode(
@@ -909,7 +789,7 @@ describe('renderSections subscription metadata', () => {
       onCopyOutbound: vi.fn(),
       onShowUrlTestInfo: vi.fn(),
       onShowFallbackInfo: vi.fn(),
-      onShowTailscaleInfo: vi.fn(),
+
       latencyFetching: false,
     }) as unknown as FakeNode;
 
@@ -950,7 +830,7 @@ describe('renderSections subscription metadata', () => {
       onCopyOutbound: vi.fn(),
       onShowUrlTestInfo: vi.fn(),
       onShowFallbackInfo: vi.fn(),
-      onShowTailscaleInfo: vi.fn(),
+
       latencyFetching: false,
     }) as unknown as FakeNode;
 
@@ -996,7 +876,7 @@ describe('renderSections subscription update time', () => {
       onCopyOutbound: vi.fn(),
       onShowUrlTestInfo: vi.fn(),
       onShowFallbackInfo: vi.fn(),
-      onShowTailscaleInfo: vi.fn(),
+
       latencyFetching: false,
     }) as unknown as FakeNode;
   }
@@ -1126,7 +1006,7 @@ describe('renderSections collapse action', () => {
       onCopyOutbound: vi.fn(),
       onShowUrlTestInfo: vi.fn(),
       onShowFallbackInfo: vi.fn(),
-      onShowTailscaleInfo: vi.fn(),
+
       latencyFetching: false,
       ...props,
     }) as unknown as FakeNode;
@@ -1280,7 +1160,7 @@ describe('renderSections header', () => {
       onCopyOutbound: vi.fn(),
       onShowUrlTestInfo: vi.fn(),
       onShowFallbackInfo: vi.fn(),
-      onShowTailscaleInfo: vi.fn(),
+
       latencyFetching: false,
       collapsible: true,
       collapsed,
@@ -1349,7 +1229,7 @@ describe('renderSections header', () => {
       onCopyOutbound: vi.fn(),
       onShowUrlTestInfo: vi.fn(),
       onShowFallbackInfo: vi.fn(),
-      onShowTailscaleInfo: vi.fn(),
+
       latencyFetching: false,
     }) as unknown as FakeNode;
     const button = findNode(
@@ -1391,7 +1271,7 @@ describe('renderSections header', () => {
       onCopyOutbound: vi.fn(),
       onShowUrlTestInfo: vi.fn(),
       onShowFallbackInfo: vi.fn(),
-      onShowTailscaleInfo: vi.fn(),
+
       latencyFetching: false,
     }) as unknown as FakeNode;
     const labels = findNodes(root, (candidate) => candidate.type === 'button')
@@ -1429,7 +1309,7 @@ describe('renderSections header', () => {
       onCopyOutbound: vi.fn(),
       onShowUrlTestInfo: vi.fn(),
       onShowFallbackInfo: vi.fn(),
-      onShowTailscaleInfo: vi.fn(),
+
       latencyFetching: false,
       ...props,
     }) as unknown as FakeNode;
@@ -1513,7 +1393,7 @@ describe('renderSections exit action', () => {
       onCopyOutbound: vi.fn(),
       onShowUrlTestInfo: vi.fn(),
       onShowFallbackInfo: vi.fn(),
-      onShowTailscaleInfo: vi.fn(),
+
       latencyFetching: false,
       ...props,
     }) as unknown as FakeNode;

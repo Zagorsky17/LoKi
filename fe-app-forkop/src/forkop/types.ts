@@ -58,47 +58,6 @@ export namespace ClashAPI {
   export interface ProxyProviders {
     providers: Record<string, ProxyProvider>;
   }
-
-  export interface TailscalePeer {
-    name: string;
-    dnsName?: string;
-    addresses: string[];
-    // What the tailnet reaches through this device, exit routes aside.
-    subnets?: string[];
-    online: boolean;
-    lastSeen?: number;
-    exitNodeOption: boolean;
-    // The device the endpoint sends internet traffic through now.
-    exitNode: boolean;
-  }
-
-  export interface TailscaleEndpoint {
-    tag: string;
-    state: string;
-    authURL?: string;
-    connected: boolean;
-    name?: string;
-    dnsName?: string;
-    tailnet?: string;
-    addresses: string[];
-    keyExpiry?: number;
-    // The exit node the endpoint's settings name, a device name or an address.
-    exitNode?: string;
-    advertisesExitNode: boolean;
-    exitNodeApproved: boolean;
-    routes: Array<{ prefix: string; approved: boolean }>;
-    health: string[];
-    peers: TailscalePeer[];
-  }
-
-  export interface Tailscale {
-    endpoints: TailscaleEndpoint[];
-  }
-
-  // A disco ping's round trip in milliseconds.
-  export interface TailscalePong {
-    latency: number;
-  }
 }
 
 // eslint-disable-next-line @typescript-eslint/no-namespace
@@ -246,9 +205,7 @@ export namespace Forkop {
       | 'connection_link'
       | 'urltest'
       | 'fallback_group'
-      | 'fallback_level'
-      | 'tunnel'
-      | 'tunnel_peer';
+      | 'fallback_level';
     label?: string;
     enabled?: string;
     action?: RuleAction;
@@ -264,7 +221,6 @@ export namespace Forkop {
       show_dashboard_metadata?: '0' | '1';
     }>;
     interfaces?: string[];
-    tunnels?: string[];
     outbound_jsons?: string[];
     urltests?: string[];
     urltest_settings?: string;
@@ -480,7 +436,7 @@ export namespace Forkop {
     known: boolean;
     tags: string[];
     features: Record<string, { available: boolean; tags: string[] }>;
-    types: Record<'outbound' | 'endpoint', Record<string, string>>;
+    types: Record<'outbound', Record<string, string>>;
     links: Record<string, string>;
   }
 

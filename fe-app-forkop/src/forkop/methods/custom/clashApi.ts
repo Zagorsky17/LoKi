@@ -398,61 +398,6 @@ export function getClashApiProxies() {
   );
 }
 
-export async function getClashApiTailscale(): Promise<
-  Forkop.MethodResponse<ClashAPI.Tailscale>
-> {
-  const response = await requestClashApi<ClashAPI.Tailscale>(
-    '/tailscale',
-    undefined,
-    CLASH_API_FETCH_TIMEOUT_MS,
-  );
-  if (!response.success) return response;
-  const strings = (value: unknown) =>
-    Array.isArray(value) && value.every((item) => typeof item === 'string');
-  const endpoints = response.data?.endpoints;
-  if (
-    !Array.isArray(endpoints) ||
-    !endpoints.every(
-      (endpoint) =>
-        endpoint != null &&
-        typeof endpoint.tag === 'string' &&
-        strings(endpoint.addresses) &&
-        strings(endpoint.health) &&
-        Array.isArray(endpoint.routes) &&
-        endpoint.routes.every(
-          (route) => route != null && typeof route.prefix === 'string',
-        ) &&
-        Array.isArray(endpoint.peers) &&
-        endpoint.peers.every(
-          (peer) =>
-            peer != null &&
-            typeof peer.name === 'string' &&
-            strings(peer.addresses) &&
-            (peer.subnets == null || strings(peer.subnets)),
-        ),
-    )
-  ) {
-    return { success: false, error: _('Invalid Clash API response') };
-  }
-  return response;
-}
-
-const TAILSCALE_PING_TIMEOUT_MS = '5000';
-
-export function pingClashApiTailscalePeer(tag: string, address: string) {
-  const params = new URLSearchParams({
-    address,
-    timeout: TAILSCALE_PING_TIMEOUT_MS,
-  });
-
-  return requestClashApi<ClashAPI.TailscalePong>(
-    `/tailscale/${encodeURIComponent(tag)}/ping?${params}`,
-    undefined,
-    latencyRequestTimeout(TAILSCALE_PING_TIMEOUT_MS),
-    { keepsRunningAfterTimeout: true },
-  );
-}
-
 export function getClashApiProxyProviders() {
   return requestClashApi<ClashAPI.ProxyProviders>(
     '/providers/proxies',

@@ -9,7 +9,7 @@
 //
 // No period, no "please", no reason why the rule exists. A rule that spans
 // several fields has no field to stand beside, so it is reported on save and
-// says what to add: "Add a server, a subscription or a tunnel".
+// says what to add: "Add a connection URI, subscription, interface or JSON outbound".
 //
 // One failure reads the same everywhere, so a wording used in more than one
 // place lives here.
