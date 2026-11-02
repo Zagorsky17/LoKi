@@ -20,7 +20,6 @@ import {
   parseOutboundJsonObject,
 } from './outboundJson';
 import { optionMapValue } from './subscriptions/model';
-import { tunnelDisplayName } from './tunnels/model';
 import { getClashApiProxyProviders } from '../../methods/custom/clashApi';
 
 interface ProviderServerNames {
@@ -333,7 +332,6 @@ export function currentLiveDynamicListValues(
 export type SectionChildKind =
   | 'link'
   | 'interface'
-  | 'tunnel'
   | 'json'
   | 'urltest'
   | 'fallback';
@@ -426,9 +424,6 @@ export function sectionChildNames(section_id: string) {
         interfaceName,
       );
     },
-  );
-  currentSourceOptionValues(section_id, 'tunnels').forEach((value: unknown) =>
-    add('tunnel', tunnelDisplayName(section_id, `${value ?? ''}`)),
   );
   currentSourceOptionValues(section_id, 'outbound_jsons').forEach(
     (value: unknown, index: number) => {

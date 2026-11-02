@@ -732,12 +732,15 @@ t.test("autostart is the rc.d link and nothing else", () => {
     t.ok(fs.lstat(lifecycle.paths.rc_dir + "/S99forkop") == null && fs.lstat(lifecycle.paths.rc_dir + "/K99forkop") == null);
 });
 
-t.test("repeated service cycles cannot prepare servers or open their firewall ports", () => {
+t.test("repeated service cycles cannot prepare retired servers or tunnels", () => {
     let uci = require("uci");
     reset();
     fixture.seed({ settings: { config_version: "2.0.0" }, server: [
         { ".name": "server-private-name", enabled: "1", protocol: "vless", security: "reality", open_firewall: "1", listen_port: "18443" },
         { ".name": "json-private-name", enabled: "1", protocol: "json_inbound", inbound_json: "invalid-private-json" }
+    ], tunnel: [
+        { ".name": "tailnet", section: "missing", kind: "tailscale", tailscale_auth_key: "synthetic-private-key" },
+        { ".name": "warp", section: "missing", kind: "warp", warp_profile_auth_token: "synthetic-private-token" }
     ] });
     let result = stub.capture(() => {
         let statuses = [];
@@ -751,7 +754,7 @@ t.test("repeated service cycles cannot prepare servers or open their firewall po
     let commands = stub.command_lines();
     finish();
     t.eq(result.result, [ 0, 0, 0, 0, 0, 0 ]);
-    t.eq(filter(commands, (line) => match(line, /firewall|reality-keypair|server-certs|forkop-servers/) != null), []);
+    t.eq(filter(commands, (line) => match(line, /firewall|reality-keypair|server-certs|forkop-servers|tailscale|warp-profile/) != null), []);
     t.eq(uci.__commits(), [], "server defaults are never written");
     t.excludes(join("\n", world.logs), "private-");
 });

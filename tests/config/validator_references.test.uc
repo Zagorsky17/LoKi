@@ -17,7 +17,6 @@ function through(name, target) {
     return fixture.links(name, [ "socks://127.0.0.1:1080#one" ], { detour_section: target });
 }
 
-const WG_KEY = "zz5/p+jwYqPFlg9mWcOP5ad8xXa4XfOOlrzouVD6E1w=";
 
 t.test("a cascade points at another enabled Connection section with servers", () => {
     let source = section("source", "connection");
@@ -37,18 +36,12 @@ t.test("a cascade points at another enabled Connection section with servers", ()
     v.accepts({ section: [ { ...source, enabled: "0" }, target ], connection_link: [ ...through("source", "missing"), ...served([ "target" ]) ] });
 });
 
-t.test("a subscription and a tunnel name their cascade the same way", () => {
+t.test("a subscription names its cascade target", () => {
     let sections = [ section("source", "connection"), section("target", "connection") ];
     v.refuses({ section: sections, connection_link: served([ "source" ]),
         subscription_url: [ { ".name": "sub", section: "source", url: "https://sub.example/s", tag: "sub1", detour_section: "target" } ] },
         "The cascade of subscription 'sub1' in section 'source' points to section 'target', which has no servers");
-    v.refuses({ section: sections, connection_link: served([ "source" ]),
-        tunnel: [ { ".name": "tun", section: "source", kind: "warp", name: "WARP", warp_profile_id: "id",
-            warp_profile_auth_token: "token", warp_profile_private_key: WG_KEY, detour_section: "target" } ] },
-        "The cascade of tunnel 'WARP' in section 'source' points to section 'target', which has no servers");
-    v.accepts({ section: sections, connection_link: served([ "source" ]),
-        tunnel: [ { ".name": "tun", section: "source", kind: "json", endpoint_json: "{\"type\":\"wireguard\",\"tag\":\"own\"}",
-            detour_section: "target" } ] });
+
 });
 
 t.test("a cascade never leads back to its own section", () => {
@@ -59,10 +52,6 @@ t.test("a cascade never leads back to its own section", () => {
         "loops back through section 'second'");
     v.refuses({ section: [ first, second, third ],
         connection_link: [ ...through("first", "second"), ...through("second", "third"), ...through("third", "first") ] },
-        "loops back through section 'second'");
-    v.refuses({ section: [ first, second ], connection_link: [ ...through("first", "second"), ...served([ "second" ]) ],
-        tunnel: [ { ".name": "ts", section: "second", kind: "tailscale", name: "Tailnet", tailscale_auth_key: "tskey",
-            tailscale_hostname: "router", tailscale_detour_section: "first" } ] },
         "loops back through section 'second'");
     v.accepts({ section: [ first, second, third ],
         connection_link: [ ...through("first", "third"), ...through("second", "third"), ...served([ "third" ]) ] });

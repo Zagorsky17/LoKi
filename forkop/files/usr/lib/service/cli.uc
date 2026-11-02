@@ -23,17 +23,6 @@ function reply(fn) {
     };
 }
 
-function warp_profile() {
-    try {
-        print(sprintf("%J\n", require("singbox.runtime").warp_profile()));
-        return 0;
-    }
-    catch (e) {
-        warn(e.message, "\n");
-        return 1;
-    }
-}
-
 function json(fn) {
     return function(args) {
         print(sprintf("%J\n", fn(...args)));
@@ -156,7 +145,6 @@ const COMMANDS = {
     installer_status: { args: 1, usage: "[offset]", help: "Show the Components tab's run of install.sh in JSON format", run: json((offset) => installer().status(offset)) },
     installer_run: { args: 1, run: (args) => installer().run(args[0]) },
     installer_log: { help: "Print the log of install.sh's last run", run: installer_log },
-    generate_warp_profile: { help: "Generate a Cloudflare WARP profile in JSON format", run: warp_profile },
     package_prerm: { args: 1, run: (args) => require("service.package").prerm(args[0]) },
     package_postinst: { run: () => require("service.package").postinst() },
     luci_postinst: { run: () => require("service.package").luci_postinst() },

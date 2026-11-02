@@ -14,7 +14,6 @@ let singbox_constants = require("singbox.constants");
 let rulesets = require("singbox.rulesets");
 let runtime_dns = require("singbox.dns");
 let features = require("singbox.features");
-let amnezia = require("singbox.amnezia");
 let runtime_urltest = require("singbox.urltest");
 let subscription_headers_module = require("singbox.subscription_headers");
 let nft_state = require("nft.state");
@@ -194,7 +193,6 @@ function validate_connection_links(section) {
 const CHILD_KINDS = {
     link: [ "a link", "link" ],
     interface: [ "an interface", "interface" ],
-    tunnel: [ "a tunnel", "tunnel" ],
     json: [ "a JSON outbound", "JSON outbound" ],
     urltest: [ "a URLTest", "URLTest" ],
     fallback: [ "a fallback group", "fallback group" ]
@@ -246,14 +244,6 @@ function outbound_section(sections, label, target_name) {
     return target;
 }
 
-// Tailscale reaches its coordination server through a section of its own choosing, and a JSON
-// endpoint names its own detour.
-const CASCADE_TUNNEL_KINDS = { wireguard: true, amneziawg: true, warp: true, "openvpn-client": true, openconnect: true };
-
-function tunnel_kind(tunnel) {
-    return lc(trim(as_string(option(tunnel, "kind", "wireguard"))));
-}
-
 function section_cascades(section) {
     let owner = " in section '" + section_label(section) + "'";
     let result = [];
@@ -265,9 +255,6 @@ function section_cascades(section) {
         add("The cascade of link '" + option(link, "name", "") + "'" + owner, connections.cascade_section(link));
     for (let subscription in connections.subscription_items(section))
         add("The cascade of subscription '" + option(subscription, "tag", "") + "'" + owner, connections.cascade_section(subscription));
-    for (let tunnel in connections.tunnel_items(section))
-        if (CASCADE_TUNNEL_KINDS[tunnel_kind(tunnel)])
-            add("The cascade of tunnel '" + option(tunnel, "name", "") + "'" + owner, connections.cascade_section(tunnel));
     return result;
 }
 
@@ -276,11 +263,6 @@ function cascade_neighbours(sections, name) {
     if (section == null || !section_enabled(section) || !connections.is_connections_action(rule_action(section)))
         return [];
     let result = map(section_cascades(section), (item) => item.target);
-    for (let tunnel in connections.tunnel_items(section)) {
-        let control = trim(as_string(option(tunnel, "tailscale_detour_section", "")));
-        if (tunnel_kind(tunnel) == "tailscale" && control != "")
-            push(result, control);
-    }
     return result;
 }
 
@@ -317,16 +299,6 @@ function validate_download_section(sections, target_name) {
     if (as_string(target_name) == "")
         fail_validation("Downloading external resources through a section is enabled, but no download section is selected");
     outbound_section(sections, "Downloading external resources through a section", target_name);
-}
-
-// A WARP tunnel waits for its profile, so fetching the profile through the tunnel's own
-// section would wait for itself.
-function validate_warp_profile_section(target_name) {
-    for (let tunnel in sections_by_type("tunnel"))
-        if (option(tunnel, "kind", "") == "warp" && option(tunnel, "section", "") == target_name)
-            fail_validation("Section '" + connections.section_display_name(target_name) + "' holds WARP tunnel '" +
-                option(tunnel, "name", section_name(tunnel)) + "', so it cannot carry the requests for its profile. " +
-                "Choose another section for WARP profiles");
 }
 
 function validate_duration_option(value, label) {
@@ -665,222 +637,11 @@ function validate_outbound_json_values(section) {
         if (outbound == null)
             fail_validation("Section '" + section_label(name) + "' has a JSON outbound that is not a JSON object");
 
+        if (singbox_constants.removed_vpn_type(outbound.type))
+            fail_validation("VPN tunnel and server types are not supported");
+
         if (trim(as_string(outbound.tag || "")) == "")
             fail_validation("Section '" + section_label(name) + "' has JSON outbound without a non-empty tag");
-    }
-}
-
-function valid_wireguard_key(value) {
-    value = trim(as_string(value));
-    if (match(value, /^[A-Za-z0-9+\/]{43}=$/) == null)
-        return false;
-
-    let decoded = null;
-    try {
-        decoded = b64dec(value);
-    }
-    catch (e) {
-        return false;
-    }
-    return decoded != null && length(decoded) == 32;
-}
-
-function valid_amnezia_range(value) {
-    value = trim(as_string(value));
-    if (value == "")
-        return false;
-
-    let parts = split(value, "-");
-    if (length(parts) > 2)
-        return false;
-
-    for (let part in parts)
-        if (match(part, /^[0-9]+$/) == null || int(part) < 0 || int(part) > 4294967295)
-            return false;
-
-    return length(parts) == 1 || int(parts[0]) <= int(parts[1]);
-}
-
-function valid_optional_uint16(value, minimum) {
-    value = trim(as_string(value));
-    return value == "" || (match(value, /^[0-9]+$/) != null && int(value) >= minimum && int(value) <= 65535);
-}
-
-// LuCI's host datatype, besides addresses.
-function valid_hostname(value) {
-    return length(value) <= 253 &&
-        match(value, /^[A-Za-z0-9_]([A-Za-z0-9_-]*[A-Za-z0-9_])?(\.[A-Za-z0-9_]([A-Za-z0-9_-]*[A-Za-z0-9_])?)*$/) != null;
-}
-
-const OPENCONNECT_FLAVORS = [ "anyconnect", "gp", "fortinet", "pulse", "nc", "f5" ];
-
-// As the core takes it: an HTTPS host, optional port and path, no user, query or fragment.
-function valid_openconnect_server(value) {
-    value = trim(as_string(value));
-    if (substr(lc(value), 0, 8) == "https://")
-        value = substr(value, 8);
-    return value != "" && index(value, "://") < 0 && match(value, /^[^\/?#@ \t]+(\/[^?# \t]*)?$/) != null;
-}
-
-function validate_openconnect_endpoint(owner, endpoint) {
-    if (lc(trim(as_string(endpoint.type || ""))) != "openconnect" || !valid_openconnect_server(endpoint.server))
-        fail_validation(owner + " has no valid OpenConnect server. Use a host with an optional port and group path, without a query");
-    if (endpoint.flavor != null && index(OPENCONNECT_FLAVORS, endpoint.flavor) < 0)
-        fail_validation(owner + " has an unknown OpenConnect protocol '" + as_string(endpoint.flavor) + "'");
-    let tls = object_or_empty(endpoint.tls);
-    if (!(tls.client_certificate || tls.client_certificate_path) != !(tls.client_key || tls.client_key_path))
-        fail_validation(owner + " needs both the OpenConnect client certificate and its key, or neither");
-    let token = endpoint.token;
-    if (token != null && (type(token) != "object" || trim(as_string(token.mode || "")) == "" || (!token.secret && !token.secret_path)))
-        fail_validation(owner + " has an OpenConnect one-time code without its mode or secret");
-}
-
-function validate_tailscale_tunnel_detour(source_name, detour) {
-    detour = trim(as_string(detour));
-    if (detour == "")
-        return;
-    if (detour == source_name)
-        fail_validation("Section '" + section_label(source_name) + "' cannot carry its own Tailscale control plane");
-    outbound_section(sections_by_type("section"), "The Tailscale control plane of section '" + section_label(source_name) + "'", detour);
-}
-
-function validate_tunnel_values(section) {
-    let name = section_name(section);
-
-    for (let tunnel_id in connections.tunnels(section)) {
-        let tunnel = connections.tunnel_child(section, tunnel_id);
-        let tunnel_name = trim(as_string(connections.option(tunnel, "name", "")));
-        let owner = (tunnel_name != "" ? "Tunnel '" + tunnel_name + "'" : "A tunnel") + " in section '" + section_label(section) + "'";
-        let endpoint = connections.tunnel_endpoint(tunnel);
-        let endpoint_type = lc(trim(as_string(endpoint.type || "")));
-        let wrapper_kind = lc(trim(as_string(connections.option(tunnel, "kind", "wireguard"))));
-
-        if (endpoint_type == "openvpn-server")
-            fail_validation("VPN server endpoints are not supported");
-
-        if (wrapper_kind == "json") {
-            if (type(core_common.parse_json(connections.option(tunnel, "endpoint_json", ""))) != "object")
-                fail_validation(owner + " has a JSON endpoint that is not a JSON object");
-            if (trim(as_string(endpoint.tag || "")) == "")
-                fail_validation(owner + " has a JSON endpoint without a tag");
-            continue;
-        }
-
-        if (endpoint_type == "" ||
-            (endpoint_type != "wireguard" && endpoint_type != "amneziawg" && endpoint_type != "warp" && endpoint_type != "tailscale" &&
-                endpoint_type != "openvpn-client" && endpoint_type != "openconnect"))
-            fail_validation(owner + " has an invalid tunnel endpoint");
-        if (trim(as_string(connections.option(tunnel, "name", ""))) == "")
-            fail_validation("A tunnel in section '" + section_label(section) + "' has no name");
-
-        if (wrapper_kind == "openconnect") {
-            validate_openconnect_endpoint(owner, endpoint);
-            continue;
-        }
-
-        if (wrapper_kind == "openvpn-client") {
-            if (endpoint_type != "openvpn-client" || (trim(as_string(endpoint.server || "")) == "" && length(array_or_empty(endpoint.servers)) == 0))
-                fail_validation(owner + " has an incomplete OpenVPN endpoint");
-            if (endpoint.server_port != null && (type(endpoint.server_port) != "int" || endpoint.server_port < 1 || endpoint.server_port > 65535))
-                fail_validation(owner + " has an invalid OpenVPN server port");
-            for (let remote in array_or_empty(endpoint.servers))
-                if (trim(as_string(remote?.server || "")) == "" || type(remote?.server_port) != "int" ||
-                    remote.server_port < 1 || remote.server_port > 65535)
-                    fail_validation(owner + " has an OpenVPN server without an address or a valid port");
-            if (endpoint.mode == "static_key" && ((!endpoint.static_key && !endpoint.static_key_path) || length(array_or_empty(endpoint.address)) == 0))
-                fail_validation(owner + ": static OpenVPN requires a key and tunnel addresses");
-            if (endpoint.mode != "static_key") {
-                let tls = object_or_empty(endpoint.tls);
-                if (!tls.certificate && !tls.certificate_path && length(array_or_empty(tls.peer_fingerprint)) == 0)
-                    fail_validation(owner + " has no CA certificate to check the OpenVPN server by");
-                if (!(tls.client_certificate || tls.client_certificate_path) != !(tls.client_key || tls.client_key_path))
-                    fail_validation(owner + " needs both the OpenVPN client certificate and its key, or neither");
-            }
-            continue;
-        }
-
-        if (endpoint_type == "tailscale") {
-            if (trim(as_string(endpoint.auth_key || "")) == "" ||
-                trim(as_string(endpoint.hostname || "")) == "")
-                fail_validation(owner + " has an incomplete Tailscale endpoint");
-            validate_http_url_option(endpoint.control_url || "https://controlplane.tailscale.com", "the Tailscale control URL of " + owner);
-            let detour_section = connections.option(tunnel, "tailscale_detour_section", "");
-            validate_tailscale_tunnel_detour(name, detour_section);
-            continue;
-        }
-
-        let amnezia_problem = amnezia.problem(tunnel, endpoint_type == "amneziawg" ? amnezia.KEYS : amnezia.ONE_SIDED_KEYS);
-        if (amnezia_problem != "")
-            fail_validation(owner + " " + amnezia_problem);
-
-        if (endpoint_type == "warp" && endpoint.persistent_keepalive_interval != null &&
-            !valid_amnezia_range(endpoint.persistent_keepalive_interval))
-            fail_validation(owner + " has an invalid WARP persistent keepalive interval. Use values from 0 to 4294967295 with the start no greater than the end");
-
-        if (endpoint_type == "warp") {
-            let warp_address = trim(as_string(connections.option(tunnel, "warp_address", "")));
-            if (warp_address != "" && !core_ip.valid_ip(warp_address) && !valid_hostname(warp_address))
-                fail_validation(owner + " has an invalid WARP server address. Use a hostname or an IP address");
-            if (!valid_optional_uint16(connections.option(tunnel, "warp_port", ""), 0))
-                fail_validation(owner + " has an invalid WARP server port");
-            let profile = object_or_empty(endpoint.profile);
-            let profile_values = 0;
-            for (let key in [ "id", "auth_token", "private_key" ])
-                if (trim(as_string(profile[key] || "")) != "")
-                    profile_values++;
-            if (profile_values != 3)
-                fail_validation(owner + " has an incomplete WARP profile. Generate a profile and fill all profile fields");
-            continue;
-        }
-
-        if (!valid_optional_uint16(connections.option(tunnel, "listen_port", ""), 0))
-            fail_validation(owner + " has an invalid WireGuard listen port. Use a port from 0 to 65535");
-        if (!valid_optional_uint16(connections.option(tunnel, "mtu", ""), 1))
-            fail_validation(owner + " has an invalid WireGuard MTU. Use a whole number from 1 to 65535");
-        if (endpoint_type == "amneziawg" && endpoint.amnezia == null)
-            fail_validation(owner + " has no AmneziaWG parameter. Copy them from the configuration of its server");
-
-        let peers = array_or_empty(endpoint.peers);
-        if (length(array_or_empty(endpoint.address)) == 0 ||
-            trim(as_string(endpoint.private_key || "")) == "" ||
-            length(peers) == 0)
-            fail_validation(owner + " has an incomplete WireGuard endpoint");
-
-        if (!valid_wireguard_key(endpoint.private_key))
-            fail_validation(owner + " has an invalid WireGuard private key. Use standard base64-encoded 32-byte values");
-
-        for (let address in array_or_empty(endpoint.address))
-            if (type(address) != "string" || !core_ip.valid_ip_cidr(trim(address)))
-                fail_validation(owner + " has an invalid WireGuard address. Use IP addresses with CIDR prefixes");
-
-        for (let peer in peers) {
-            peer = object_or_empty(peer);
-            let port = int(peer.port || 0);
-            if (trim(as_string(peer.address || "")) == "" ||
-                trim(as_string(peer.public_key || "")) == "" ||
-                port < 1 || port > 65535)
-                fail_validation(owner + " has an invalid WireGuard peer");
-
-            if (!valid_wireguard_key(peer.public_key))
-                fail_validation(owner + " has an invalid WireGuard peer public key. Use standard base64-encoded 32-byte values");
-
-            if (peer.pre_shared_key != null && trim(as_string(peer.pre_shared_key)) != "" &&
-                !valid_wireguard_key(peer.pre_shared_key))
-                fail_validation(owner + " has an invalid WireGuard pre-shared key. Use standard base64-encoded 32-byte values");
-
-            if (peer.persistent_keepalive_interval != null &&
-                !valid_amnezia_range(peer.persistent_keepalive_interval))
-                fail_validation(owner + " has an invalid WireGuard persistent keepalive interval. Use values from 0 to 4294967295 with the start no greater than the end");
-
-            let allowed_ips = peer.allowed_ips;
-            if (type(allowed_ips) == "string")
-                allowed_ips = [ allowed_ips ];
-            if (type(allowed_ips) != "array" || length(allowed_ips) == 0)
-                fail_validation(owner + " has a WireGuard peer without AllowedIPs. Add at least one CIDR subnet");
-            for (let allowed_ip in allowed_ips)
-                if (type(allowed_ip) != "string" || !core_ip.valid_ip_cidr(trim(allowed_ip)))
-                    fail_validation(owner + " has an invalid WireGuard AllowedIPs subnet. Use IP addresses with CIDR prefixes");
-        }
     }
 }
 
@@ -1091,7 +852,6 @@ function validate_rule(section, sections, context) {
 
         validate_section_group_references(section);
         validate_outbound_json_values(section);
-        validate_tunnel_values(section);
         validate_section_child_names(section);
         validate_interface_domain_resolvers(section, sections, context);
     }
@@ -1157,24 +917,12 @@ function refuse_without(feature, core_tags, what) {
         fail_validation(what + ", but " + reason + ". Disable it or install a sing-box build that has it");
 }
 
-// The core refuses to start on a tunnel, link or DNS server of a type it was built
+// The core refuses to start on a link or DNS server of a type it was built
 // without; a subscription's servers it skips and logs instead.
 function validate_core_features(settings, sections, core_tags) {
     for (let section in sections) {
         if (!section_enabled(section) || !connections.is_connections_action(rule_action(section)))
             continue;
-        for (let tunnel_id in connections.tunnels(section)) {
-            let tunnel = connections.tunnel_child(section, tunnel_id);
-            let kind = lc(trim(as_string(connections.option(tunnel, "kind", "wireguard"))));
-            let endpoint = kind == "json" ? core_common.parse_json(connections.option(tunnel, "endpoint_json", "")) : null;
-            let feature = features.type_feature("endpoint", kind == "json" ? endpoint?.type : kind);
-            if (feature == "")
-                continue;
-            let what = kind == "json"
-                ? "a JSON endpoint '" + as_string(endpoint.tag ?? tunnel_id) + "' of type " + endpoint.type
-                : "a " + kind + " tunnel '" + trim(as_string(connections.option(tunnel, "name", tunnel_id))) + "'";
-            refuse_without(feature, core_tags, "Section '" + section_label(section) + "' has " + what);
-        }
         for (let item in connections.connection_link_items(section)) {
             let link = connections.option(item, "uri", "");
             let label = core_url.scheme(link) + ":// link '" + connections.option(item, "name", "") + "'";
@@ -1203,8 +951,6 @@ function validate_core_features(settings, sections, core_tags) {
             refuse_without("quic", core_tags, "DNS server '" + value + "' uses " + (parsed.type == "quic" ? "DNS over QUIC" : "DNS over HTTP/3"));
     }
 
-    if (connections.download_via_proxy_enabled(settings, "warp_profiles"))
-        refuse_without("wireguard", core_tags, "Requesting WARP profiles through a section is on");
 }
 
 function validate_runtime_config(context) {
@@ -1220,11 +966,9 @@ function validate_runtime_config(context) {
     validate_native_rule_set_update_settings(settings);
     validate_http_url_option(option(settings, "latency_test_url", DEFAULT_LATENCY_TEST_URL) || DEFAULT_LATENCY_TEST_URL, "'Latency test URL' in Settings");
 
-    for (let purpose in [ "lists", "warp_profiles" ])
+    for (let purpose in [ "lists" ])
         if (connections.download_via_proxy_enabled(settings, purpose))
             validate_download_section(sections, connections.download_via_proxy_section(settings, purpose));
-    if (connections.download_via_proxy_enabled(settings, "warp_profiles"))
-        validate_warp_profile_section(connections.download_via_proxy_section(settings, "warp_profiles"));
 
     validate_cascades(sections);
     validate_subscription_download_sections(sections, context);

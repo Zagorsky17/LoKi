@@ -140,28 +140,7 @@ t.test("accepts valid", () => {
     });
 });
 
-t.test("accepts valid-json-endpoint", () => {
-    v.accepts({
-        "settings": {},
-        "section": [
-            {
-                ".name": "proxy",
-                "enabled": "1",
-                "action": "connection"
-            }
-        ],
-        "tunnel": [
-            {
-                ".name": "tun_json",
-                "section": "proxy",
-                "kind": "json",
-                "endpoint_json": "{\"type\":\"vpn-client\",\"tag\":\"vpn-client\"}"
-            }
-        ],
-    });
-});
-
-t.test("leaves the contents of JSON outbounds and endpoints to sing-box", () => {
+t.test("leaves the contents of proxy JSON outbounds to sing-box", () => {
     v.accepts({
         "settings": {},
         "section": [
@@ -175,14 +154,6 @@ t.test("leaves the contents of JSON outbounds and endpoints to sing-box", () => 
                 ]
             }
         ],
-        "tunnel": [
-            {
-                ".name": "tun_json",
-                "section": "proxy",
-                "kind": "json",
-                "endpoint_json": "{\"type\":\"vless\",\"tag\":\"wrong-container\"}"
-            }
-        ],
     });
 });
 
@@ -191,84 +162,6 @@ t.test("refuses a JSON outbound that is not an object", () => {
         "settings": {},
         "section": [ { ".name": "proxy", "enabled": "1", "action": "connection", "outbound_jsons": [ "[1]" ] } ]
     }, "has a JSON outbound that is not a JSON object");
-});
-
-t.test("refuses a JSON endpoint that is not an object", () => {
-    v.refuses({
-        "settings": {},
-        "section": [ { ".name": "proxy", "enabled": "1", "action": "connection" } ],
-        "tunnel": [ { ".name": "tun_json", "section": "proxy", "kind": "json", "endpoint_json": "{\"type\":" } ]
-    }, "has a JSON endpoint that is not a JSON object");
-});
-
-t.test("accepts tailscale-without-exit-node", () => {
-    v.accepts({
-        "settings": {},
-        "section": [
-            {
-                ".name": "proxy",
-                "enabled": "1",
-                "action": "connection"
-            }
-        ],
-        "tunnel": [
-            {
-                ".name": "tun_tailnet",
-                "section": "proxy",
-                "kind": "tailscale",
-                "name": "Tailnet",
-                "tailscale_auth_key": "tskey-auth-test",
-                "tailscale_hostname": "forkop-router"
-            }
-        ]
-    });
-});
-
-t.test("Tailscale tunnel without auth key", () => {
-    v.refuses({
-        "settings": {},
-        "section": [
-            {
-                ".name": "proxy",
-                "enabled": "1",
-                "action": "connection"
-            }
-        ],
-        "tunnel": [
-            {
-                ".name": "tun_tailnet",
-                "section": "proxy",
-                "kind": "tailscale",
-                "name": "Tailnet",
-                "tailscale_hostname": "forkop-router"
-            }
-        ]
-    }, "incomplete Tailscale endpoint");
-});
-
-t.test("Tailscale tunnel self detour", () => {
-    v.refuses({
-        "settings": {},
-        "section": [
-            {
-                ".name": "proxy",
-                "enabled": "1",
-                "action": "connection"
-            }
-        ],
-        "tunnel": [
-            {
-                ".name": "tun_tailnet",
-                "section": "proxy",
-                "kind": "tailscale",
-                "name": "Tailnet",
-                "tailscale_auth_key": "tskey-auth-test",
-                "tailscale_hostname": "forkop-router",
-                "tailscale_exit_node": "100.64.0.1",
-                "tailscale_detour_section": "proxy"
-            }
-        ]
-    }, "cannot carry its own Tailscale control plane");
 });
 
 t.test("bad DNS fallback strategy", () => {
@@ -931,72 +824,7 @@ t.test("bad filter mode", () => {
 });
 
 
-function amnezia_tunnel(field, value, kind) {
-    let tunnel = {
-        ".name": "tun_amnezia", section: "tunnels", order: "0",
-        kind: kind ?? "amneziawg", name: "Amnezia", address: [ "10.0.0.2/32" ],
-        private_key: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
-    };
-    if (type(field) == "object")
-        tunnel = { ...tunnel, ...field };
-    else
-        tunnel[field] = value;
-    return {
-        settings: {},
-        section: [ { ".name": "tunnels", enabled: "1", action: "connection" } ],
-        tunnel: [ tunnel ],
-        tunnel_peer: [ {
-            ".name": "peer_amnezia", tunnel: "tun_amnezia", order: "0",
-            address: "vpn.example.com", port: "51820",
-            public_key: "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=", allowed_ips: [ "0.0.0.0/0" ]
-        } ]
-    };
-}
-
-t.test("AmneziaWG numbers stay within their field width", () => {
-    v.accepts(amnezia_tunnel("amnezia_s1", "65535"));
-    v.refuses(amnezia_tunnel("amnezia_s1", "65536"), "invalid AmneziaWG s1 value");
-    v.refuses(amnezia_tunnel("amnezia_jc", "4294967296"), "invalid AmneziaWG jc value");
-});
-
-t.test("AmneziaWG signatures are chains of known tags", () => {
-    v.accepts(amnezia_tunnel("amnezia_i1", "<r 2><b 0x8580>"));
-    v.refuses(amnezia_tunnel("amnezia_i1", "deadbeef"), "invalid AmneziaWG i1 signature");
-    v.refuses(amnezia_tunnel("amnezia_i1", "<zz 1>"), "invalid AmneziaWG i1 signature");
-});
-
-t.test("a protected AmneziaWG header needs every padding of at least 12 bytes", () => {
-    const KEY = "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=";
-    v.refuses(amnezia_tunnel("amnezia_header_protection_key", KEY), "requires AmneziaWG s1 of at least 12 bytes");
-    let padded = { amnezia_header_protection_key: KEY, amnezia_s1: "12", amnezia_s2: "12", amnezia_s3: "12", amnezia_s4: "12" };
-    v.accepts(amnezia_tunnel(padded));
-    for (let key in [ "s1", "s2", "s3", "s4" ])
-        v.refuses(amnezia_tunnel({ ...padded, ["amnezia_" + key]: "11" }), "requires AmneziaWG " + key + " of at least 12 bytes");
-    v.accepts(amnezia_tunnel("amnezia_header_protection_key", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="), "the all-zero key disables protection");
-});
-
-t.test("AmneziaWG flags are 0 or 1", () => {
-    for (let flag in [ "random_trailers", "disable_cookies" ]) {
-        v.refuses(amnezia_tunnel("amnezia_" + flag, "maybe"), "invalid AmneziaWG " + flag + " flag");
-        for (let value in [ "0", "1" ])
-            v.accepts(amnezia_tunnel("amnezia_" + flag, value));
-    }
-});
-
 // sing-box check accepts both, and the endpoint then fails to start.
-t.test("AmneziaWG headers do not overlap, the device's own included", () => {
-    v.accepts(amnezia_tunnel({ amnezia_h1: "100-200", amnezia_h2: "201", amnezia_h3: "300-400", amnezia_h4: "5" }));
-    v.refuses(amnezia_tunnel({ amnezia_h1: "100-200", amnezia_h2: "150" }), "AmneziaWG headers h1 and h2 that overlap");
-    v.refuses(amnezia_tunnel("amnezia_h1", "2"), "AmneziaWG headers h1 and h2 that overlap");
-    v.accepts(amnezia_tunnel("amnezia_h1", "1"));
-});
-
-t.test("the AmneziaWG junk minimum is no greater than its maximum", () => {
-    v.accepts(amnezia_tunnel({ amnezia_jmin: "10", amnezia_jmax: "10" }));
-    v.refuses(amnezia_tunnel({ amnezia_jmin: "60", amnezia_jmax: "10" }), "AmneziaWG jmin greater than jmax");
-    v.refuses(amnezia_tunnel({ amnezia_jmin: "60" }, null, "wireguard"), "AmneziaWG jmin greater than jmax");
-});
-
 t.test("unsupported server records are not interpreted or included in validation logs", () => {
     let result = v.accepts({
         section: [ { ".name": "main", enabled: "1", action: "connection" } ],
@@ -1006,14 +834,6 @@ t.test("unsupported server records are not interpreted or included in validation
         server_client: [ { ".name": "private-account", server: "private-server-name", password: "private-password" } ]
     });
     t.excludes(sprintf("%J", result.logs), "private-");
-});
-
-t.test("the JSON tunnel wrapper cannot admit a server-only endpoint", () => {
-    for (let kind in [ "json", "openvpn-client" ])
-        v.refuses({ section: [ { ".name": "main", enabled: "1", action: "connection" } ],
-            tunnel: [ { ".name": "json", section: "main", name: "client", kind,
-                endpoint_json: "{\"type\":\"openvpn-server\",\"tag\":\"server\",\"listen_port\":18443}" } ]
-        }, "VPN server endpoints are not supported");
 });
 
 t.done();

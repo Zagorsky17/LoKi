@@ -1,5 +1,12 @@
 {
-  "reserved_ports": [53, 1602, 1603, 1604, 1605, 4536, 9090],
+  "reserved_ports": [
+    53,
+    1602,
+    1603,
+    1604,
+    1605,
+    9090
+  ],
   "reserved_tags": [
     "bootstrap-dns-server",
     "direct-out",
@@ -11,7 +18,6 @@
     "fakeip-server",
     "hosts-server",
     "service-fakeip-dns-rule-tag",
-    "service-warp-in",
     "source-dns-in",
     "system-dns-in",
     "system-in",
@@ -83,15 +89,11 @@
     "tor",
     "socks",
     "http",
-    "wireguard",
-    "amneziawg",
-    "warp",
-    "tailscale",
-    "openvpn-client",
-    "openconnect",
     "direct"
   ],
-  "reserved_override_patch_paths": ["detour"],
+  "reserved_override_patch_paths": [
+    "detour"
+  ],
   "check_domains": {
     "fakeip": "fakeip.podkop.fyi"
   },
@@ -120,57 +122,181 @@
     "Reapplying configuration"
   ],
   "password_fields": {
-    "amnezia_header_protection_key": "amnezia_header_protection_key",
-    "hysteria2_obfs_password": "hysteria2_obfs_password",
-    "openconnect_cookie": "endpoint_json",
-    "openconnect_key_password": "endpoint_json",
-    "openconnect_password": "endpoint_json",
-    "openconnect_token_password": "endpoint_json",
-    "openconnect_token_pin": "endpoint_json",
-    "openconnect_token_secret": "endpoint_json",
-    "openvpn_password": "endpoint_json",
-    "pre_shared_key": "pre_shared_key",
-    "private_key": "private_key",
-    "reality_private_key": "reality_private_key",
-    "shadowsocks_psk": "shadowsocks_psk",
-    "tailscale_auth_key": "tailscale_auth_key",
     "uri": "uri",
-    "url": "url",
-    "warp_auth_token": "warp_profile_auth_token",
-    "warp_license_key": "warp_profile_license_key",
-    "warp_private_key": "warp_profile_private_key"
+    "url": "url"
   },
   "link_features": [
-    ["hy2://secret@example.com:443?sni=example.com#h", ["quic"]],
-    ["tuic://u:p@example.com:443#t", ["quic"]],
-    ["naive+https://u:p@example.com:443#n", ["naive"]],
-    ["http3://u:p@example.com:443#n", ["naive"]],
-    ["vless://u@example.com:443?security=reality&pbk=key&sni=example.com#r", ["utls"]],
-    ["vless://u@example.com:443?pbk=key#r", ["utls"]],
-    ["vless://u@example.com:443?security=tls&fp=chrome#f", ["utls"]],
-    ["vless://u@example.com:443?security=none&fp=chrome#plain", []],
-    ["vless://u@example.com:443?security=tls#tls", []],
-    ["trojan://p@example.com:443?fp=firefox#t", ["utls"]],
-    ["hysteria2://p@example.com:443?fp=chrome#h", ["quic", "utls"]],
-    ["ss://YWVzLTI1Ni1nY206cGFzcw@example.com:8388#s", []],
-    ["vmess://eyJhZGQiOiJleGFtcGxlLmNvbSIsInBvcnQiOiI0NDMiLCJpZCI6InUiLCJ0bHMiOiJ0bHMiLCJmcCI6ImNocm9tZSJ9", ["vmess", "utls"]],
-    ["vmess://eyJhZGQiOiJleGFtcGxlLmNvbSIsInBvcnQiOiI0NDMiLCJpZCI6InUiLCJmcCI6ImNocm9tZSJ9", ["vmess"]],
-    ["vmess://u@example.com:443?security=tls&fp=chrome#v", ["vmess", "utls"]],
-    ["vless://u@example.com:443?security=tls&type=xhttp&alpn=h3#x", ["quic"]],
-    ["vless://u@example.com:443?security=tls&type=xhttp&alpn=h3%2Ch2&fp=chrome#x", ["utls"]],
-    ["vless://u@example.com:443?security=reality&pbk=key&net=xhttp&alpn=h3#x", ["utls"]],
-    ["vless://u@example.com:443?security=tls&pbk=key&type=xhttp&alpn=h3#x", ["utls"]],
-    ["trojan://p@example.com:443?security=reality&pbk=key&type=xhttp&alpn=h3#t", ["utls"]],
-    ["vless://u@example.com:443?security=tls&type=xhttp&alpn=h2,h3#x", []],
-    ["vless://u@example.com:443?security=none&type=xhttp&alpn=h3#x", []],
-    ["vless://u@example.com:443?security=tls&type=ws&alpn=h3#x", []],
-    ["trojan://p@example.com:443?type=splithttp&alpn=h3#t", ["quic"]],
-    ["vmess://u@example.com:443?security=tls&type=xhttp&alpn=h3#v", ["vmess", "quic"]],
-    ["socks5://127.0.0.1:1080#local", []],
-    ["tt://?AAECAQ92cG4uZXhhbXBsZS5jb20FBWFsaWNlBglzZWNyZXQxMjMCCzEuMi4zLjQ6NDQz", ["trusttunnel"]],
-    ["anytls://p@example.com:443?fp=chrome#a", ["anytls", "utls"]],
-    ["mierus://u:p@example.com?profile=p&port=443&protocol=TCP#m", ["mieru"]],
-    ["mieru://opaque-native-payload", ["mieru"]]
+    [
+      "hy2://secret@example.com:443?sni=example.com#h",
+      [
+        "quic"
+      ]
+    ],
+    [
+      "tuic://u:p@example.com:443#t",
+      [
+        "quic"
+      ]
+    ],
+    [
+      "naive+https://u:p@example.com:443#n",
+      [
+        "naive"
+      ]
+    ],
+    [
+      "http3://u:p@example.com:443#n",
+      [
+        "naive"
+      ]
+    ],
+    [
+      "vless://u@example.com:443?security=reality&pbk=key&sni=example.com#r",
+      [
+        "utls"
+      ]
+    ],
+    [
+      "vless://u@example.com:443?pbk=key#r",
+      [
+        "utls"
+      ]
+    ],
+    [
+      "vless://u@example.com:443?security=tls&fp=chrome#f",
+      [
+        "utls"
+      ]
+    ],
+    [
+      "vless://u@example.com:443?security=none&fp=chrome#plain",
+      []
+    ],
+    [
+      "vless://u@example.com:443?security=tls#tls",
+      []
+    ],
+    [
+      "trojan://p@example.com:443?fp=firefox#t",
+      [
+        "utls"
+      ]
+    ],
+    [
+      "hysteria2://p@example.com:443?fp=chrome#h",
+      [
+        "quic",
+        "utls"
+      ]
+    ],
+    [
+      "ss://YWVzLTI1Ni1nY206cGFzcw@example.com:8388#s",
+      []
+    ],
+    [
+      "vmess://eyJhZGQiOiJleGFtcGxlLmNvbSIsInBvcnQiOiI0NDMiLCJpZCI6InUiLCJ0bHMiOiJ0bHMiLCJmcCI6ImNocm9tZSJ9",
+      [
+        "vmess",
+        "utls"
+      ]
+    ],
+    [
+      "vmess://eyJhZGQiOiJleGFtcGxlLmNvbSIsInBvcnQiOiI0NDMiLCJpZCI6InUiLCJmcCI6ImNocm9tZSJ9",
+      [
+        "vmess"
+      ]
+    ],
+    [
+      "vmess://u@example.com:443?security=tls&fp=chrome#v",
+      [
+        "vmess",
+        "utls"
+      ]
+    ],
+    [
+      "vless://u@example.com:443?security=tls&type=xhttp&alpn=h3#x",
+      [
+        "quic"
+      ]
+    ],
+    [
+      "vless://u@example.com:443?security=tls&type=xhttp&alpn=h3%2Ch2&fp=chrome#x",
+      [
+        "utls"
+      ]
+    ],
+    [
+      "vless://u@example.com:443?security=reality&pbk=key&net=xhttp&alpn=h3#x",
+      [
+        "utls"
+      ]
+    ],
+    [
+      "vless://u@example.com:443?security=tls&pbk=key&type=xhttp&alpn=h3#x",
+      [
+        "utls"
+      ]
+    ],
+    [
+      "trojan://p@example.com:443?security=reality&pbk=key&type=xhttp&alpn=h3#t",
+      [
+        "utls"
+      ]
+    ],
+    [
+      "vless://u@example.com:443?security=tls&type=xhttp&alpn=h2,h3#x",
+      []
+    ],
+    [
+      "vless://u@example.com:443?security=none&type=xhttp&alpn=h3#x",
+      []
+    ],
+    [
+      "vless://u@example.com:443?security=tls&type=ws&alpn=h3#x",
+      []
+    ],
+    [
+      "trojan://p@example.com:443?type=splithttp&alpn=h3#t",
+      [
+        "quic"
+      ]
+    ],
+    [
+      "vmess://u@example.com:443?security=tls&type=xhttp&alpn=h3#v",
+      [
+        "vmess",
+        "quic"
+      ]
+    ],
+    [
+      "socks5://127.0.0.1:1080#local",
+      []
+    ],
+    [
+      "tt://?AAECAQ92cG4uZXhhbXBsZS5jb20FBWFsaWNlBglzZWNyZXQxMjMCCzEuMi4zLjQ6NDQz",
+      [
+        "trusttunnel"
+      ]
+    ],
+    [
+      "anytls://p@example.com:443?fp=chrome#a",
+      [
+        "anytls",
+        "utls"
+      ]
+    ],
+    [
+      "mierus://u:p@example.com?profile=p&port=443&protocol=TCP#m",
+      [
+        "mieru"
+      ]
+    ],
+    [
+      "mieru://opaque-native-payload",
+      [
+        "mieru"
+      ]
+    ]
   ],
   "core_report_base": {
     "known": true,
@@ -190,67 +316,75 @@
     "features": {
       "clash_api": {
         "available": true,
-        "tags": ["with_clash_api"]
-      },
-      "wireguard": {
-        "available": true,
-        "tags": ["with_wireguard", "with_gvisor"]
+        "tags": [
+          "with_clash_api"
+        ]
       },
       "utls": {
         "available": true,
-        "tags": ["with_utls"]
+        "tags": [
+          "with_utls"
+        ]
       },
       "quic": {
         "available": true,
-        "tags": ["with_quic"]
-      },
-      "openvpn": {
-        "available": true,
-        "tags": ["with_openvpn", "with_gvisor"]
-      },
-      "tailscale": {
-        "available": false,
-        "tags": ["with_tailscale", "with_gvisor"]
+        "tags": [
+          "with_quic"
+        ]
       },
       "naive": {
         "available": false,
-        "tags": ["with_naive"]
+        "tags": [
+          "with_naive"
+        ]
       },
       "trusttunnel": {
         "available": true,
-        "tags": ["with_trusttunnel"]
-      },
-      "openconnect": {
-        "available": false,
-        "tags": ["with_openconnect", "with_gvisor"]
+        "tags": [
+          "with_trusttunnel"
+        ]
       },
       "vmess": {
         "available": true,
-        "tags": ["with_vmess"]
+        "tags": [
+          "with_vmess"
+        ]
       },
       "snell": {
         "available": false,
-        "tags": ["with_snell"]
+        "tags": [
+          "with_snell"
+        ]
       },
       "ssh": {
         "available": false,
-        "tags": ["with_ssh"]
+        "tags": [
+          "with_ssh"
+        ]
       },
       "shadowtls": {
         "available": false,
-        "tags": ["with_shadowtls"]
+        "tags": [
+          "with_shadowtls"
+        ]
       },
       "tor": {
         "available": false,
-        "tags": ["with_tor"]
+        "tags": [
+          "with_tor"
+        ]
       },
       "anytls": {
         "available": true,
-        "tags": ["with_anytls"]
+        "tags": [
+          "with_anytls"
+        ]
       },
       "mieru": {
         "available": false,
-        "tags": ["with_mieru"]
+        "tags": [
+          "with_mieru"
+        ]
       }
     },
     "types": {
@@ -267,14 +401,6 @@
         "tor": "tor",
         "anytls": "anytls",
         "mieru": "mieru"
-      },
-      "endpoint": {
-        "wireguard": "wireguard",
-        "amneziawg": "wireguard",
-        "warp": "wireguard",
-        "tailscale": "tailscale",
-        "openvpn-client": "openvpn",
-        "openconnect": "openconnect"
       }
     },
     "links": {
@@ -304,36 +430,46 @@
       "tt": "trusttunnel"
     }
   },
-  "amnezia_parameters": [
-    { "key": "jc", "kind": "count", "one_sided": true },
-    { "key": "jmin", "kind": "count", "one_sided": true },
-    { "key": "jmax", "kind": "count", "one_sided": true },
-    { "key": "s1", "kind": "padding", "one_sided": false },
-    { "key": "s2", "kind": "padding", "one_sided": false },
-    { "key": "s3", "kind": "padding", "one_sided": false },
-    { "key": "s4", "kind": "padding", "one_sided": false },
-    { "key": "h1", "kind": "range", "one_sided": false },
-    { "key": "h2", "kind": "range", "one_sided": false },
-    { "key": "h3", "kind": "range", "one_sided": false },
-    { "key": "h4", "kind": "range", "one_sided": false },
-    { "key": "i1", "kind": "signature", "one_sided": true },
-    { "key": "i2", "kind": "signature", "one_sided": true },
-    { "key": "i3", "kind": "signature", "one_sided": true },
-    { "key": "i4", "kind": "signature", "one_sided": true },
-    { "key": "i5", "kind": "signature", "one_sided": true },
-    { "key": "header_protection_key", "kind": "key", "one_sided": false },
-    { "key": "content_padding_addition", "kind": "range", "one_sided": true },
-    { "key": "rekey_after_time", "kind": "range", "one_sided": true },
-    { "key": "rekey_timeout", "kind": "range", "one_sided": true },
-    { "key": "reject_after_time", "kind": "range", "one_sided": true },
-    { "key": "keepalive_timeout", "kind": "range", "one_sided": true },
-    { "key": "max_handshake_attempts", "kind": "range", "one_sided": true },
-    { "key": "random_trailers", "kind": "flag", "one_sided": false },
-    { "key": "disable_cookies", "kind": "flag", "one_sided": false }
-  ],
   "installer": {
     "object": "forkop.installer",
-    "methods": ["input", "read", "stop"],
-    "actions": ["update", "variant", "uninstall"]
+    "methods": [
+      "input",
+      "read",
+      "stop"
+    ],
+    "actions": [
+      "update",
+      "variant",
+      "uninstall"
+    ]
+  },
+  "removed_vpn_types": [
+    "wireguard",
+    "amneziawg",
+    "warp",
+    "tailscale",
+    "openvpn",
+    "openvpn-client",
+    "openvpn-server",
+    "openconnect"
+  ],
+  "retired_password_fields": {
+    "amnezia_header_protection_key": "amnezia_header_protection_key",
+    "hysteria2_obfs_password": "hysteria2_obfs_password",
+    "openconnect_cookie": "endpoint_json",
+    "openconnect_key_password": "endpoint_json",
+    "openconnect_password": "endpoint_json",
+    "openconnect_token_password": "endpoint_json",
+    "openconnect_token_pin": "endpoint_json",
+    "openconnect_token_secret": "endpoint_json",
+    "openvpn_password": "endpoint_json",
+    "pre_shared_key": "pre_shared_key",
+    "private_key": "private_key",
+    "reality_private_key": "reality_private_key",
+    "shadowsocks_psk": "shadowsocks_psk",
+    "tailscale_auth_key": "tailscale_auth_key",
+    "warp_auth_token": "warp_profile_auth_token",
+    "warp_license_key": "warp_profile_license_key",
+    "warp_private_key": "warp_profile_private_key"
   }
 }

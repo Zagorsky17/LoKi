@@ -167,4 +167,13 @@ t.test("build.sh explains itself and refuses a malformed version before building
     t.contains(malformed.output, "x.y.z");
 });
 
+t.test("retired tunnel modules and commands cannot enter the packages", () => {
+    for (let path in [ "singbox/tailscale.uc", "singbox/amnezia.uc" ])
+        t.eq(fs.stat(repo.path("forkop/files/usr/lib/" + path)), null, path);
+    t.eq(cli.COMMANDS.generate_warp_profile, null);
+    let bundle = fs.readfile(repo.path("luci-app-forkop/htdocs/luci-static/resources/view/forkop/main.js"));
+    for (let entry in [ "generate_warp_profile", "/tailscale", "showTailscaleDetailsModal", "parseWireGuardConfig", "parseOpenVPNConfig", "parseOpenConnectConfig" ])
+        t.excludes(bundle, entry);
+});
+
 t.done();

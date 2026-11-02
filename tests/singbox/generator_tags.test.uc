@@ -33,7 +33,6 @@ function runtime_tags_config() {
         connection_link: fixture.links("proxy", [ "socks://127.0.0.1:1080#manual" ]),
         subscription_url: [ { ".name": "sub_dup", section: "proxy", url: "https://duplicate.example/sub", tag: "sub1" } ],
         section_interface: [ { ".name": "cfg-interface", section: "proxy", name: "wg0", display_name: "NL Amsterdam" } ],
-        tunnel: [ { ".name": "tun_tailnet", section: "proxy", order: "0", kind: "tailscale", name: "Tailnet", tailscale_auth_key: "tskey-auth-test" } ],
         urltest: [
             { ".name": "ut_name", section: "proxy", name: "By name", server_filter_mode: "include", include_outbounds: [ "germany", "NL Amsterdam", "json-hop" ] },
             { ".name": "ut_regex", section: "proxy", name: "By regex", server_filter_mode: "include", include_regex: "^germany$" }
@@ -43,16 +42,16 @@ function runtime_tags_config() {
     });
 }
 
-t.test("every outbound and endpoint runs under its section and its own name", () => {
+t.test("every outbound runs under its section and its own name", () => {
     let config = runtime_tags_config();
     let seen = {};
-    for (let item in [ ...config.outbounds, ...config.endpoints ]) {
+    for (let item in config.outbounds) {
         t.ok(!seen[item.tag], "duplicate generated tag " + item.tag);
         seen[item.tag] = true;
     }
     for (let tag in [
         "direct-out", "Main", "Backup",
-        "Main/manual", "Main/NL Amsterdam", "Main/Tailnet",
+        "Main/manual", "Main/NL Amsterdam",
         "Main/germany", "Main/austria", "Main/direct-out", "Main/json-hop",
         "Main/json-group", "Main/service-mixed-in", "Backup/json-hop",
         "Main/By name", "Main/By regex", "Main/Fallback"
@@ -74,7 +73,7 @@ t.test("the section selector lists its groups first, then its own nodes, and its
     t.eq(selector.providers, [ "Main/sub1" ]);
     t.eq(selector.outbounds, [
         "Main/By name", "Main/By regex", "Main/Fallback", "Main/manual",
-        "Main/NL Amsterdam", "Main/Tailnet", "Main/germany", "Main/austria",
+        "Main/NL Amsterdam", "Main/germany", "Main/austria",
         "Main/direct-out", "Main/json-hop", "Main/json-group", "Main/service-mixed-in"
     ]);
 });

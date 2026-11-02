@@ -8,7 +8,6 @@ let constants = require("core.constants");
 let netstat = require("core.netstat");
 let uci = require("core.uci");
 let validator = require("config.validator");
-let tailscale = require("singbox.tailscale");
 let generator = require("singbox.generator");
 let runtime = require("singbox.runtime");
 let nft = require("nft.apply");
@@ -93,7 +92,6 @@ function validate() {
         log("error", e.message);
         return false;
     }
-    tailscale.remove_orphaned_states();
     return true;
 }
 

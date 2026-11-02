@@ -9,6 +9,7 @@ import {
   DOMAIN_LIST_OPTIONS,
   FAKEIP_CHECK_DOMAIN,
   RESERVED_RUNTIME_TAGS,
+  REMOVED_VPN_TYPES,
 } from '../src/constants';
 import {
   groupTypeChoices,
@@ -21,8 +22,6 @@ import {
 } from '../src/forkop/methods/custom/getDashboardSections';
 import { FORKOP_WAIT_TIMEOUT_MS } from '../src/forkop/services/forkopWaitTransport';
 import { FORKOP_ACTION_OPENINGS } from '../src/forkop/services/logNotificationDeduper.service';
-import { tunnelStorageSettings } from '../src/forkop/tabs/sections/tunnels/model';
-import { AMNEZIA_PARAMETERS } from '../src/helpers/wireguard';
 import {
   INSTALLER_ACTIONS,
   INSTALLER_OBJECT,
@@ -50,6 +49,7 @@ describe('the tables the page carries', () => {
     expect(groupTypeChoices().map(({ value }) => value)).toEqual(
       contract.group_types,
     );
+    expect(REMOVED_VPN_TYPES).toEqual(contract.removed_vpn_types);
   });
 
   it('refuse the override paths the backend refuses', () => {
@@ -60,16 +60,6 @@ describe('the tables the page carries', () => {
 
   it('check the domains the configuration answers for', () => {
     expect({ fakeip: FAKEIP_CHECK_DOMAIN }).toEqual(contract.check_domains);
-  });
-
-  it('read the AmneziaWG parameters by the kinds and sides the backend does', () => {
-    expect(
-      AMNEZIA_PARAMETERS.map(({ key, kind, oneSided }) => ({
-        key,
-        kind,
-        one_sided: oneSided,
-      })),
-    ).toEqual(contract.amnezia_parameters);
   });
 
   it('describe an unset group option as the generator reads it', () => {
@@ -147,50 +137,15 @@ describe('a password field', () => {
 
   it('is one the contract names', async () => {
     const found = await renderedPasswordFields();
-    // The shared mask contract still protects credentials of retired server records.
-    const retired = [
-      'hysteria2_obfs_password',
-      'reality_private_key',
-      'shadowsocks_psk',
-    ];
     expect([...new Set(found.map(({ field }) => field))].sort()).toEqual(
-      Object.keys(contract.password_fields)
-        .filter((field) => !retired.includes(field))
-        .sort(),
+      Object.keys(contract.password_fields).sort(),
     );
   });
 
   it('is stored in the option the contract says the diagnostics mask', async () => {
-    const PROBE = 'probe-secret';
     const found = await renderedPasswordFields();
-    for (const { field, typeName } of found) {
-      const stored = contract.password_fields[field];
-      if (typeName !== 'tunnel') {
-        expect(stored, field).toBe(field);
-        continue;
-      }
-      const kinds = {
-        wireguard: {},
-        amneziawg: {},
-        warp: {},
-        tailscale: {},
-        'openvpn-client': {},
-        openconnect: {
-          openconnect_advanced: '1',
-          openconnect_certificate_enabled: '1',
-          openconnect_token_mode: 'stoken',
-        },
-      };
-      const written = Object.entries(kinds).some(([kind, switches]) =>
-        `${
-          tunnelStorageSettings({
-            tunnel_type: kind,
-            ...switches,
-            [field]: PROBE,
-          })[stored] ?? ''
-        }`.includes(PROBE),
-      );
-      expect(written, `${field} is not stored in ${stored}`).toBe(true);
+    for (const { field } of found) {
+      expect(contract.password_fields[field], field).toBe(field);
     }
   });
 });

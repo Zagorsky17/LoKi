@@ -388,51 +388,6 @@ describe.each(['connection', 'bypass', 'block', 'dns'])(
   },
 );
 
-describe('a tunnel dialog', () => {
-  it('writes nothing when it is saved unchanged', async () => {
-    harness.uci.add('forkop', 'section', 'section_probe');
-    Object.assign(harness.store.get('section_probe'), {
-      action: 'connection',
-      enabled: '1',
-      label: 'Probe',
-    });
-    harness.uci.add('forkop', 'tunnel', 'tunnel_probe');
-    Object.assign(harness.store.get('tunnel_probe'), {
-      section: 'section_probe',
-      order: '0',
-      kind: 'wireguard',
-      name: 'wg tunnel',
-      address: ['10.8.1.9/32'],
-      private_key: 'zz5/p+jwYqPFlg9mWcOP5ad8xXa4XfOOlrzouVD6E1w=',
-      mtu: '1280',
-    });
-    harness.uci.add('forkop', 'tunnel_peer', 'peer_probe');
-    Object.assign(harness.store.get('peer_probe'), {
-      tunnel: 'tunnel_probe',
-      order: '0',
-      address: 'peer.example',
-      port: '47132',
-      public_key: 'AKR8dq2b9o7/cO8d5mAzxvuxRhhw4DXi1pfUC3IPGWo=',
-      allowed_ips: ['0.0.0.0/0'],
-    });
-
-    const map = new harness.form.Map('forkop');
-    const grid = map.section(harness.form.GridSection, 'section');
-    harness.bundle.createSectionContent(grid);
-    const tunnels = grid.children.find((option) => option.option === 'tunnels');
-    harness.operations.length = 0;
-    const dialog = await harness.openDialog(
-      tunnels,
-      'section_probe',
-      'tunnel_probe',
-    );
-    await dialog.save();
-
-    expect(harness.operations.join(', ')).toBe('');
-    expect(harness.uci.get('forkop', 'tunnel_probe', 'name')).toBe('wg tunnel');
-  });
-});
-
 describe('a value behind a switch that is off', () => {
   it('survives a save of the Settings page', async () => {
     harness.uci.add('forkop', 'settings', 'settings');

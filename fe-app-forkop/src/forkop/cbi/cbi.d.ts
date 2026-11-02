@@ -195,27 +195,6 @@ declare global {
     };
   }
 
-  interface WireGuardPeerObject {
-    address?: unknown;
-    port?: unknown;
-    public_key?: unknown;
-    pre_shared_key?: unknown;
-    allowed_ips?: unknown;
-    persistent_keepalive_interval?: unknown;
-  }
-
-  interface ImportedTunnelFields {
-    tunnelId: string;
-    type: CBIOption;
-    amneziaEnabled: CBIOption;
-    address: CBIOption;
-    privateKey: CBIOption;
-    listenPort: CBIOption;
-    mtu: CBIOption;
-    peers: CBIOption;
-    amnezia: Record<string, CBIOption>;
-  }
-
   interface CBISection {
     // Header rows are numbered as added, so a removed row never gives its number back.
     nextHeaderRowIndex?: number;

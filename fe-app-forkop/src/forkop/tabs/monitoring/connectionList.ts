@@ -182,10 +182,7 @@ function renderSource({
 
 function renderRoute({ route, direct }: ConnectionListItem) {
   return direct
-    ? renderBuiltin(
-        route,
-        _('Straight from the router, without a proxy or tunnel'),
-      )
+    ? renderBuiltin(route, _('Straight from the router, without a proxy'))
     : renderValue(route, 'fkp_monitoring-page__tag');
 }
 

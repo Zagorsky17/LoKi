@@ -27,10 +27,10 @@ afterEach(() => setCoreFeatures(null));
 describe('before the router has answered', () => {
   it('hides nothing, so the page offers what it always did', () => {
     expect(coreHas('quic')).toBe(true);
-    expect(coreHas('tailscale')).toBe(true);
+    expect(coreHas('naive')).toBe(true);
     expect(coreSupportsType('naive')).toBe(true);
     expect(linkCoreFeatures('hy2://p@example.com:443#h')).toEqual([]);
-    expect(validateCoreFeature('tailscale')).toBe(true);
+    expect(validateCoreFeature('naive')).toBe(true);
     expect(coreFilterTypeChoices(groupTypeChoices(), [])).toEqual(
       groupTypeChoices(),
     );
@@ -46,24 +46,24 @@ describe('the base build', () => {
   it('has what it was built with and lacks the rest', () => {
     setCoreFeatures(coreFeatures());
     expect(coreHas('quic')).toBe(true);
-    expect(coreHas('wireguard')).toBe(true);
-    expect(coreHas('tailscale')).toBe(false);
-    expect(coreHas('openconnect')).toBe(false);
+    expect(coreHas('vmess')).toBe(true);
+    expect(coreHas('naive')).toBe(false);
+    expect(coreHas('ssh')).toBe(false);
   });
 
   it('looks a type up by the kind of object it is', () => {
     setCoreFeatures(coreFeatures());
-    expect(coreFeatureOfType('warp')).toBe('wireguard');
+    expect(coreFeatureOfType('tuic')).toBe('quic');
     expect(coreSupportsType('ssh')).toBe(false);
-    expect(coreSupportsType('tailscale', ['endpoint'])).toBe(false);
+    expect(coreSupportsType('naive', ['outbound'])).toBe(false);
     expect(coreSupportsType('vless')).toBe(true);
   });
 
   it('names only the tags the build lacks', () => {
     setCoreFeatures(coreFeatures());
-    expect(missingCoreTags('tailscale')).toEqual(['with_tailscale']);
-    expect(missingCoreFeatureNote('tailscale')).toBe(
-      'the installed sing-box lacks with_tailscale',
+    expect(missingCoreTags('naive')).toEqual(['with_naive']);
+    expect(missingCoreFeatureNote('naive')).toBe(
+      'the installed sing-box lacks with_naive',
     );
     expect(validateCoreFeature('naive')).toBe(
       'sing-box is built without with_naive',
@@ -114,12 +114,12 @@ describe('the server types a filter offers', () => {
     );
     for (const missing of ['tailscale', 'openconnect', 'naive'])
       expect(groupValues).not.toContain(missing);
-    expect(groupValues).toContain('wireguard');
+    expect(groupValues).toContain('direct');
   });
 });
 
 describe('what a section asks of the core', () => {
-  it('is its tunnels and its links, and never its subscriptions', () => {
+  it('uses its links and ignores retired tunnels and subscription contents', () => {
     setCoreFeatures(coreFeatures());
     installUciStub({
       sec: { '.type': 'section' },
@@ -138,9 +138,6 @@ describe('what a section asks of the core', () => {
       sub: { '.type': 'subscription_url', section: 'sec', url: 'https://x' },
     });
 
-    expect(sectionMissingCoreFeatures('sec').sort()).toEqual([
-      'naive',
-      'tailscale',
-    ]);
+    expect(sectionMissingCoreFeatures('sec').sort()).toEqual(['naive']);
   });
 });

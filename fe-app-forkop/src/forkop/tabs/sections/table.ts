@@ -4,7 +4,6 @@ import { reportRefusedSave, saveSectionModal } from '../../cbi/modal';
 import { removeFallbackLevels } from './fallback';
 import { forgetOutboundNameChoices } from './outboundNames';
 import { missingConnectionOutbound, missingDnsMatcher } from './references';
-import { removeTunnelPeers } from './tunnels/model';
 import { loadDefaultSubscriptionHeaders } from './subscriptions/model';
 
 export function configureSectionSection(sectionRef: CBISection) {
@@ -20,13 +19,6 @@ export function configureSectionSection(sectionRef: CBISection) {
       [],
       undefined,
       removeFallbackLevels,
-    );
-    cleanupRemovedChildItems(
-      section_id,
-      'tunnel',
-      [],
-      undefined,
-      removeTunnelPeers,
     );
     return handleRemove!.call(this, section_id, event);
   };
@@ -47,9 +39,7 @@ export function configureSectionSection(sectionRef: CBISection) {
     // On the modal map LuCI replaces section() with the edited section's id.
     const editedSectionId = modalMap?.section as unknown as string;
     const missing = missingConnectionOutbound(modalMap, editedSectionId)
-      ? _(
-          'Add a connection URI, subscription, interface, tunnel or JSON outbound',
-        )
+      ? _('Add a connection URI, subscription, interface or JSON outbound')
       : missingDnsMatcher(modalMap, editedSectionId)
         ? _('Add a domain, built-in list, rule set or device')
         : '';

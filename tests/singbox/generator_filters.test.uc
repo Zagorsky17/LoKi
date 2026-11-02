@@ -25,7 +25,8 @@ t.test("type filters reach providers natively and manual nodes through the gener
             ".name": "source", section: "proxy", url: "https://example.com/subscription", tag: "sub1",
             server_filter_mode: "exclude", exclude_types: [ "shadowsocks", "Trojan" ]
         } ],
-        urltest: [ { ".name": "fast", section: "proxy", name: "Fast", server_filter_mode: "exclude", exclude_types: [ "socks" ] } ],
+        section_interface: [ { ".name": "lte", section: "proxy", name: "wwan0", display_name: "LTE" } ],
+        urltest: [ { ".name": "fast", section: "proxy", name: "Fast", server_filter_mode: "exclude", exclude_types: [ "socks", "direct" ] } ],
         fallback_group: [ { ".name": "backup", section: "proxy", name: "Backup" } ],
         fallback_level: [ {
             ".name": "level", group: "backup", name: "Primary", server_filter_mode: "exclude",
@@ -38,6 +39,7 @@ t.test("type filters reach providers natively and manual nodes through the gener
     let fast = q.outbound(config, "proxy/Fast");
     t.eq(fast.exclude_types, [ "socks" ]);
     t.excludes(fast.outbounds, "proxy/SOCKS node");
+    t.excludes(fast.outbounds, "proxy/LTE", "an interface is filtered locally, never sent as a provider type");
     t.contains(fast.outbounds, "proxy/VLESS node");
     t.contains(fast.outbounds, "proxy/SS node");
     t.excludes(fast.outbounds, "proxy/Backup", "a URLTest never holds another group");
@@ -47,37 +49,11 @@ t.test("type filters reach providers natively and manual nodes through the gener
     t.eq(backup.groups[0].exclude_types, [ "vless" ]);
     t.excludes(backup.groups[0].outbounds, "proxy/VLESS node");
     t.contains(backup.groups[0].outbounds, "proxy/Fast", "a fallback level includes the URLTest it names");
+    t.contains(backup.groups[0].outbounds, "proxy/LTE", "the remaining interface still belongs to its fallback level");
 
     let selector = q.outbound(config, "proxy");
     t.contains(selector.outbounds, "proxy/Fast");
     t.contains(selector.outbounds, "proxy/Backup");
-});
-
-t.test("AmneziaWG is told apart from plain WireGuard, and endpoint types stay out of native filters", () => {
-    let config = build({
-        settings: SETTINGS,
-        section: [ { ".name": "proxy", enabled: "1", action: "connection" } ],
-        connection_link: fixture.links("proxy", [ "socks5://socks.example:1080#Node" ]),
-        tunnel: [
-            { ".name": "plain", section: "proxy", kind: "json", endpoint_json: "{\"type\":\"wireguard\",\"tag\":\"Plain WG\"}" },
-            { ".name": "junk", section: "proxy", kind: "json", endpoint_json: "{\"type\":\"amneziawg\",\"tag\":\"Amnezia WG\",\"amnezia\":{\"jc\":4,\"s1\":64}}" },
-            { ".name": "warp", section: "proxy", kind: "json", endpoint_json: "{\"type\":\"warp\",\"tag\":\"WARP junk\",\"amnezia\":{\"jc\":4}}" }
-        ],
-        urltest: [
-            { ".name": "noamnezia", section: "proxy", name: "No amnezia", server_filter_mode: "exclude", exclude_types: [ "amneziawg" ] },
-            { ".name": "nowireguard", section: "proxy", name: "No wireguard", server_filter_mode: "exclude", exclude_types: [ "wireguard" ] },
-            { ".name": "nointerface", section: "proxy", name: "No interface", server_filter_mode: "exclude", exclude_types: [ "direct" ] }
-        ]
-    });
-    let no_amnezia = q.outbound(config, "proxy/No amnezia");
-    t.excludes(no_amnezia.outbounds, "proxy/Amnezia WG");
-    t.contains(no_amnezia.outbounds, "proxy/Plain WG");
-    t.contains(no_amnezia.outbounds, "proxy/WARP junk");
-    let no_wireguard = q.outbound(config, "proxy/No wireguard");
-    t.excludes(no_wireguard.outbounds, "proxy/Plain WG");
-    t.contains(no_wireguard.outbounds, "proxy/Amnezia WG");
-    t.eq(q.outbound(config, "proxy/No interface").exclude_types, null, "an endpoint protocol has nothing to match natively");
-    t.eq([ no_amnezia.exclude_types, no_wireguard.exclude_types ], [ null, null ]);
 });
 
 t.test("a group without members is dropped, and so is one that only pointed at it", () => {

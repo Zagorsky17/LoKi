@@ -48,10 +48,6 @@ export default defineConfig({
           items: [
             { text: 'URI подключения', link: '/connections/links' },
             { text: 'Подписка', link: '/connections/subscriptions' },
-            { text: 'Туннели', link: '/tunnels/' },
-            { text: 'AmneziaWG', link: '/tunnels/amneziawg' },
-            { text: 'Cloudflare WARP', link: '/tunnels/warp' },
-            { text: 'Tailscale', link: '/tunnels/tailscale' },
             { text: 'Сетевой интерфейс', link: '/connections/interface' },
             { text: 'JSON outbound', link: '/connections/json' },
           ],

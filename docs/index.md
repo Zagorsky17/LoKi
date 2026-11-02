@@ -27,9 +27,6 @@ features:
   - title: Подписка
     details: Серверы VPN-сервиса одной ссылкой, с фильтром и автообновлением
     link: /connections/subscriptions
-  - title: Cloudflare WARP
-    details: Бесплатный VPN без своего сервера, с обфускацией от блокировок
-    link: /tunnels/warp
   - title: Fallback
     details: Запасные серверы, которые включаются сами, если основной упал
     link: /connections/fallback

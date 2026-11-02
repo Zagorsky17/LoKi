@@ -3,8 +3,6 @@ import { describe, expect, it } from 'vitest';
 import { installLuciStubs, installUciStub } from './luciStubs';
 import { analyzeStaticHosts } from '../../validators/validateStaticHosts';
 import { validateOutboundJson } from '../../validators/validateOutboundJson';
-import { JSON_ENDPOINT_PLACEHOLDER } from '../../forkop/tabs/sections/constants';
-import { validateTunnelSettings } from '../../forkop/tabs/sections/tunnels/validate';
 import {
   DESTINATION_CONDITION_PLACEHOLDER,
   DOMAIN_CONDITION_PLACEHOLDER,
@@ -23,7 +21,6 @@ function loadSection() {
   return {
     DESTINATION_CONDITION_PLACEHOLDER,
     DOMAIN_CONDITION_PLACEHOLDER,
-    JSON_ENDPOINT_PLACEHOLDER,
     JSON_OUTBOUND_PLACEHOLDER,
     OVERRIDE_PATCH_PLACEHOLDER,
     analyzeDestinationText,
@@ -88,19 +85,6 @@ describe('JSON placeholders', () => {
 
   it('offers a JSON outbound the outbound validator accepts', () => {
     expect(validateOutboundJson(section.JSON_OUTBOUND_PLACEHOLDER)).toBe(true);
-  });
-
-  it('offers a JSON endpoint the tunnel validator accepts', () => {
-    const endpoint = JSON.parse(section.JSON_ENDPOINT_PLACEHOLDER);
-
-    expect(
-      validateTunnelSettings({
-        tunnel_type: 'json',
-        endpoint_json: section.JSON_ENDPOINT_PLACEHOLDER,
-      }),
-    ).toBe(true);
-    expect(endpoint.tag.trim()).not.toBe('');
-    expect(Buffer.from(endpoint.private_key, 'base64')).toHaveLength(32);
   });
 
   it('offers a server-parameters patch the field does not refuse', () => {

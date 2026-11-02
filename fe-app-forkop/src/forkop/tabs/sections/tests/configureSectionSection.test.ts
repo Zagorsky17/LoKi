@@ -18,7 +18,6 @@ vi.mock('../../../cbi/childItems', () => ({
 }));
 vi.mock('../../../cbi/grid', () => ({ loadVisibleTableOptions: () => {} }));
 vi.mock('../fallback', () => ({ removeFallbackLevels() {} }));
-vi.mock('../tunnels/model', () => ({ removeTunnelPeers() {} }));
 vi.mock('../subscriptions/model', () => ({
   loadDefaultSubscriptionHeaders: () => Promise.resolve(),
 }));
@@ -99,7 +98,6 @@ describe('deleting a section', () => {
       ['parent', 'section_interface', []],
       ['parent', 'urltest', []],
       ['parent', 'fallback_group', [], undefined, 'removeFallbackLevels'],
-      ['parent', 'tunnel', [], undefined, 'removeTunnelPeers'],
     ]);
   });
 
@@ -125,7 +123,7 @@ describe('saving a section the runtime graph would drop', () => {
     expect(missingLookup).toEqual([modalMap, 'parent']);
     expect(saves).toEqual([]);
     expect(refusals).toEqual([
-      'Add a connection URI, subscription, interface, tunnel or JSON outbound',
+      'Add a connection URI, subscription, interface or JSON outbound',
     ]);
   });
 

@@ -371,7 +371,7 @@ t.test("the state carries what the installed core was built with", () => {
     t.eq(reply.capabilities.core.known, true);
     t.eq(reply.capabilities.core.tags, [ "with_clash_api", "with_quic" ]);
     t.eq(reply.capabilities.core.features.quic.available, true);
-    t.eq(reply.capabilities.core.features.wireguard.available, false);
+    t.eq(reply.capabilities.core.features.naive.available, false);
 });
 
 t.done();

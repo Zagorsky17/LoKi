@@ -2,8 +2,6 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import { createHarness } from '../lib/luciForm.js';
 
-const WG_KEY = 'zz5/p+jwYqPFlg9mWcOP5ad8xXa4XfOOlrzouVD6E1w=';
-const WG_PUB = 'AKR8dq2b9o7/cO8d5mAzxvuxRhhw4DXi1pfUC3IPGWo=';
 const ALL_PROVIDERS = {
   zapretInstalled: true,
   zapret2Installed: true,
@@ -117,30 +115,6 @@ function connectionChildren() {
       },
     ],
     [
-      'tunnel',
-      'tun1',
-      {
-        section: 'sec',
-        kind: 'wireguard',
-        name: 'wg',
-        order: '0',
-        private_key: WG_KEY,
-        address: ['10.8.1.9/32'],
-      },
-    ],
-    [
-      'tunnel_peer',
-      'peer1',
-      {
-        tunnel: 'tun1',
-        order: '0',
-        address: 'peer.example',
-        port: '47132',
-        public_key: WG_PUB,
-        allowed_ips: ['0.0.0.0/0'],
-      },
-    ],
-    [
       'urltest',
       'ut1',
       {
@@ -187,22 +161,11 @@ const CHILD_TYPES = [
   'connection_link',
   'subscription_url',
   'section_interface',
-  'tunnel',
-  'tunnel_peer',
   'urltest',
   'fallback_group',
   'fallback_level',
 ];
-const EVERY_CHILD = [
-  'grp1',
-  'iface1',
-  'link1',
-  'lvl1',
-  'peer1',
-  'sub1',
-  'tun1',
-  'ut1',
-];
+const EVERY_CHILD = ['grp1', 'iface1', 'link1', 'lvl1', 'sub1', 'ut1'];
 
 function survivingChildren() {
   return CHILD_TYPES.flatMap((type) => itemsOfType(type)).sort();
@@ -374,73 +337,47 @@ describe('a subscription is named when its link is added', () => {
 });
 
 describe('a list the user can see owns its items', () => {
-  it('clearing the tunnel list removes the tunnel and its peer, and nothing else', async () => {
+  it('clearing a fallback list removes its levels and leaves subscriptions intact', async () => {
     addSections(connectionChildren());
     const grid = sectionGrid();
     grid.cfgsections = () => ['sec'];
     await grid.load();
-    widgetAnswers(grid, { tunnels: [] });
-    for (const option of grid.children) {
-      await Promise.resolve()
-        .then(() => option.parse('sec'))
-        .catch(() => {});
-    }
-
-    expect(itemsOfType('tunnel')).toEqual([]);
-    expect(itemsOfType('tunnel_peer')).toEqual([]);
-    expect(itemsOfType('subscription_url')).not.toEqual([]);
+    widgetAnswers(grid, { fallback_group: [] });
+    for (const option of grid.children) await option.parse('sec');
+    expect(itemsOfType('fallback_group')).toEqual([]);
+    expect(itemsOfType('fallback_level')).toEqual([]);
+    expect(itemsOfType('subscription_url')).toEqual(['sub1']);
   });
 
-  it('removing one tunnel from the list removes exactly that one', async () => {
+  it('removing one fallback group removes exactly that group', async () => {
     addSections(connectionChildren());
-    harness.uci.add('forkop', 'tunnel', 'tun2');
-    Object.assign(harness.store.get('tun2'), {
-      section: 'sec',
-      kind: 'wireguard',
-      name: 'wg2',
-      order: '1',
-      private_key: WG_KEY,
-      address: ['10.8.1.10/32'],
-    });
-    const grid = sectionGrid();
-    grid.cfgsections = () => ['sec'];
-    await grid.load();
-    widgetAnswers(grid, { tunnels: ['tun1'] });
-    for (const option of grid.children) {
-      await Promise.resolve()
-        .then(() => option.parse('sec'))
-        .catch(() => {});
-    }
-
-    expect(itemsOfType('tunnel')).toEqual(['tun1']);
-  });
-
-  it('a tunnel or a fallback added and taken out again is gone after the save', async () => {
-    addSections(connectionChildren());
-    const grid = sectionGrid();
-    grid.cfgsections = () => ['sec'];
-    await grid.load();
-    harness.uci.add('forkop', 'tunnel', 'tun2');
-    Object.assign(harness.store.get('tun2'), {
-      section: 'sec',
-      kind: 'wireguard',
-      name: 'wg2',
-      private_key: WG_KEY,
-      address: ['10.8.1.10/32'],
-    });
     harness.uci.add('forkop', 'fallback_group', 'grp2');
     Object.assign(harness.store.get('grp2'), {
       section: 'sec',
-      name: 'Fallback #2',
+      name: 'Backup',
+      order: '1',
     });
-    widgetAnswers(grid, { tunnels: ['tun1'], fallback_group: ['grp1'] });
-    for (const option of grid.children) {
-      await Promise.resolve()
-        .then(() => option.parse('sec'))
-        .catch(() => {});
-    }
+    const grid = sectionGrid();
+    grid.cfgsections = () => ['sec'];
+    await grid.load();
+    widgetAnswers(grid, { fallback_group: ['grp1'] });
+    for (const option of grid.children) await option.parse('sec');
+    expect(itemsOfType('fallback_group')).toEqual(['grp1']);
+    expect(itemsOfType('fallback_level')).toEqual(['lvl1']);
+  });
 
-    expect(itemsOfType('tunnel')).toEqual(['tun1']);
+  it('a fallback added and taken out again is gone after the save', async () => {
+    addSections(connectionChildren());
+    const grid = sectionGrid();
+    grid.cfgsections = () => ['sec'];
+    await grid.load();
+    harness.uci.add('forkop', 'fallback_group', 'grp2');
+    Object.assign(harness.store.get('grp2'), {
+      section: 'sec',
+      name: 'Backup',
+    });
+    widgetAnswers(grid, { fallback_group: ['grp1'] });
+    for (const option of grid.children) await option.parse('sec');
     expect(itemsOfType('fallback_group')).toEqual(['grp1']);
   });
 
@@ -604,20 +541,6 @@ describe.each([
       'detour_section',
     ],
     [
-      'tunnel',
-      'tunnels',
-      {
-        kind: 'warp',
-        name: 'warp',
-        order: '0',
-        warp_profile_id: 'id',
-        warp_profile_auth_token: 'token',
-        warp_profile_private_key: WG_KEY,
-        detour_section: 'target',
-      },
-      'detour_section',
-    ],
-    [
       'section_interface',
       'interfaces',
       {
@@ -629,22 +552,6 @@ describe.each([
         domain_resolver_dns_detour_section: 'target',
       },
       'domain_resolver_dns_detour_section',
-    ],
-    [
-      'tunnel',
-      'tunnels',
-      {
-        kind: 'tailscale',
-        name: 'ts',
-        order: '0',
-        tailscale_auth_key: 'tskey',
-        tailscale_hostname: 'router',
-        tailscale_exit_node: 'exit-node',
-        tailscale_control_url: 'https://controlplane.tailscale.com',
-        tailscale_detour_enabled: '1',
-        tailscale_detour_section: 'target',
-      },
-      'tailscale_detour_section',
     ],
   ])('in the %s dialog', async (type, listName, seed, key) => {
     addSections([
@@ -761,32 +668,18 @@ it('adding a subscription writes no option nothing reads', async () => {
 
 describe('a nested dialog that refuses to save', () => {
   it('says why', async () => {
-    addSections([
-      [
-        'section',
-        'sec',
-        { action: 'connection', enabled: '1', label: 'proxy' },
-      ],
-      [
-        'tunnel',
-        'tun1',
-        {
-          section: 'sec',
-          kind: 'wireguard',
-          name: 'wg',
-          order: '0',
-          private_key: WG_KEY,
-          address: ['10.8.1.9/32'],
-        },
-      ],
-    ]);
+    addSections(connectionChildren());
     const grid = sectionGrid();
-    const list = grid.children.find((option) => option.option === 'tunnels');
-    const dialog = await harness.openDialog(list, 'sec', 'tun1');
+    const list = grid.children.find(
+      (option) => option.option === 'connection_link',
+    );
+    const dialog = await harness.openDialog(list, 'sec', 'link1');
+    // LuCI reports field validation failures from parse; the harness models its rejection.
+    dialog.map.parse = () =>
+      Promise.reject(new Error('Connection URI: Unsupported link'));
     const result = await dialog.save();
-
     expect(result.saved).toBe(false);
-    expect(harness.toasts()).toEqual(['Peers: Required']);
+    expect(harness.toasts()).toEqual(['Connection URI: Unsupported link']);
   });
 });
 

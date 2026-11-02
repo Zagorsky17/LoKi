@@ -1,4 +1,4 @@
-// The dashboard's latency colours: its nodes, its group dialogs and a Tailscale device's ping.
+// The dashboard's latency colours for nodes and group dialogs.
 export function latencyClassName(latency: number) {
   if (!latency) {
     return 'fkp_dashboard-page__outbound-grid__item__latency--empty';

@@ -24,7 +24,6 @@ const OUTBOUND_SOURCES = {
   connection_link: ['link_a1b2c3'],
   subscription_url: ['sub_a1b2c3'],
   interfaces: ['awg0'],
-  tunnels: ['tunnel_a1b2c3'],
   outbound_jsons: ['{"type":"socks","tag":"Local"}'],
 };
 
@@ -49,6 +48,7 @@ describe('connection section outbounds', () => {
     const { missingConnectionOutbound } = load();
     const map = modalMap({
       action: 'connection',
+      tunnels: ['retired'],
       urltest: ['urltest_a1b2c3'],
       fallback_group: ['group_a1b2c3'],
     });
