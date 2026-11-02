@@ -1,0 +1,1412 @@
+diff --git a/adapter/experimental.go b/adapter/experimental.go
+index d26614d..a92155a 100644
+--- a/adapter/experimental.go
++++ b/adapter/experimental.go
+@@ -21,6 +21,17 @@ type V2RayServer interface {
+ 	StatsService() ConnectionTracker
+ }
+ 
++type SelectorState struct {
++	Tag      string `json:"tag"`
++	Provider string `json:"provider,omitempty"`
++	Identity string `json:"identity,omitempty"`
++}
++
++type SelectorStateStore interface {
++	LoadSelectorState(group string) (SelectorState, bool)
++	StoreSelectorState(group string, state SelectorState) error
++}
++
+ type CacheFile interface {
+ 	LifecycleService
+ 
+diff --git a/adapter/provider.go b/adapter/provider.go
+index c80efcf..883224f 100644
+--- a/adapter/provider.go
++++ b/adapter/provider.go
+@@ -21,6 +21,16 @@ type Provider interface {
+ 	UnregisterCallback(element *list.Element[ProviderUpdateCallback])
+ }
+ 
++type ProviderMember struct {
++	Outbound
++	Identity string
++}
++
++// ProviderOutboundSnapshot keeps each identity paired with its published runtime outbound.
++type ProviderOutboundSnapshot interface {
++	OutboundSnapshot() []ProviderMember
++}
++
+ type ProviderUpdater interface {
+ 	Update() error
+ }
+diff --git a/adapter/provider/adapter.go b/adapter/provider/adapter.go
+index 455ce3e..ab996fe 100644
+--- a/adapter/provider/adapter.go
++++ b/adapter/provider/adapter.go
+@@ -21,20 +21,21 @@ import (
+ )
+ 
+ type Adapter struct {
+-	ctx            context.Context
+-	outbound       adapter.OutboundManager
+-	router         adapter.Router
+-	logFactory     log.Factory
+-	logger         log.ContextLogger
+-	providerType   string
+-	providerTag    string
+-	outbounds      []adapter.Outbound
+-	outboundsByTag map[string]adapter.Outbound
+-	ticker         *time.Ticker
+-	checking       atomic.Bool
+-	history        *urltest.HistoryStorage
+-	callbackAccess sync.Mutex
+-	callbacks      list.List[adapter.ProviderUpdateCallback]
++	ctx             context.Context
++	outbound        adapter.OutboundManager
++	router          adapter.Router
++	logFactory      log.Factory
++	logger          log.ContextLogger
++	providerType    string
++	providerTag     string
++	outbounds       []adapter.Outbound
++	outboundMembers []adapter.ProviderMember
++	outboundsByTag  map[string]adapter.Outbound
++	ticker          *time.Ticker
++	checking        atomic.Bool
++	history         *urltest.HistoryStorage
++	callbackAccess  sync.Mutex
++	callbacks       list.List[adapter.ProviderUpdateCallback]
+ 
+ 	link                  string
+ 	enabled               bool
+@@ -135,6 +136,12 @@ func (a *Adapter) Outbounds() []adapter.Outbound {
+ 	return append([]adapter.Outbound(nil), a.outbounds...)
+ }
+ 
++func (a *Adapter) OutboundSnapshot() []adapter.ProviderMember {
++	a.access.RLock()
++	defer a.access.RUnlock()
++	return append([]adapter.ProviderMember(nil), a.outboundMembers...)
++}
++
+ func (a *Adapter) Outbound(tag string) (adapter.Outbound, bool) {
+ 	a.access.RLock()
+ 	defer a.access.RUnlock()
+@@ -284,6 +291,7 @@ func (a *Adapter) filterOutboundTypes(opts []option.Outbound) ([]option.Outbound
+ func (a *Adapter) publishOutbounds(preparedOutbounds []preparedOutbound) error {
+ 	var (
+ 		outbounds          = make([]adapter.Outbound, 0, len(preparedOutbounds))
++		outboundMembers    = make([]adapter.ProviderMember, 0, len(preparedOutbounds))
+ 		outboundsByTag     = make(map[string]adapter.Outbound, len(preparedOutbounds))
+ 		outboundSources    = make(map[string]option.Outbound, len(preparedOutbounds))
+ 		outboundOpts       = make([]option.Outbound, 0, len(preparedOutbounds))
+@@ -298,12 +306,14 @@ func (a *Adapter) publishOutbounds(preparedOutbounds []preparedOutbound) error {
+ 			return E.New("provider outbound not found after update: ", prepared.tag)
+ 		}
+ 		outbounds = append(outbounds, outbound)
++		outboundMembers = append(outboundMembers, adapter.ProviderMember{Outbound: outbound, Identity: prepared.identity})
+ 		outboundsByTag[prepared.tag] = outbound
+ 		outboundSources[prepared.tag] = prepared.source
+ 		outboundOpts = append(outboundOpts, prepared.source)
+ 	}
+ 	a.access.Lock()
+ 	a.outbounds = outbounds
++	a.outboundMembers = outboundMembers
+ 	a.outboundsByTag = outboundsByTag
+ 	a.outboundSources = outboundSources
+ 	a.outboundOpts = outboundOpts
+@@ -352,6 +362,7 @@ func (a *Adapter) Close() error {
+ 	a.access.Lock()
+ 	closeOrder := a.outboundCloseOrder
+ 	a.outbounds = nil
++	a.outboundMembers = nil
+ 	a.outboundsByTag = nil
+ 	a.outboundSources = nil
+ 	a.outboundCloseOrder = nil
+diff --git a/adapter/provider/adapter_test.go b/adapter/provider/adapter_test.go
+index 0c63f9f..692e6db 100644
+--- a/adapter/provider/adapter_test.go
++++ b/adapter/provider/adapter_test.go
+@@ -379,6 +379,7 @@ func TestProviderSkipsInvalidOutboundsAndKeepsAtomicFallback(t *testing.T) {
+ 		t.Fatalf("invalid provider nodes were not isolated: %v", provider.Outbounds())
+ 	}
+ 	working := provider.Outbounds()[0]
++	beforeSnapshot := provider.OutboundSnapshot()
+ 	if err = provider.UpdateOutbounds([]option.Outbound{
+ 		{Type: "invalid", Tag: "broken", Options: &option.VLESSOutboundOptions{}},
+ 	}); err == nil {
+@@ -387,12 +388,18 @@ func TestProviderSkipsInvalidOutboundsAndKeepsAtomicFallback(t *testing.T) {
+ 	if current, loaded := manager.Outbound(working.Tag()); !loaded || current != working {
+ 		t.Fatal("failed provider refresh replaced the last working state")
+ 	}
++	if !reflect.DeepEqual(provider.OutboundSnapshot(), beforeSnapshot) {
++		t.Fatal("failed provider refresh replaced the paired snapshot")
++	}
+ 	if err = provider.UpdateOutbounds(nil); err == nil {
+ 		t.Fatal("provider update to an empty set must fail while it has outbounds")
+ 	}
+ 	if len(provider.Outbounds()) != 1 {
+ 		t.Fatalf("empty provider update dropped the last working nodes: %v", provider.Outbounds())
+ 	}
++	if !reflect.DeepEqual(provider.OutboundSnapshot(), beforeSnapshot) {
++		t.Fatal("empty provider update replaced the paired snapshot")
++	}
+ }
+ 
+ func TestProviderPublishesOnlyGeneratedOutboundLinks(t *testing.T) {
+diff --git a/adapter/provider/graph.go b/adapter/provider/graph.go
+index d53b70e..685ea53 100644
+--- a/adapter/provider/graph.go
++++ b/adapter/provider/graph.go
+@@ -1,14 +1,22 @@
+ package provider
+ 
+ import (
++	"context"
++	"crypto/sha256"
++	"encoding/base64"
++	"encoding/hex"
+ 	"reflect"
+ 	"sort"
++	"strconv"
++	"strings"
++	"unicode/utf8"
+ 
+ 	"github.com/sagernet/sing-box/adapter"
+ 	"github.com/sagernet/sing-box/option"
+ 	"github.com/sagernet/sing/common"
+ 	E "github.com/sagernet/sing/common/exceptions"
+ 	F "github.com/sagernet/sing/common/format"
++	"github.com/sagernet/sing/common/json"
+ 	"github.com/sagernet/sing/service"
+ )
+ 
+@@ -86,6 +94,7 @@ type preparedOutbound struct {
+ 	tag          string
+ 	dependencies []string
+ 	position     int
++	identity     string
+ }
+ 
+ func prepareOutbounds(providerTag string, outbounds []option.Outbound, outboundDetour string) ([]preparedOutbound, error) {
+@@ -114,7 +123,142 @@ func prepareOutbounds(providerTag string, outbounds []option.Outbound, outboundD
+ 			position:     index,
+ 		})
+ 	}
+-	return sortOutbounds(prepared)
++	prepared, err := sortOutbounds(prepared)
++	if err != nil {
++		return nil, err
++	}
++	identities := make(map[string]string, len(prepared))
++	for index := range prepared {
++		identity, err := providerOutboundIdentity(prepared[index].runtime, identities)
++		if err != nil {
++			return nil, err
++		}
++		prepared[index].identity = identity
++		identities[prepared[index].tag] = identity
++	}
++	return prepared, nil
++}
++
++// Internal references carry their field and dependency identity separately, so an external
++// tag cannot impersonate an internal edge by spelling the same digest.
++func providerOutboundIdentity(outbound option.Outbound, identities map[string]string) (string, error) {
++	outbound.Tag = ""
++	outbound.Options = cloneOptions(outbound.Options)
++	references := make(map[string]string)
++	reference := func(field, tag string) string {
++		if identity, internal := identities[tag]; internal {
++			references[field] = identity
++			return ""
++		}
++		return tag
++	}
++	if dialer, loaded := outbound.Options.(option.DialerOptionsWrapper); loaded {
++		options := dialer.TakeDialerOptions()
++		options.Detour = reference("detour", options.Detour)
++		dialer.ReplaceDialerOptions(options)
++	}
++	rewriteDownload := func(transport *option.V2RayTransportOptions) {
++		rewriteXHTTPDownloadDetour(transport, func(tag string) string {
++			return reference("xhttp_download_detour", tag)
++		})
++	}
++	switch options := outbound.Options.(type) {
++	case *option.VLESSOutboundOptions:
++		rewriteDownload(options.Transport)
++	case *option.VMessOutboundOptions:
++		rewriteDownload(options.Transport)
++	case *option.TrojanOutboundOptions:
++		rewriteDownload(options.Transport)
++	}
++	rawStrings := make(map[string]string)
++	if !identityStringBytes(reflect.ValueOf(outbound.Options), "", 0, rawStrings) {
++		return "", E.New("cannot encode provider outbound identity")
++	}
++	content, err := json.MarshalContext(context.Background(), struct {
++		Outbound           *option.Outbound  `json:"outbound"`
++		InternalReferences map[string]string `json:"internal_references,omitempty"`
++		RawStrings         map[string]string `json:"raw_strings,omitempty"`
++	}{&outbound, references, rawStrings})
++	if err != nil {
++		return "", E.New("cannot encode provider outbound identity")
++	}
++	hash := sha256.Sum256(content)
++	return hex.EncodeToString(hash[:]), nil
++}
++
++// Preserve non-UTF-8 credential bytes that JSON would replace, without changing runtime options.
++func identityStringBytes(value reflect.Value, path string, depth int, raw map[string]string) bool {
++	if !value.IsValid() {
++		return true
++	}
++	if depth > 64 {
++		return false
++	}
++	switch value.Kind() {
++	case reflect.String:
++		if !utf8.ValidString(value.String()) {
++			raw[path] = base64.RawStdEncoding.EncodeToString([]byte(value.String()))
++		}
++	case reflect.Interface, reflect.Pointer:
++		return value.IsNil() || identityStringBytes(value.Elem(), path, depth+1, raw)
++	case reflect.Struct:
++		for index := 0; index < value.NumField(); index++ {
++			field := value.Type().Field(index)
++			fieldType := field.Type
++			if fieldType.Kind() == reflect.Pointer {
++				fieldType = fieldType.Elem()
++			}
++			if field.PkgPath != "" && !(field.Anonymous && fieldType.Kind() == reflect.Struct) {
++				continue
++			}
++			name := strings.SplitN(field.Tag.Get("json"), ",", 2)[0]
++			fieldPath := path
++			if name == "-" {
++				// shortcut: custom marshalers encode virtual fields, review identity compatibility before renaming their Go fields.
++				fieldPath += "!" + base64.RawURLEncoding.EncodeToString([]byte(field.Name))
++			} else if name != "" || !field.Anonymous {
++				if name == "" {
++					name = field.Name
++				}
++				fieldPath += "." + base64.RawURLEncoding.EncodeToString([]byte(name))
++			}
++			if !identityStringBytes(value.Field(index), fieldPath, depth+1, raw) {
++				return false
++			}
++		}
++	case reflect.Map:
++		iterator := value.MapRange()
++		for iterator.Next() {
++			key := iterator.Key()
++			var content []byte
++			if key.Kind() == reflect.String {
++				content = []byte(key.String())
++			} else {
++				var err error
++				content, err = json.MarshalContext(context.Background(), key.Interface())
++				if err != nil {
++					return false
++				}
++			}
++			keyPath := path + "{" + base64.RawURLEncoding.EncodeToString(content) + "}"
++			if !identityStringBytes(key, keyPath+"#key", depth+1, raw) || !identityStringBytes(iterator.Value(), keyPath, depth+1, raw) {
++				return false
++			}
++		}
++	case reflect.Array, reflect.Slice:
++		if value.Kind() == reflect.Slice && value.Type().Elem().Kind() == reflect.Uint8 {
++			if !utf8.Valid(value.Bytes()) {
++				raw[path+"#bytes"] = base64.RawStdEncoding.EncodeToString(value.Bytes())
++			}
++		} else {
++			for index := 0; index < value.Len(); index++ {
++				if !identityStringBytes(value.Index(index), path+"["+strconv.Itoa(index)+"]", depth+1, raw) {
++					return false
++				}
++			}
++		}
++	}
++	return true
+ }
+ 
+ func applyDefaultDetour(options any, detour string) {
+diff --git a/adapter/provider/identity_test.go b/adapter/provider/identity_test.go
+new file mode 100644
+index 0000000..220d491
+--- /dev/null
++++ b/adapter/provider/identity_test.go
+@@ -0,0 +1,314 @@
++package provider
++
++import (
++	"context"
++	"encoding/hex"
++	"errors"
++	"fmt"
++	"reflect"
++	"strings"
++	"testing"
++
++	"github.com/sagernet/sing-box/adapter"
++	outboundAdapter "github.com/sagernet/sing-box/adapter/outbound"
++	C "github.com/sagernet/sing-box/constant"
++	"github.com/sagernet/sing-box/log"
++	"github.com/sagernet/sing-box/option"
++	"github.com/sagernet/sing/common/json/badoption"
++	"github.com/sagernet/sing/service"
++)
++
++func identityHTTP(tag string, port uint16) option.Outbound {
++	return option.Outbound{Type: C.TypeHTTP, Tag: tag, Options: &option.HTTPOutboundOptions{
++		ServerOptions: option.ServerOptions{Server: "127.0.0.1", ServerPort: port},
++		Username:      "synthetic-user", Password: "synthetic-password",
++	}}
++}
++
++func identityPrepared(t *testing.T, source []option.Outbound, detour string) []preparedOutbound {
++	t.Helper()
++	copy := cloneOutbounds(source)
++	normalizeOutboundTags(copy, false, nil)
++	prepared, err := prepareOutbounds("subscription", copy, detour)
++	if err != nil {
++		t.Fatal(err)
++	}
++	for _, outbound := range prepared {
++		decoded, err := hex.DecodeString(outbound.identity)
++		if err != nil || len(decoded) != 32 {
++			t.Fatal("provider member has no SHA-256 identity")
++		}
++	}
++	return sourceOrder(prepared)
++}
++
++func TestProviderIdentitySurvivesNamesAndNeighborChanges(t *testing.T) {
++	c, d := identityHTTP("Node", 18081), identityHTTP("Node", 18082)
++	original := identityPrepared(t, []option.Outbound{c, d}, "")
++	for _, source := range [][]option.Outbound{
++		{d, c}, {identityHTTP("Node", 18083), d, c}, {c},
++		{identityHTTP("Renamed", 18081), d},
++	} {
++		prepared := identityPrepared(t, source, "")
++		for _, item := range prepared {
++			port := item.source.Options.(*option.HTTPOutboundOptions).ServerPort
++			if port == 18081 && item.identity != original[0].identity {
++				t.Fatal("rename/reorder/add/remove changed the same connection identity")
++			}
++		}
++	}
++	if original[0].identity == original[1].identity {
++		t.Fatal("different servers were merged")
++	}
++	identical := identityPrepared(t, []option.Outbound{c, c}, "")
++	if identical[0].identity != identical[1].identity || identical[0].tag == identical[1].tag {
++		t.Fatal("identical connections need one identity and distinct display tags")
++	}
++	if c.Tag != "Node" || d.Tag != "Node" {
++		t.Fatal("identity preparation changed the source tags")
++	}
++}
++
++func TestProviderIdentityIncludesConnectionOptions(t *testing.T) {
++	base := identityHTTP("Node", 18081)
++	want := identityPrepared(t, []option.Outbound{base}, "")[0].identity
++	for name, change := range map[string]func(*option.HTTPOutboundOptions){
++		"username": func(o *option.HTTPOutboundOptions) { o.Username = "other-user" },
++		"password": func(o *option.HTTPOutboundOptions) { o.Password = "other-password" },
++		"server":   func(o *option.HTTPOutboundOptions) { o.Server = "127.0.0.2" },
++		"port":     func(o *option.HTTPOutboundOptions) { o.ServerPort++ },
++		"path":     func(o *option.HTTPOutboundOptions) { o.Path = "/connect" },
++		"tls": func(o *option.HTTPOutboundOptions) {
++			o.TLS = &option.OutboundTLSOptions{Enabled: true, ServerName: "dns.test"}
++		},
++		"dialer": func(o *option.HTTPOutboundOptions) { o.BindInterface = "wan" },
++	} {
++		t.Run(name, func(t *testing.T) {
++			changed := cloneOutbounds([]option.Outbound{base})
++			change(changed[0].Options.(*option.HTTPOutboundOptions))
++			if identityPrepared(t, changed, "")[0].identity == want {
++				t.Fatal("a changed connection parameter retained the identity")
++			}
++		})
++	}
++	changedType := base
++	changedType.Type = C.TypeSOCKS
++	if identityPrepared(t, []option.Outbound{changedType}, "")[0].identity == want {
++		t.Fatal("protocol type was omitted from the identity")
++	}
++	withHeaders := cloneOutbounds([]option.Outbound{base})
++	withHeaders[0].Options.(*option.HTTPOutboundOptions).Headers = badoption.HTTPHeader{"X-B": {"b"}, "X-A": {"a"}}
++	otherOrder := cloneOutbounds(withHeaders)
++	otherOrder[0].Options.(*option.HTTPOutboundOptions).Headers = badoption.HTTPHeader{"X-A": {"a"}, "X-B": {"b"}}
++	if identityPrepared(t, withHeaders, "")[0].identity != identityPrepared(t, otherOrder, "")[0].identity {
++		t.Fatal("map insertion order changed the identity")
++	}
++	firstTLS := cloneOutbounds([]option.Outbound{base})
++	firstTLS[0].Options.(*option.HTTPOutboundOptions).TLS = &option.OutboundTLSOptions{Enabled: true, ServerName: "first.test"}
++	secondTLS := cloneOutbounds([]option.Outbound{base})
++	secondTLS[0].Options.(*option.HTTPOutboundOptions).TLS = &option.OutboundTLSOptions{Enabled: true, ServerName: "second.test"}
++	if identityPrepared(t, firstTLS, "")[0].identity == identityPrepared(t, secondTLS, "")[0].identity {
++		t.Fatal("TLS parameters were omitted from the identity")
++	}
++	transport := option.Outbound{Type: C.TypeVLESS, Tag: "Node", Options: &option.VLESSOutboundOptions{
++		UUID: "synthetic-uuid", Transport: &option.V2RayTransportOptions{Type: "ws", WebsocketOptions: option.V2RayWebsocketOptions{Path: "/first"}},
++	}}
++	changedTransport := cloneOutbounds([]option.Outbound{transport})
++	changedTransport[0].Options.(*option.VLESSOutboundOptions).Transport.WebsocketOptions.Path = "/second"
++	if identityPrepared(t, []option.Outbound{transport}, "")[0].identity == identityPrepared(t, changedTransport, "")[0].identity {
++		t.Fatal("transport parameters were omitted from the identity")
++	}
++}
++
++func TestProviderIdentityUsesEffectiveOverrides(t *testing.T) {
++	provider := newTagOverrideProvider(t, option.ProviderOverrideOptions{
++		Prefix: "Display ", Detour: "outer-hop", Patch: map[string]any{"password": "overridden-password"},
++	})
++	provider.ctx = newOverrideContext(t)
++	source := []option.Outbound{identityHTTP("Node", 18081)}
++	filtered, err := provider.FilterOutbounds(source, nil, nil)
++	if err != nil {
++		t.Fatal(err)
++	}
++	actual := identityPrepared(t, filtered, provider.defaultDetour())[0].identity
++	effective := identityHTTP("Other display name", 18081)
++	effective.Options.(*option.HTTPOutboundOptions).Password = "overridden-password"
++	effective.Options.(*option.HTTPOutboundOptions).Detour = "outer-hop"
++	if actual != identityPrepared(t, []option.Outbound{effective}, "")[0].identity {
++		t.Fatal("the identity did not use effective overrides/default detour")
++	}
++	if source[0].Options.(*option.HTTPOutboundOptions).Password != "synthetic-password" || source[0].Options.(*option.HTTPOutboundOptions).Detour != "" {
++		t.Fatal("overrides/identity computation mutated the source")
++	}
++}
++
++func TestProviderIdentityResolvesInternalReferencesWithoutMutatingSources(t *testing.T) {
++	hop := identityHTTP("Hop", 18081)
++	node := option.Outbound{Type: C.TypeVLESS, Tag: "Node", Options: &option.VLESSOutboundOptions{
++		DialerOptions: option.DialerOptions{Detour: "Hop"}, UUID: "synthetic-uuid",
++		Transport: &option.V2RayTransportOptions{Type: "xhttp", XHTTPOptions: option.V2RayXHTTPOptions{
++			Download: &option.V2RayXHTTPDownloadOptions{Detour: "Hop"},
++		}},
++	}}
++	first := identityPrepared(t, []option.Outbound{node, hop}, "")
++	renamed := cloneOutbounds([]option.Outbound{hop, node})
++	renamed[0].Tag = "Renamed Hop"
++	renamed[1].Options.(*option.VLESSOutboundOptions).Detour = "Renamed Hop"
++	renamed[1].Options.(*option.VLESSOutboundOptions).Transport.XHTTPOptions.Download.Detour = "Renamed Hop"
++	second := identityPrepared(t, renamed, "")
++	if first[0].identity != second[1].identity || first[1].identity != second[0].identity {
++		t.Fatal("renaming/reordering an internal hop changed its connection graph identity")
++	}
++	changed := cloneOutbounds(renamed)
++	changed[0].Options.(*option.HTTPOutboundOptions).Password = "new-hop-password"
++	if identityPrepared(t, changed, "")[1].identity == first[0].identity {
++		t.Fatal("a changed hop retained the dependent identity")
++	}
++	options := node.Options.(*option.VLESSOutboundOptions)
++	if options.Detour != "Hop" || options.Transport.XHTTPOptions.Download.Detour != "Hop" || hop.Tag != "Hop" {
++		t.Fatal("fingerprinting mutated source references")
++	}
++	if first[0].runtime.Options.(*option.VLESSOutboundOptions).Detour != "subscription/Hop" {
++		t.Fatal("fingerprinting overwrote the runtime detour")
++	}
++	external := cloneOutbounds([]option.Outbound{node})
++	external[0].Options.(*option.VLESSOutboundOptions).Detour = first[1].identity
++	external[0].Options.(*option.VLESSOutboundOptions).Transport.XHTTPOptions.Download.Detour = first[1].identity
++	if identityPrepared(t, external, "")[0].identity == first[0].identity {
++		t.Fatal("an external tag impersonated an internal identity")
++	}
++}
++
++func TestProviderIdentityDistinguishesReferenceFields(t *testing.T) {
++	hop := identityHTTP("Hop", 18081)
++	node := option.Outbound{Type: C.TypeVLESS, Tag: "Node", Options: &option.VLESSOutboundOptions{
++		DialerOptions: option.DialerOptions{Detour: "Hop"}, UUID: "synthetic-uuid",
++		Transport: &option.V2RayTransportOptions{Type: "xhttp", XHTTPOptions: option.V2RayXHTTPOptions{
++			Download: &option.V2RayXHTTPDownloadOptions{},
++		}},
++	}}
++	ordinary := identityPrepared(t, []option.Outbound{node, hop}, "")[0].identity
++	download := cloneOutbounds([]option.Outbound{node, hop})
++	download[0].Options.(*option.VLESSOutboundOptions).Detour = ""
++	download[0].Options.(*option.VLESSOutboundOptions).Transport.XHTTPOptions.Download.Detour = "Hop"
++	if identityPrepared(t, download, "")[0].identity == ordinary {
++		t.Fatal("a dependency in another reference field retained the identity")
++	}
++}
++
++type failedIdentityOptions struct{}
++
++func (*failedIdentityOptions) MarshalJSONContext(context.Context) ([]byte, error) {
++	return nil, errors.New("synthetic-secret-must-not-escape")
++}
++
++func TestProviderIdentitySerializationFailureKeepsPublishedSnapshot(t *testing.T) {
++	provider, manager, _, _ := newStageTestProvider(t, nil)
++	good := option.Outbound{Type: "recording", Tag: "Node", Options: &option.VLESSOutboundOptions{UUID: "synthetic-uuid"}}
++	if err := provider.UpdateOutbounds([]option.Outbound{good}); err != nil {
++		t.Fatal(err)
++	}
++	before := identitySnapshot(t, provider)
++	err := provider.UpdateOutbounds([]option.Outbound{{Type: "recording", Tag: "Node", Options: &failedIdentityOptions{}}})
++	if err == nil || strings.Contains(err.Error(), "synthetic-secret") {
++		t.Fatal("identity serialization must fail without exposing the source error")
++	}
++	if !reflect.DeepEqual(identitySnapshot(t, provider), before) {
++		t.Fatal("failed identity serialization replaced the published snapshot")
++	}
++	if current, loaded := manager.Outbound(before[0].Tag()); !loaded || current != before[0].Outbound {
++		t.Fatal("identity serialization failed after changing the outbound manager")
++	}
++}
++
++func identitySnapshot(t *testing.T, provider *Adapter) []adapter.ProviderMember {
++	t.Helper()
++	source, ok := any(provider).(adapter.ProviderOutboundSnapshot)
++	if !ok {
++		t.Fatal("provider has no paired identity/runtime snapshot")
++	}
++	return source.OutboundSnapshot()
++}
++
++func TestProviderSnapshotIsCopiedPublishedAndClearedAtomically(t *testing.T) {
++	provider, _, _, _ := newStageTestProvider(t, nil)
++	source := []option.Outbound{{Type: "recording", Tag: "Node", Options: &option.VLESSOutboundOptions{UUID: "synthetic-uuid"}}}
++	if err := provider.UpdateOutbounds(source); err != nil {
++		t.Fatal(err)
++	}
++	first := identitySnapshot(t, provider)
++	if len(first) != 1 || first[0].Outbound != provider.Outbounds()[0] || first[0].Identity == "" {
++		t.Fatal("the snapshot did not pair the published runtime and identity")
++	}
++	copy := append([]adapter.ProviderMember(nil), first...)
++	first[0].Identity = "changed"
++	first[0].Outbound = nil
++	if !reflect.DeepEqual(identitySnapshot(t, provider), copy) {
++		t.Fatal("a caller mutated the published snapshot")
++	}
++	if err := provider.publishOutbounds([]preparedOutbound{{tag: "missing"}}); err == nil {
++		t.Fatal("a missing runtime must fail publication")
++	}
++	if !reflect.DeepEqual(identitySnapshot(t, provider), copy) {
++		t.Fatal("failed publication replaced the snapshot")
++	}
++	if err := provider.Close(); err != nil {
++		t.Fatal(err)
++	}
++	if len(identitySnapshot(t, provider)) != 0 {
++		t.Fatal("closed provider retained the snapshot")
++	}
++}
++
++type snapshotIdentityOutbound struct {
++	linkTestOutbound
++	marker string
++}
++
++func TestProviderSnapshotPairsRuntimeAndIdentityDuringUpdates(t *testing.T) {
++	registry := outboundAdapter.NewRegistry()
++	outboundAdapter.Register[option.VLESSOutboundOptions](registry, "recording", func(_ context.Context, _ adapter.Router, _ log.ContextLogger, tag string, options option.VLESSOutboundOptions) (adapter.Outbound, error) {
++		return &snapshotIdentityOutbound{linkTestOutbound: linkTestOutbound{Adapter: outboundAdapter.NewAdapter("recording", tag, nil, nil)}, marker: options.UUID}, nil
++	})
++	ctx := service.ContextWith[adapter.OutboundRegistry](context.Background(), registry)
++	logFactory := log.NewNOPFactory()
++	provider := &Adapter{ctx: ctx, outbound: &filteringTestOutboundManager{outbounds: make(map[string]adapter.Outbound)}, logFactory: logFactory, logger: logFactory.NewLogger("test"), providerTag: "subscription"}
++	source := func(marker string) []option.Outbound {
++		return []option.Outbound{{Type: "recording", Tag: "Node", Options: &option.VLESSOutboundOptions{UUID: marker}}}
++	}
++	want := map[string]string{}
++	for _, marker := range []string{"C", "D"} {
++		want[marker] = identityPrepared(t, source(marker), "")[0].identity
++	}
++	if err := provider.UpdateOutbounds(source("C")); err != nil {
++		t.Fatal(err)
++	}
++	snapshot := any(provider).(adapter.ProviderOutboundSnapshot)
++	stop, done := make(chan struct{}), make(chan error, 1)
++	go func() {
++		for {
++			select {
++			case <-stop:
++				done <- nil
++				return
++			default:
++				members := snapshot.OutboundSnapshot()
++				if len(members) != 1 || members[0].Identity != want[members[0].Outbound.(*snapshotIdentityOutbound).marker] {
++					done <- fmt.Errorf("runtime and identity came from different publications")
++					return
++				}
++			}
++		}
++	}()
++	for index := 0; index < 100; index++ {
++		if err := provider.UpdateOutbounds(source([]string{"C", "D"}[index%2])); err != nil {
++			close(stop)
++			<-done
++			t.Fatal(err)
++		}
++	}
++	close(stop)
++	if err := <-done; err != nil {
++		t.Fatal(err)
++	}
++}
+diff --git a/adapter/provider/identity_utf8_test.go b/adapter/provider/identity_utf8_test.go
+new file mode 100644
+index 0000000..db40559
+--- /dev/null
++++ b/adapter/provider/identity_utf8_test.go
+@@ -0,0 +1,116 @@
++package provider
++
++import (
++	"reflect"
++	"strings"
++	"testing"
++
++	C "github.com/sagernet/sing-box/constant"
++	"github.com/sagernet/sing-box/option"
++)
++
++func TestProviderIdentityDoesNotMergeInvalidUTF8Credentials(t *testing.T) {
++	node := func(password string) option.Outbound {
++		return option.Outbound{Type: C.TypeHTTP, Tag: "Node", Options: &option.HTTPOutboundOptions{Password: password}}
++	}
++	invalid, invalidErr := providerOutboundIdentity(node(string([]byte{0xff})), nil)
++	replacement, replacementErr := providerOutboundIdentity(node("\uFFFD"), nil)
++	if replacementErr != nil {
++		t.Fatal(replacementErr)
++	}
++	if invalidErr != nil || invalid == replacement {
++		t.Fatal("different credential bytes share one identity after JSON replacement")
++	}
++}
++
++func TestIdentityStringBytesCoverNestedValuesAndBoundCycles(t *testing.T) {
++	bad := string([]byte{0xff})
++	for _, value := range []any{bad, &bad, []string{bad}, [1]string{bad}, map[string]any{"key": bad}, map[string]string{bad: "value"}, []byte{0xff, 0}, map[int]string{1: bad}} {
++		raw := make(map[string]string)
++		if !identityStringBytes(reflect.ValueOf(value), "", 0, raw) || len(raw) == 0 {
++			t.Fatal("nested credential bytes were not preserved")
++		}
++	}
++	for _, value := range []any{nil, (*string)(nil), "Пароль 🔑", map[string]any{"nested": []string{"valid", "\uFFFD", "a\x00b"}}} {
++		raw := make(map[string]string)
++		if !identityStringBytes(reflect.ValueOf(value), "", 0, raw) || len(raw) != 0 {
++			t.Fatal("valid UTF-8 must keep the ordinary JSON identity")
++		}
++	}
++	cycle := map[string]any{}
++	cycle["self"] = cycle
++	if identityStringBytes(reflect.ValueOf(cycle), "", 0, make(map[string]string)) {
++		t.Fatal("cyclic input escaped the depth limit")
++	}
++}
++
++func TestIdentityDepthFailurePreservesPublishedProvider(t *testing.T) {
++	provider, manager, _, _ := newStageTestProvider(t, nil)
++	good := option.Outbound{Type: "recording", Tag: "Node", Options: &option.VLESSOutboundOptions{UUID: "synthetic-uuid"}}
++	if err := provider.UpdateOutbounds([]option.Outbound{good}); err != nil {
++		t.Fatal(err)
++	}
++	before := identitySnapshot(t, provider)
++	bad := good
++	cycle := map[string]any{"secret": "synthetic-secret"}
++	cycle["self"] = cycle
++	bad.Options = cycle
++	err := provider.UpdateOutbounds([]option.Outbound{bad})
++	if err == nil || strings.Contains(err.Error(), "synthetic-secret") {
++		t.Fatal("cyclic data must fail without exposing credentials")
++	}
++	if !reflect.DeepEqual(before, identitySnapshot(t, provider)) {
++		t.Fatal("cyclic data replaced the published snapshot")
++	}
++	if current, loaded := manager.Outbound(before[0].Tag()); !loaded || current != before[0].Outbound {
++		t.Fatal("cyclic data changed the running outbound")
++	}
++}
++
++func TestIdentityCredentialBytesStayBoundToTheirField(t *testing.T) {
++	bad, replacement := string([]byte{0xff}), "\uFFFD"
++	seen := make(map[string]bool)
++	for _, options := range []any{
++		&option.HTTPOutboundOptions{Username: bad, Password: replacement},
++		&option.HTTPOutboundOptions{Username: replacement, Password: bad},
++		&option.HTTPOutboundOptions{Username: replacement, Password: string([]byte{0xfe})},
++		map[string]any{"headers": map[string]string{bad: replacement}},
++		map[string]any{"headers": map[string]string{replacement: bad}},
++	} {
++		identity, err := providerOutboundIdentity(option.Outbound{Type: C.TypeHTTP, Options: options}, nil)
++		if err != nil || seen[identity] {
++			t.Fatal("credential bytes lost their structural position")
++		}
++		seen[identity] = true
++	}
++}
++
++func TestIdentityBytesUseStableJSONFieldNames(t *testing.T) {
++	bad := string([]byte{0xff})
++	first := struct {
++		Old string `json:"password"`
++	}{bad}
++	second := struct {
++		Renamed string `json:"password"`
++	}{bad}
++	left, err := providerOutboundIdentity(option.Outbound{Type: C.TypeHTTP, Options: first}, nil)
++	if err != nil {
++		t.Fatal(err)
++	}
++	right, err := providerOutboundIdentity(option.Outbound{Type: C.TypeHTTP, Options: second}, nil)
++	if err != nil || left != right {
++		t.Fatal("Go field rename changed the connection identity")
++	}
++}
++
++func TestIdentityBytesIncludeVirtualTransportFields(t *testing.T) {
++	seen := make(map[string]bool)
++	for _, path := range []string{"/" + string([]byte{0xff}), "/\uFFFD"} {
++		options := &option.VLESSOutboundOptions{UUID: "synthetic-uuid", Transport: &option.V2RayTransportOptions{Type: "ws", WebsocketOptions: option.V2RayWebsocketOptions{Path: path}}}
++		identity, err := providerOutboundIdentity(option.Outbound{Type: C.TypeVLESS, Options: options}, nil)
++		if err != nil || seen[identity] {
++			t.Fatal("custom JSON transport lost raw parameter bytes")
++		}
++		seen[identity] = true
++	}
++}
+diff --git a/experimental/cachefile/cache.go b/experimental/cachefile/cache.go
+index ce8e297..ba7a77a 100644
+--- a/experimental/cachefile/cache.go
++++ b/experimental/cachefile/cache.go
+@@ -2,6 +2,8 @@ package cachefile
+ 
+ import (
+ 	"context"
++	"encoding/hex"
++	"encoding/json"
+ 	"errors"
+ 	"net/netip"
+ 	"os"
+@@ -22,13 +24,15 @@ import (
+ )
+ 
+ var (
+-	bucketSelected = []byte("selected")
+-	bucketExpand   = []byte("group_expand")
+-	bucketMode     = []byte("clash_mode")
+-	bucketRuleSet  = []byte("rule_set")
++	bucketSelected      = []byte("selected")
++	bucketSelectorState = []byte("selector_state")
++	bucketExpand        = []byte("group_expand")
++	bucketMode          = []byte("clash_mode")
++	bucketRuleSet       = []byte("rule_set")
+ 
+ 	bucketNameList = []string{
+ 		string(bucketSelected),
++		string(bucketSelectorState),
+ 		string(bucketExpand),
+ 		string(bucketMode),
+ 		string(bucketRuleSet),
+@@ -418,7 +422,69 @@ func (c *CacheFile) StoreSelected(group, selected string) error {
+ 		if err != nil {
+ 			return err
+ 		}
+-		return bucket.Put([]byte(group), []byte(selected))
++		if err := bucket.Put([]byte(group), []byte(selected)); err != nil {
++			return err
++		}
++		if state := c.bucket(t, bucketSelectorState); state != nil {
++			return state.Delete([]byte(group))
++		}
++		return nil
++	})
++}
++
++type savedSelectorState struct {
++	Version int `json:"version"`
++	adapter.SelectorState
++}
++
++func validSelectorState(state adapter.SelectorState) bool {
++	if state.Tag == "" {
++		return false
++	}
++	if state.Provider == "" {
++		return state.Identity == ""
++	}
++	identity, err := hex.DecodeString(state.Identity)
++	return err == nil && len(identity) == 32 && hex.EncodeToString(identity) == state.Identity
++}
++
++func (c *CacheFile) LoadSelectorState(group string) (state adapter.SelectorState, loaded bool) {
++	c.view(func(t *bbolt.Tx) error {
++		bucket, selected := c.bucket(t, bucketSelectorState), c.bucket(t, bucketSelected)
++		if bucket == nil || selected == nil {
++			return nil
++		}
++		var saved savedSelectorState
++		if json.Unmarshal(bucket.Get([]byte(group)), &saved) == nil && saved.Version == 1 &&
++			validSelectorState(saved.SelectorState) && saved.Tag == string(selected.Get([]byte(group))) {
++			state, loaded = saved.SelectorState, true
++		}
++		return nil
++	})
++	return
++}
++
++func (c *CacheFile) StoreSelectorState(group string, state adapter.SelectorState) error {
++	if !validSelectorState(state) {
++		return errors.New("invalid selector state")
++	}
++	content, err := json.Marshal(savedSelectorState{Version: 1, SelectorState: state})
++	if err != nil {
++		return err
++	}
++	return c.batch(func(t *bbolt.Tx) error {
++		selected, err := c.createBucket(t, bucketSelected)
++		if err != nil {
++			return err
++		}
++		bucket, err := c.createBucket(t, bucketSelectorState)
++		if err != nil {
++			return err
++		}
++		if err := selected.Put([]byte(group), []byte(state.Tag)); err != nil {
++			return err
++		}
++		return bucket.Put([]byte(group), content)
+ 	})
+ }
+ 
+diff --git a/experimental/cachefile/selector_state_test.go b/experimental/cachefile/selector_state_test.go
+new file mode 100644
+index 0000000..6c44117
+--- /dev/null
++++ b/experimental/cachefile/selector_state_test.go
+@@ -0,0 +1,104 @@
++package cachefile
++
++import (
++	"context"
++	"path/filepath"
++	"strings"
++	"testing"
++
++	"github.com/sagernet/bbolt"
++	"github.com/sagernet/sing-box/adapter"
++	"github.com/sagernet/sing-box/option"
++	"github.com/sagernet/sing/common/logger"
++	"github.com/stretchr/testify/require"
++)
++
++func selectorTestState(tag string) adapter.SelectorState {
++	return adapter.SelectorState{Tag: tag, Provider: "provider", Identity: strings.Repeat("a", 64)}
++}
++
++func openSelectorTestCache(t *testing.T, path, id string) *testCacheFile {
++	t.Helper()
++	cache := New(context.Background(), logger.NOP(), option.CacheFileOptions{Enabled: true, Path: path, CacheID: id})
++	scope := adapter.NewScope(context.Background(), logger.NOP())
++	require.NoError(t, cache.Start(adapter.StartStateInitialize, scope))
++	return &testCacheFile{cache, scope}
++}
++
++func TestSelectorStatePersistsAndKeepsCacheNamespaces(t *testing.T) {
++	path := filepath.Join(t.TempDir(), "cache.db")
++	state := selectorTestState("provider/Node #2")
++	cache := openSelectorTestCache(t, path, "")
++	require.NoError(t, cache.StoreSelectorState("group", state))
++	require.Equal(t, state.Tag, cache.LoadSelected("group"))
++	require.NoError(t, cache.Close())
++
++	other := openSelectorTestCache(t, path, "other")
++	_, loaded := other.LoadSelectorState("group")
++	require.False(t, loaded)
++	require.NoError(t, other.StoreSelected("group", "manual"))
++	require.NoError(t, other.Close())
++
++	cache = openSelectorTestCache(t, path, "")
++	defer cache.Close()
++	actual, loaded := cache.LoadSelectorState("group")
++	require.True(t, loaded)
++	require.Equal(t, state, actual)
++	require.NoError(t, cache.StoreSelected("group", "manual"))
++	_, loaded = cache.LoadSelectorState("group")
++	require.False(t, loaded, "ordinary selector/fallback writes must clear provider intent")
++	require.Equal(t, "manual", cache.LoadSelected("group"))
++	require.NoError(t, cache.StoreSelectorState("group", adapter.SelectorState{Tag: "manual"}))
++	actual, loaded = cache.LoadSelectorState("group")
++	require.True(t, loaded)
++	require.Equal(t, adapter.SelectorState{Tag: "manual"}, actual)
++}
++
++func TestSelectorStateRejectsInvalidAndCorruptedData(t *testing.T) {
++	cache := openSelectorTestCache(t, filepath.Join(t.TempDir(), "cache.db"), "")
++	defer cache.Close()
++	state := selectorTestState("chosen")
++	require.NoError(t, cache.StoreSelectorState("group", state))
++	for _, invalid := range []adapter.SelectorState{
++		{}, {Tag: "node", Identity: state.Identity}, {Tag: "node", Provider: "provider"},
++		{Tag: "node", Provider: "provider", Identity: "bad"},
++		{Tag: "node", Provider: "provider", Identity: strings.Repeat("A", 64)},
++	} {
++		require.Error(t, cache.StoreSelectorState("group", invalid))
++		actual, loaded := cache.LoadSelectorState("group")
++		require.True(t, loaded)
++		require.Equal(t, state, actual)
++	}
++	for _, content := range []string{
++		`{`, `null`, `{}`, `{"version":2,"tag":"chosen"}`,
++		`{"version":1,"tag":"chosen","provider":"provider","identity":"bad"}`,
++		`{"version":1,"tag":"wrong"}`,
++	} {
++		require.NoError(t, cache.batch(func(tx *bbolt.Tx) error {
++			return cache.bucket(tx, bucketSelectorState).Put([]byte("group"), []byte(content))
++		}))
++		_, loaded := cache.LoadSelectorState("group")
++		require.False(t, loaded, content)
++		require.Equal(t, "chosen", cache.LoadSelected("group"))
++	}
++}
++
++func TestSelectorStateWritesRollbackTogether(t *testing.T) {
++	cache := openSelectorTestCache(t, filepath.Join(t.TempDir(), "cache.db"), "")
++	require.NoError(t, cache.StoreSelected("group", "old"))
++	require.NoError(t, cache.batch(func(tx *bbolt.Tx) error {
++		bucket, err := cache.createBucket(tx, bucketSelectorState)
++		if err != nil {
++			return err
++		}
++		_, err = bucket.CreateBucket([]byte("group"))
++		return err
++	}))
++	// A conflicting bucket fails the second write after the legacy tag was put.
++	require.Error(t, cache.StoreSelectorState("group", selectorTestState("new")))
++	require.Equal(t, "old", cache.LoadSelected("group"), "the first write must roll back")
++	_, loaded := cache.LoadSelectorState("group")
++	require.False(t, loaded)
++	require.NoError(t, cache.Close())
++	require.Error(t, cache.StoreSelectorState("group", selectorTestState("closed")))
++}
+diff --git a/experimental/clashapi/proxies.go b/experimental/clashapi/proxies.go
+index ab8d455..cddad49 100644
+--- a/experimental/clashapi/proxies.go
++++ b/experimental/clashapi/proxies.go
+@@ -213,7 +213,7 @@ func updateProxy(w http.ResponseWriter, r *http.Request) {
+ 
+ 	if !selectable.SelectOutbound(req.Name) {
+ 		render.Status(r, http.StatusBadRequest)
+-		render.JSON(w, r, newError("Selector update error: not found"))
++		render.JSON(w, r, newError("Selector update failed"))
+ 		return
+ 	}
+ 
+diff --git a/protocol/group/selector.go b/protocol/group/selector.go
+index e238726..8917d49 100644
+--- a/protocol/group/selector.go
++++ b/protocol/group/selector.go
+@@ -98,6 +98,9 @@ type Selector struct {
+ 	providers         map[string]adapter.Provider
+ 	providerCallbacks []providerCallbackRegistration
+ 	outboundsCache    map[string][]adapter.Outbound
++	selectionByTag    map[string]adapter.SelectorState
++	selection         adapter.SelectorState
++	selectionLoaded   bool
+ 
+ 	providerTags    []string
+ 	exclude         *regexp.Regexp
+@@ -149,6 +152,9 @@ func (s *Selector) Start(stage adapter.StartStage, scope *adapter.Scope) (err er
+ 	if stage != adapter.StartStateStart {
+ 		return nil
+ 	}
++	// Providers can publish updates as soon as their callback is registered.
++	s.access.Lock()
++	defer s.access.Unlock()
+ 	scope.Add(s.Close)
+ 	defer func() {
+ 		if err != nil {
+@@ -229,24 +235,35 @@ func (s *Selector) References() []string {
+ }
+ 
+ func (s *Selector) SelectOutbound(tag string) bool {
+-	s.access.RLock()
+-	defer s.access.RUnlock()
++	s.access.Lock()
++	defer s.access.Unlock()
+ 	detour, loaded := s.outbounds[tag]
+ 	if !loaded {
+ 		return false
+ 	}
+-	if s.selected.Swap(detour) == detour {
+-		return true
++	state := s.selectionByTag[tag]
++	if state.Tag == "" {
++		state.Tag = tag
+ 	}
+ 	if s.Tag() != "" {
+ 		cacheFile := service.FromContext[adapter.CacheFile](s.ctx)
+ 		if cacheFile != nil {
+-			err := cacheFile.StoreSelected(s.Tag(), tag)
++			var err error
++			if store, ok := cacheFile.(adapter.SelectorStateStore); ok {
++				err = store.StoreSelectorState(s.Tag(), state)
++			} else {
++				err = cacheFile.StoreSelected(s.Tag(), tag)
++			}
+ 			if err != nil {
+ 				s.logger.Error("store selected: ", err)
++				return false
+ 			}
+ 		}
+ 	}
++	s.selection, s.selectionLoaded = state, true
++	if s.selected.Swap(detour) == detour {
++		return true
++	}
+ 	s.interruptGroup.Interrupt(s.interruptExternalConnections)
+ 	if s.history != nil {
+ 		s.history.NotifyUpdated()
+@@ -308,8 +325,9 @@ func (s *Selector) onProviderUpdated(tag string) error {
+ 		return E.New(s.Tag(), ": ", "outbound provider not found: ", tag)
+ 	}
+ 	var (
+-		tags          = append([]string(nil), s.Dependencies()...)
+-		outboundByTag = make(map[string]adapter.Outbound)
++		tags           = append([]string(nil), s.Dependencies()...)
++		outboundByTag  = make(map[string]adapter.Outbound)
++		selectionByTag = make(map[string]adapter.SelectorState)
+ 	)
+ 	for _, tag := range tags {
+ 		outboundByTag[tag] = s.outbounds[tag]
+@@ -319,12 +337,22 @@ func (s *Selector) onProviderUpdated(tag string) error {
+ 			for _, detour := range s.outboundsCache[providerTag] {
+ 				tags = append(tags, detour.Tag())
+ 				outboundByTag[detour.Tag()] = detour
++				selectionByTag[detour.Tag()] = s.selectionByTag[detour.Tag()]
+ 			}
+ 			continue
+ 		}
+ 		provider := s.providers[providerTag]
+ 		var cache []adapter.Outbound
+-		for _, detour := range provider.Outbounds() {
++		var members []adapter.ProviderMember
++		if snapshot, ok := provider.(adapter.ProviderOutboundSnapshot); ok {
++			members = snapshot.OutboundSnapshot()
++		} else {
++			for _, detour := range provider.Outbounds() {
++				members = append(members, adapter.ProviderMember{Outbound: detour})
++			}
++		}
++		for _, member := range members {
++			detour := member.Outbound
+ 			tag := detour.Tag()
+ 			filterTag := providerOutboundFilterTag(providerTag, tag)
+ 			if s.excludeTypes[detour.Type()] {
+@@ -339,10 +367,14 @@ func (s *Selector) onProviderUpdated(tag string) error {
+ 			tags = append(tags, tag)
+ 			cache = append(cache, detour)
+ 			outboundByTag[tag] = detour
++			if member.Identity != "" {
++				selectionByTag[tag] = adapter.SelectorState{Tag: tag, Provider: providerTag, Identity: member.Identity}
++			}
+ 		}
+ 		s.outboundsCache[providerTag] = cache
+ 	}
+ 	s.tags, s.outbounds = tags, outboundByTag
++	s.selectionByTag = selectionByTag
+ 	detour, err := s.outboundSelect()
+ 	if s.selected.Swap(detour) != detour {
+ 		s.interruptGroup.Interrupt(s.interruptExternalConnections)
+@@ -354,18 +386,35 @@ func (s *Selector) outboundSelect() (adapter.Outbound, error) {
+ 	if len(s.tags) == 0 {
+ 		return nil, nil
+ 	}
+-	if s.Tag() != "" {
++	if !s.selectionLoaded && s.Tag() != "" {
++		s.selectionLoaded = true
+ 		cacheFile := service.FromContext[adapter.CacheFile](s.ctx)
+ 		if cacheFile != nil {
+-			selected := cacheFile.LoadSelected(s.Tag())
+-			if selected != "" {
+-				detour, loaded := s.outbounds[selected]
+-				if loaded {
+-					return detour, nil
+-				}
++			var loaded bool
++			if store, ok := cacheFile.(adapter.SelectorStateStore); ok {
++				s.selection, loaded = store.LoadSelectorState(s.Tag())
++			}
++			if !loaded {
++				s.selection = adapter.SelectorState{Tag: cacheFile.LoadSelected(s.Tag())}
+ 			}
+ 		}
+ 	}
++	selected := s.selection
++	if selected.Provider != "" {
++		if candidate := s.selectionByTag[selected.Tag]; candidate.Provider == selected.Provider && candidate.Identity == selected.Identity {
++			return s.outbounds[selected.Tag], nil
++		}
++		for _, tag := range s.tags {
++			if candidate := s.selectionByTag[tag]; candidate.Provider == selected.Provider && candidate.Identity == selected.Identity {
++				return s.outbounds[tag], nil
++			}
++		}
++	} else if selected.Tag != "" && s.selectionByTag[selected.Tag].Provider == "" {
++		// A legacy provider tag cannot prove which connection held that name.
++		if detour, loaded := s.outbounds[selected.Tag]; loaded {
++			return detour, nil
++		}
++	}
+ 
+ 	if s.defaultTag != "" {
+ 		detour, loaded := s.outbounds[s.defaultTag]
+diff --git a/protocol/group/selector_identity_test.go b/protocol/group/selector_identity_test.go
+new file mode 100644
+index 0000000..501332a
+--- /dev/null
++++ b/protocol/group/selector_identity_test.go
+@@ -0,0 +1,241 @@
++package group
++
++import (
++	"context"
++	"errors"
++	"fmt"
++	"strings"
++	"sync"
++	"testing"
++
++	"github.com/sagernet/sing-box/adapter"
++	outboundAdapter "github.com/sagernet/sing-box/adapter/outbound"
++	"github.com/sagernet/sing-box/common/interrupt"
++	C "github.com/sagernet/sing-box/constant"
++	"github.com/sagernet/sing-box/log"
++	"github.com/sagernet/sing/service"
++	"github.com/stretchr/testify/require"
++)
++
++type identityProvider struct {
++	testProvider
++	members []adapter.ProviderMember
++}
++
++func (p *identityProvider) OutboundSnapshot() []adapter.ProviderMember {
++	return append([]adapter.ProviderMember(nil), p.members...)
++}
++
++func identityMember(tag, id string) adapter.ProviderMember {
++	return adapter.ProviderMember{Outbound: newTestOutbound(tag), Identity: strings.Repeat(id, 64)}
++}
++
++type selectorMemoryCache struct {
++	adapter.CacheFile
++	access sync.Mutex
++	state  adapter.SelectorState
++	legacy string
++	fail   bool
++}
++
++func (c *selectorMemoryCache) LoadSelected(string) string {
++	c.access.Lock()
++	defer c.access.Unlock()
++	return c.legacy
++}
++
++func (c *selectorMemoryCache) LoadSelectorState(string) (adapter.SelectorState, bool) {
++	c.access.Lock()
++	defer c.access.Unlock()
++	return c.state, c.state.Tag != ""
++}
++
++func (c *selectorMemoryCache) StoreSelectorState(_ string, state adapter.SelectorState) error {
++	c.access.Lock()
++	defer c.access.Unlock()
++	if c.fail {
++		return errors.New("synthetic cache failure")
++	}
++	c.state, c.legacy = state, state.Tag
++	return nil
++}
++
++func identitySelector(cache *selectorMemoryCache, providers ...*identityProvider) *Selector {
++	ctx := context.Background()
++	if cache != nil {
++		ctx = service.ContextWith[adapter.CacheFile](ctx, cache)
++	}
++	s := &Selector{
++		Adapter: outboundAdapter.NewAdapter(C.TypeSelector, "group", []string{"tcp", "udp"}, nil),
++		ctx:     ctx, logger: log.NewNOPFactory().NewLogger("test"),
++		outbounds: make(map[string]adapter.Outbound), interruptGroup: interrupt.NewGroup(),
++		providers: make(map[string]adapter.Provider), outboundsCache: make(map[string][]adapter.Outbound),
++	}
++	for _, provider := range providers {
++		s.providers[provider.tag] = provider
++		s.providerTags = append(s.providerTags, provider.tag)
++	}
++	return s
++}
++
++func requireIdentity(t *testing.T, s *Selector, provider, identity string) {
++	t.Helper()
++	selected := selectedTag(s)
++	actual := s.selectionByTag[selected]
++	require.Equal(t, provider, actual.Provider)
++	require.Equal(t, strings.Repeat(identity, 64), actual.Identity)
++}
++
++func TestSelectorKeepsProviderIdentityAcrossChanges(t *testing.T) {
++	for _, persisted := range []bool{false, true} {
++		for _, position := range []int{0, 1} {
++			t.Run(fmt.Sprintf("cache=%t/position=%d", persisted, position), func(t *testing.T) {
++				var cache *selectorMemoryCache
++				if persisted {
++					cache = &selectorMemoryCache{}
++				}
++				p := &identityProvider{testProvider: testProvider{tag: "provider"}}
++				other := &identityProvider{testProvider: testProvider{tag: "other"}, members: []adapter.ProviderMember{identityMember("other/Node", "c")}}
++				p.members = []adapter.ProviderMember{identityMember("provider/Node", "c"), identityMember("provider/Node #2", "d")}
++				if position == 1 {
++					p.members[0].Identity, p.members[1].Identity = p.members[1].Identity, p.members[0].Identity
++				}
++				s := identitySelector(cache, p, other)
++				require.NoError(t, s.onProviderUpdated(p.tag))
++				require.True(t, s.SelectOutbound(p.members[position].Tag()))
++				requireIdentity(t, s, p.tag, "c")
++				p.members[0].Identity, p.members[1].Identity = p.members[1].Identity, p.members[0].Identity
++				require.NoError(t, s.onProviderUpdated(p.tag))
++				requireIdentity(t, s, p.tag, "c")
++				require.Equal(t, p.members[1-position].Tag(), selectedTag(s))
++				p.members = []adapter.ProviderMember{identityMember("provider/Renamed", "c"), identityMember("provider/Added", "a")}
++				require.NoError(t, s.onProviderUpdated(p.tag))
++				requireIdentity(t, s, p.tag, "c")
++				if persisted {
++					s = identitySelector(cache, p, other)
++					require.NoError(t, s.onProviderUpdated(p.tag))
++					requireIdentity(t, s, p.tag, "c")
++				}
++				p.members = []adapter.ProviderMember{identityMember("provider/Fallback", "a")}
++				require.NoError(t, s.onProviderUpdated(p.tag))
++				requireIdentity(t, s, p.tag, "a")
++				p.members = append(p.members, identityMember("provider/Returned", "c"))
++				require.NoError(t, s.onProviderUpdated(p.tag))
++				requireIdentity(t, s, p.tag, "c")
++				require.NoError(t, s.onProviderUpdated(other.tag))
++				requireIdentity(t, s, p.tag, "c")
++			})
++		}
++	}
++}
++
++func TestSelectorExplicitFallbackChoiceAndFailedPersistence(t *testing.T) {
++	p := &identityProvider{testProvider: testProvider{tag: "provider"}, members: []adapter.ProviderMember{identityMember("provider/A", "a"), identityMember("provider/C", "c")}}
++	cache := &selectorMemoryCache{}
++	s := identitySelector(cache, p)
++	require.NoError(t, s.onProviderUpdated(p.tag))
++	require.True(t, s.SelectOutbound("provider/C"))
++	p.members = p.members[:1]
++	require.NoError(t, s.onProviderUpdated(p.tag))
++	require.Equal(t, "provider/A", selectedTag(s))
++	cache.fail = true
++	require.False(t, s.SelectOutbound("provider/A"))
++	require.Equal(t, "provider/C", cache.state.Tag)
++	require.Equal(t, "provider/C", s.selection.Tag)
++	cache.fail = false
++	require.True(t, s.SelectOutbound("provider/A"), "selecting the current fallback must store new intent")
++	p.members = append(p.members, identityMember("provider/C", "c"))
++	require.NoError(t, s.onProviderUpdated(p.tag))
++	requireIdentity(t, s, p.tag, "a")
++	cache.fail = true
++	require.False(t, s.SelectOutbound("provider/C"))
++	requireIdentity(t, s, p.tag, "a")
++	require.False(t, s.SelectOutbound("missing"))
++}
++
++func TestSelectorLegacyCacheAndIdenticalMembers(t *testing.T) {
++	p := &identityProvider{testProvider: testProvider{tag: "provider"}, members: []adapter.ProviderMember{identityMember("provider/First", "a"), identityMember("provider/Chosen", "c")}}
++	cache := &selectorMemoryCache{legacy: "provider/Chosen"}
++	s := identitySelector(cache, p)
++	require.NoError(t, s.onProviderUpdated(p.tag))
++	requireIdentity(t, s, p.tag, "a")
++	require.True(t, s.SelectOutbound("provider/Chosen"))
++	p.members = append(p.members, identityMember("provider/Duplicate", "c"))
++	require.NoError(t, s.onProviderUpdated(p.tag))
++	require.Equal(t, "provider/Chosen", selectedTag(s))
++	p.members = append(p.members[:1], p.members[2])
++	require.NoError(t, s.onProviderUpdated(p.tag))
++	require.Equal(t, "provider/Duplicate", selectedTag(s))
++
++	manual := newTestOutbound("manual")
++	s = identitySelector(&selectorMemoryCache{legacy: "manual"})
++	s.tags, s.outbounds = []string{"other", "manual"}, map[string]adapter.Outbound{"other": newTestOutbound("other"), "manual": manual}
++	selected, err := s.outboundSelect()
++	require.NoError(t, err)
++	require.Same(t, manual, selected)
++	s.defaultTag = "missing"
++	s.selection = adapter.SelectorState{}
++	_, err = s.outboundSelect()
++	require.Error(t, err)
++}
++
++func TestSelectorSerializesConcurrentSelectionAndProviderCallbacks(t *testing.T) {
++	p := &identityProvider{testProvider: testProvider{tag: "provider"}, members: []adapter.ProviderMember{identityMember("provider/A", "a"), identityMember("provider/C", "c")}}
++	cache := &selectorMemoryCache{}
++	s := identitySelector(cache, p)
++	require.NoError(t, s.onProviderUpdated(p.tag))
++	var work sync.WaitGroup
++	for _, tag := range []string{"provider/A", "provider/C"} {
++		work.Add(1)
++		go func(tag string) {
++			defer work.Done()
++			for i := 0; i < 40; i++ {
++				s.SelectOutbound(tag)
++				s.onProviderUpdated(p.tag)
++			}
++		}(tag)
++	}
++	work.Wait()
++	require.Equal(t, cache.state.Tag, selectedTag(s))
++	require.Equal(t, cache.state, s.selection)
++}
++
++type selectorStartManager struct {
++	testOutboundManager
++	entered chan struct{}
++	release chan struct{}
++}
++
++func (m *selectorStartManager) Outbound(tag string) (adapter.Outbound, bool) {
++	close(m.entered)
++	<-m.release
++	return m.testOutboundManager.Outbound(tag)
++}
++
++func TestSelectorSerializesStartAndProviderCallbacks(t *testing.T) {
++	p := &identityProvider{testProvider: testProvider{tag: "provider"}, members: []adapter.ProviderMember{identityMember("provider/C", "c")}}
++	cache := &selectorMemoryCache{state: adapter.SelectorState{Tag: "provider/C", Provider: p.tag, Identity: strings.Repeat("c", 64)}}
++	s := identitySelector(cache, p)
++	s.Adapter = outboundAdapter.NewAdapter(C.TypeSelector, "group", []string{"tcp", "udp"}, []string{"manual"})
++	s.tags = []string{"manual"}
++	s.provider = &testProviderManager{providers: s.providers}
++	manager := &selectorStartManager{testOutboundManager: testOutboundManager{outbounds: map[string]adapter.Outbound{"manual": newTestOutbound("manual")}}, entered: make(chan struct{}), release: make(chan struct{})}
++	s.outbound = manager
++	scope := adapter.NewScope(context.Background(), log.NewNOPFactory().NewLogger("test"))
++	defer scope.Close()
++	done := make(chan error, 1)
++	go func() { done <- s.Start(adapter.StartStateStart, scope) }()
++	<-manager.entered
++	var callbacks sync.WaitGroup
++	callbacks.Add(1)
++	go func() {
++		defer callbacks.Done()
++		for i := 0; i < 80; i++ {
++			s.onProviderUpdated(p.tag)
++		}
++	}()
++	close(manager.release)
++	require.NoError(t, <-done)
++	callbacks.Wait()
++	requireIdentity(t, s, p.tag, "c")
++}
