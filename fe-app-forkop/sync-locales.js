@@ -85,6 +85,8 @@ async function collectCalls() {
   const entries = new Map();
 
   for (const file of files.sort()) {
+    // External globs may keep ../ prefixes that bypass the ignore patterns.
+    if (path.basename(file) === 'main.js') continue;
     const relativePath = path.relative(repoRoot, file).replaceAll('\\', '/');
     let ast;
     try {

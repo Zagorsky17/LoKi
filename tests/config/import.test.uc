@@ -1,4 +1,5 @@
 let t = require("t");
+let fs = require("fs");
 let stub = require("stub");
 let uci = require("uci");
 let ubus = require("ubus");
@@ -7,7 +8,7 @@ let migration = require("config.migration");
 let imports = require("config.import");
 
 const SESSION = "0123456789abcdef0123456789abcdef";
-const FILE = "/tmp/forkop-import.conf";
+const FILE = stub.tmpdir() + "/forkop-import.conf";
 
 function copy(value) {
     return json(sprintf("%J", value));
@@ -74,6 +75,11 @@ function rpcd(committed, unsaved) {
 }
 
 function setup(file, committed, unsaved) {
+    migration.paths.config = stub.tmpdir() + "/forkop";
+    fs.writefile(migration.paths.config, "committed configuration");
+    fs.unlink(FILE);
+    if (file != null)
+        fs.writefile(FILE, "configuration fixture");
     uci.__reset();
     ubus.__reset();
     if (file != null)
@@ -95,33 +101,27 @@ function shape(sections) {
 
 function current() {
     return [
-        { ".name": "settings", ".type": "settings", ".anonymous": false, config_version: "2.0.0", log_level: "info" },
+        { ".name": "settings", ".type": "settings", ".anonymous": false, config_format: "loki", config_version: "2.0.0", log_level: "info" },
         { ".name": "main", ".type": "section", ".anonymous": false, action: "bypass", label: "Old" },
         { ".name": "gone", ".type": "section", ".anonymous": false, action: "connection" },
         { ".name": "cfg044e69", ".type": "connection_link", ".anonymous": true, section: "gone", uri: "socks://127.0.0.1:1#x" }
     ];
 }
 
-function released() {
-    return [
-        { ".name": "settings", ".type": "settings", config_version: "1.0.5", applied_migrations: [ "http_connection_urls" ] },
-        { ".name": "main", ".type": "section", action: "connection", selector_proxy_links: [ "vless://u@a.example:443#A" ] },
-        { ".name": "inbound", ".type": "server", label: "VLESS", protocol: "vless", server_uuid: "44444444-4444-4444-8444-444444444444" },
-        { ".name": "mt", ".type": "server", label: "MT", protocol: "mtproto" }
-    ];
+function restored() {
+    let old = current();
+    return [ old[0], { ...old[1], label: "Restored" },
+        { ".name": "cfg114e69", ".type": "connection_link", ".anonymous": true, section: "main", name: "A", uri: "socks://user:synthetic-secret@127.0.0.1:1080#A" } ];
 }
 
-t.test("a released configuration is staged as an update would migrate it, in the file's order", () => {
-    let session = setup(released(), current());
-    let wanted = migration.migrate(migration.read_file(FILE).model, "1.0.5");
-
-    t.eq(imports.check(FILE, SESSION), { success: true, from: "1.0.5", to: "2.0.0",
-        warnings: [ "Removed the MTProto server 'MT': Forkop no longer serves MTProto" ], changed: true, unsaved: false });
+t.test("an own LoKi backup is staged in its file order without a foreign conversion", () => {
+    let session = setup(restored(), current());
+    let wanted = migration.migrate(migration.read_file(FILE).model, "2.0.0");
+    t.eq(imports.check(FILE, SESSION), { success: true, from: "2.0.0", to: "2.0.0", warnings: [], changed: true, unsaved: false });
     t.eq(imports.stage(FILE, SESSION), { success: true });
     t.eq(shape(session.staged), shape(wanted.model.sections));
-    t.eq(session.staged[0].config_version, "2.0.0");
-    t.eq(map(filter(session.staged, (section) => section[".anonymous"]), (section) => section[".type"]),
-        [ "connection_link", "server_client" ]);
+    t.eq(session.staged[0].config_format, "loki");
+    t.eq(map(filter(session.staged, (section) => section[".anonymous"]), (section) => section[".type"]), [ "connection_link" ]);
     t.eq(uci.__commits(), [], "nothing is committed");
     t.eq(imports.check(FILE, SESSION).changed, false, "the same file again has nothing to change");
 });
@@ -158,22 +158,28 @@ t.test("a file this release cannot read as a released schema is refused with the
         t.eq(ubus.__calls(), [], "the session is left alone");
         return result;
     };
-    let version = (value) => [ { ".name": "settings", ".type": "settings", config_version: value } ];
+    let version = (value) => [ { ".name": "settings", ".type": "settings", config_format: "loki", config_version: value } ];
 
-    t.eq(refusal(null), { success: false, min: "1.0.2", to: "2.0.0", reason: "unreadable",
-        detail: "UCI cannot read " + FILE + ": Entry not found" });
-    t.eq(refusal(version("2.1.0")), { success: false, min: "1.0.2", to: "2.0.0", reason: "newer", from: "2.1.0" });
+    t.eq(refusal(null), { success: false, min: "2.0.0", to: "2.0.0", reason: "unreadable",
+        detail: "UCI could not read the configuration" });
+    t.eq(refusal(version("2.1.0")), { success: false, min: "2.0.0", to: "2.0.0", reason: "newer", from: "2.1.0" });
     t.eq(refusal(version("1.0.0")).reason, "below_min");
-    t.eq(refusal(version("1.0.3")).reason, "unknown");
-    t.eq(refusal([ { ".type": "interface", proto: "dhcp" } ]).reason, "missing");
-    let failed = refusal([ ...version("1.0.5"), { ".name": "s", ".type": "section", action: "connection",
-        outbound_jsons: [ "{\"type\":\"snell\",\"tag\":\"S\",\"version\":2}" ] } ]);
-    t.eq([ failed.reason, failed.from ], [ "migration", "1.0.5" ]);
-    t.contains(failed.detail, "is Snell 2, which sing-box no longer speaks");
+    t.eq(refusal(version("1.0.3")).reason, "below_min");
+    t.eq(refusal([ { ".type": "interface", proto: "dhcp" } ]).reason, "schema");
+    for (let format in [ null, "forkop", "podkop", "synthetic-secret\ninjected" ]) {
+        let file = version("2.0.0");
+        file[0].config_format = format;
+        let failed = refusal(file);
+        t.eq(failed.reason, "foreign");
+        t.excludes(sprintf("%J", failed), "synthetic-secret");
+    }
+    let failed = refusal([ ...version("2.0.0"), { ".name": "synthetic-secret", ".type": "server" } ]);
+    t.eq(failed.reason, "schema");
+    t.excludes(sprintf("%J", failed), "synthetic-secret");
 });
 
 t.test("a write the session refuses leaves it without the file's changes", () => {
-    let session = setup(released(), current());
+    let session = setup(restored(), current());
     session.refuse = "main";
     let result = imports.stage(FILE, SESSION);
     t.eq([ result.success, result.reason ], [ false, "staging" ]);
@@ -189,11 +195,11 @@ t.test("without the page's session the check reads the committed configuration a
 
     setup(current(), current());
     t.eq(imports.stage(FILE, "ffffffffffffffffffffffffffffffff"),
-        { success: false, min: "1.0.2", to: "2.0.0", reason: "session", detail: "Permission denied" });
+        { success: false, min: "2.0.0", to: "2.0.0", reason: "session", detail: "Permission denied" });
 });
 
 t.test("the command line takes the session from the environment, never from its arguments", () => {
-    let session = setup(released(), current());
+    let session = setup(restored(), current());
     stub.env({ FORKOP_RPC_SESSION: SESSION });
     let check = stub.capture(() => cli.main([ "import_config_check", FILE ], "/lib"));
     let staged = stub.capture(() => cli.main([ "import_config", FILE ], "/lib"));
@@ -206,9 +212,9 @@ t.test("the command line takes the session from the environment, never from its 
     t.eq(session.staged[1][".name"], "main");
 });
 
-t.test("staged unsupported server and tunnel records cannot restore listeners or alter client links", () => {
+t.test("removed records are refused and the same client backup without them keeps its links", () => {
     let file = [
-        { ".name": "settings", ".type": "settings", config_version: "2.0.0", dns_server: [ "1.1.1.1" ], bootstrap_dns_server: [ "1.1.1.1" ] },
+        { ".name": "settings", ".type": "settings", config_format: "loki", config_version: "2.0.0", dns_server: [ "1.1.1.1" ], bootstrap_dns_server: [ "1.1.1.1" ] },
         { ".name": "main", ".type": "section", action: "connection", enabled: "1" },
         { ".name": "first", ".type": "connection_link", section: "main", name: "First", uri: "vless://test@127.0.0.1:443?security=reality&pbk=public-test&sid=00&sni=example.com&type=ws&path=%2Ftest#First", order: "0" },
         { ".name": "second", ".type": "connection_link", section: "main", name: "Second", uri: "socks://user:synthetic-password@127.0.0.1:1080#Second", order: "1" },
@@ -219,6 +225,12 @@ t.test("staged unsupported server and tunnel records cannot restore listeners or
     ];
     let session = setup(file, current());
     stub.commands([ [ () => true, {} ] ]);
+    t.eq(imports.check(FILE, SESSION).reason, "schema");
+    t.eq(imports.stage(FILE, SESSION).reason, "schema");
+    t.eq(session.staged, current(), "a refused file cannot replace the page's configuration");
+    t.eq(session.changes, []);
+    t.eq(ubus.__calls(), []);
+    session = setup(slice(file, 0, 5), current());
     t.eq(imports.check(FILE, SESSION).success, true);
     t.eq(imports.stage(FILE, SESSION), { success: true });
     let commands = stub.command_lines();
@@ -234,6 +246,41 @@ t.test("staged unsupported server and tunnel records cannot restore listeners or
     let clients = filter(config.outbounds, (item) => item.type == "parser");
     t.eq(map(clients, (item) => item.link), [ file[2].uri, file[3].uri ]);
     t.eq(map(config.providers, (item) => [ item.tag, item.url ]), [ [ "main/Provider", "https://example.com/sub" ] ]);
+});
+
+t.test("an oversized upload or symbolic link is refused before touching the LuCI session", () => {
+    let real_stat = fs.lstat;
+    for (let stat in [ { type: "file", size: 1048577 }, { type: "link", size: 20 }, { type: "directory", size: 0 } ]) {
+        let session = setup(current(), current());
+        fs.lstat = () => stat;
+        let checked = imports.check(FILE, SESSION);
+        let staged = imports.stage(FILE, SESSION);
+        fs.lstat = real_stat;
+        t.eq([ checked.reason, staged.reason ], [ "file", "file" ]);
+        t.eq(session.staged, current());
+        t.eq(ubus.__calls(), []);
+    }
+});
+
+t.test("a missing committed file without a session returns a refusal rather than crashing", () => {
+    setup(current(), current());
+    fs.unlink(migration.paths.config);
+    t.eq(imports.check(FILE, "").reason, "session");
+    t.eq(ubus.__calls(), []);
+});
+
+t.test("the 1 MiB limit is inclusive and actual symbolic links cannot be restored", () => {
+    setup(current(), current());
+    fs.writefile(FILE, sprintf("%1048576s", ""));
+    t.eq(fs.stat(FILE).size, 1048576);
+    t.eq(imports.check(FILE, SESSION).success, true);
+    fs.writefile(FILE, sprintf("%1048577s", ""));
+    t.eq(fs.stat(FILE).size, 1048577);
+    t.eq(imports.check(FILE, SESSION).reason, "file");
+    fs.unlink(FILE);
+    fs.symlink(migration.paths.config, FILE);
+    t.eq(imports.stage(FILE, SESSION).reason, "file");
+    t.eq(fs.readfile(migration.paths.config), "committed configuration");
 });
 
 t.done();

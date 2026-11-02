@@ -163,26 +163,41 @@ describe('a refused file', () => {
       success: false,
       reason,
       to: '2.0.0',
-      min: '1.0.2',
+      min: '2.0.0',
       ...extra,
     });
 
   it('is explained by its reason', () => {
+    expect(refusal('foreign')).toBe(
+      'The file is not a LoKi configuration; importing other applications is not supported',
+    );
+    expect(refusal('schema')).toBe(
+      'The file has unsupported or ambiguous LoKi sections',
+    );
+    expect(refusal('file')).toBe(
+      'The configuration must be a regular file of at most 1 MiB',
+    );
     expect(refusal('unreadable')).toBe('The file is not a UCI configuration');
     expect(refusal('missing')).toBe(
-      'The file is not a Forkop configuration: it names no version',
+      'The file is not a LoKi configuration: it names no version',
     );
     expect(refusal('newer', { from: '2.1.0' })).toBe(
-      'The configuration is from Forkop 2.1.0, newer than this one: update Forkop first',
+      'The configuration is from LoKi 2.1.0, newer than this one: update LoKi first',
     );
     expect(refusal('below_min', { from: '1.0.0' })).toBe(
-      'The configuration is from Forkop 1.0.0, and Forkop loads configurations from 1.0.2 on',
+      'The configuration is from LoKi 1.0.0, and LoKi loads configurations from 2.0.0 on',
     );
     expect(refusal('unknown', { from: '1.0.3' })).toBe(
-      'No Forkop release wrote configuration version 1.0.3',
+      'No LoKi release wrote configuration version 1.0.3',
     );
-    expect(refusal('migration', { from: '1.0.5', detail: 'Snell 2' })).toBe(
-      'The configuration of Forkop 1.0.5 cannot be brought to 2.0.0: Snell 2',
+    expect(
+      refusal('migration', {
+        from: '2.0.0',
+        to: '2.2.0',
+        detail: 'A step failed',
+      }),
+    ).toBe(
+      'The configuration of LoKi 2.0.0 cannot be brought to 2.2.0: A step failed',
     );
     expect(refusal('staging', { detail: 'Permission denied' })).toBe(
       'Failed to load the configuration: Permission denied',
@@ -213,23 +228,27 @@ describe('the upload dialog', () => {
 
   it('names the file and its version, and the migration only when there is one', () => {
     expect(paragraphs(render(check()))[0]).toBe(
-      'backup.conf holds a configuration of Forkop 2.0.0.',
+      'backup.conf holds a configuration of LoKi 2.0.0.',
     );
     const migrated = render(
-      check({ from: '1.0.5', warnings: ["Removed the MTProto server 'MT'"] }),
+      check({
+        from: '2.0.0',
+        to: '2.2.0',
+        warnings: ['A LoKi setting changed'],
+      }),
     );
     expect(paragraphs(migrated).slice(0, 2)).toEqual([
-      'backup.conf holds a configuration of Forkop 1.0.5, which is brought to 2.0.0 as an update would bring it.',
+      'backup.conf holds a configuration of LoKi 2.0.0, which is brought to 2.2.0 as an update would bring it.',
       'What the update changes in it:',
     ]);
     expect(textOf(migrated.find((node) => node.type === 'ul')!)).toBe(
-      "Removed the MTProto server 'MT'",
+      'A LoKi setting changed',
     );
     expect(render(check()).some((node) => node.type === 'ul')).toBe(false);
   });
 
   it('says that unsaved changes made before give way only when there are some', () => {
-    const replaced = 'Unsaved changes to Forkop made earlier are replaced.';
+    const replaced = 'Unsaved changes to LoKi made earlier are replaced.';
     expect(paragraphs(render(check()))).not.toContain(replaced);
     expect(paragraphs(render(check({ unsaved: true })))).toContain(replaced);
   });

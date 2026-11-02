@@ -1,5 +1,5 @@
 #!/bin/sh
-# Modified for LoKi on 2026-10-31: use the project release repository.
+# Modified for LoKi on 2026-11-02: reject foreign configurations and package takeovers.
 # shellcheck shell=dash
 #
 # Installs, updates and removes Forkop and its core, sing-box-forkop, on OpenWrt 24.10 and newer.
@@ -21,7 +21,7 @@
 #
 # Every release carries release.json beside its packages, install.sh and SHA256SUMS:
 #   {"schema":1,"name":"forkop","version":"2.0.0","tag":"2.0.0","page":URL,
-#    "requires":{"sing-box-forkop":"1.14.4-r1"},"min_config_version":"1.0.2"}
+#    "requires":{"sing-box-forkop":"1.14.4-r1"},"min_config_version":"2.0.0"}
 # The core's core-release.json says "name":"sing-box-forkop" and requires the oldest Forkop it works with. An
 # "install_command" field says the release installs only with that command, not from the page.
 
@@ -42,8 +42,6 @@ CORE_PROVIDES=sing-box
 # What a core outside the package managers leaves: Forkop 1.0.x's binary builds and the installer
 # of EikeiDev/OpenWRT-sing-box-extended, whose wrapper runs the core from /usr/libexec.
 FOREIGN_CORE_FILES="/usr/bin/sing-box /etc/init.d/sing-box /usr/libexec/sing-box-core /etc/sing-box-version.cache /usr/lib/libcronet.so"
-# Forkop 1.0.x's own state about its cores, and the backups its updater left when it failed.
-LEGACY_FILES="/etc/forkop/sing-box-variant /etc/forkop/sing-box-version /usr/bin/sing-box.forkop-backup.* /usr/lib/libcronet.so.forkop-backup.* /etc/init.d/sing-box.forkop.*"
 # What the builds of the core speak, by the variants of its build.sh: tiny, what base adds to it,
 # and what full adds to base (full_adds).
 TINY_HAS='VLESS, Trojan, Shadowsocks, Hysteria, Hysteria2, TUIC, SOCKS, HTTP'
@@ -57,9 +55,9 @@ MODE=install VARIANT='' ASK_VARIANT=0 PURGE=0 QUIET=0 LANG_OPT='' BAD_ARG=''
 RU=0 INTERACTIVE=0 ASKED=0 PROMPTING=0 ANSWER='' C_STEP='' C_OK='' C_WARN='' C_ERR='' C_BOLD='' C_OFF=''
 WORK='' LOCKED=0
 PM='' PM_DB='' EXT='' ARCH='' RELEASE='' FLASH_MOUNT=/ FLASH_FS=''
-FORKOP_OLD='' APP_OLD='' I18N_OLD='' CORE_OLD='' CORE_OLD_VARIANT='' CONFIG_VERSION='' FORK_URL=''
+FORKOP_OLD='' APP_OLD='' I18N_OLD='' CORE_OLD='' CORE_OLD_VARIANT='' CONFIG_VERSION=''
 FORKOP_ENABLED=0 FORKOP_RUNNING=0 STARTED=0
-FOREIGN_PKGS='' FOREIGN_WORLD='' FOREIGN_FILES='' LEFTOVERS=''
+FOREIGN_PKGS='' FOREIGN_WORLD='' FOREIGN_FILES=''
 F_VERSION='' F_TAG='' F_CORE_MIN='' C_VERSION='' C_TAG='' C_FORKOP_MIN=''
 I18N=0 NEED_FORKOP=0 NEED_APP=0 NEED_I18N=0
 CORE_ACTION=none CORE_VARIANT='' CORE_REINSTALL=0
@@ -783,14 +781,15 @@ read_state() {
 	local name file owner
 	refresh_db
 	FORKOP_OLD=$(pkg_version forkop)
-	# every release of Forkop names this project; a fork built under its package names names its own
-	FORK_URL=$(pkg_url forkop)
-	[ -n "$FORKOP_OLD" ] && [ "$FORK_URL" != "https://github.com/$FORKOP_REPO" ] || FORK_URL=''
+	if [ -n "$FORKOP_OLD" ] && [ "$(pkg_url forkop)" != "https://github.com/$FORKOP_REPO" ]; then
+		fail 1 check "$(t 'A package from another project occupies forkop; LoKi requires a clean installation' 'Имя forkop занято пакетом другого проекта; LoKi требует чистой установки')"
+	fi
 	APP_OLD=$(pkg_version luci-app-forkop)
 	I18N_OLD=$(pkg_version luci-i18n-forkop-ru)
 	CORE_OLD=$(pkg_version sing-box-forkop)
 	[ -z "$CORE_OLD" ] || CORE_OLD_VARIANT=$(cat /usr/share/sing-box-forkop/variant 2>/dev/null)
 	[ ! -f /etc/config/forkop ] || CONFIG_VERSION=$(uci -q get forkop.settings.config_version)
+	printf '%s\n' "$CONFIG_VERSION" | grep -Eq '^[0-9]{1,9}\.[0-9]{1,9}\.[0-9]{1,9}$' || CONFIG_VERSION=unknown
 	forkop_status
 
 	for name in $FOREIGN_CORES; do
@@ -807,14 +806,11 @@ read_state() {
 		owner=$(file_owner "$file")
 		[ -n "$owner" ] || FOREIGN_FILES="$FOREIGN_FILES $file"
 	done
-	for file in $LEGACY_FILES; do
-		[ ! -e "$file" ] || LEFTOVERS="$LEFTOVERS $file"
-	done
 	owner=$(file_owner /usr/bin/sing-box)
 	if [ -n "$owner" ] && ! contains "$owner" "$OUR_PACKAGES $FOREIGN_PKGS"; then
 		FOREIGN_PKGS="$FOREIGN_PKGS $owner"
 	fi
-	log "installed: forkop ${FORKOP_OLD:-none}${FORK_URL:+ from $FORK_URL}, sing-box-forkop ${CORE_OLD:-none} ${CORE_OLD_VARIANT}," \
+	log "installed: forkop ${FORKOP_OLD:-none}, sing-box-forkop ${CORE_OLD:-none} ${CORE_OLD_VARIANT}," \
 		"other cores:${FOREIGN_PKGS:- none}, files of no package:${FOREIGN_FILES:- none}, config ${CONFIG_VERSION:-none}"
 }
 
@@ -894,9 +890,6 @@ resolve_release() {
 	decide_core
 	ask_translation
 	[ "$ASKED" = 0 ] || printf '\n' >/dev/tty
-	# opkg keeps an installed package of the version it is given and refuses an older one: a fork's
-	# go and Forkop's come in, whatever versions the fork took
-	[ -z "$FORK_URL" ] || OPKG_FLAGS='--force-downgrade --force-reinstall'
 }
 
 decide_forkop() { # the Forkop packages to install, NEED_*, and the Forkop that will run
@@ -907,11 +900,6 @@ decide_forkop() { # the Forkop packages to install, NEED_*, and the Forkop that 
 		case "$(uci -q get luci.main.lang)" in '' | auto | ru*) I18N=1 ;; esac
 	fi
 	RESULT_FORKOP=$F_VERSION
-	if [ -n "$FORK_URL" ]; then
-		# a fork goes whatever its version says: Forkop's packages take its place
-		NEED_FORKOP=1 NEED_APP=1 NEED_I18N=$I18N
-		return 0
-	fi
 	if [ -n "$FORKOP_OLD" ] && [ "$(vercmp "$FORKOP_OLD" "$F_VERSION")" = 1 ]; then
 		info "$(t 'forkop %s is newer than the latest release %s and stays' 'forkop %s новее последнего релиза %s и остаётся' "$FORKOP_OLD" "$F_VERSION")"
 		RESULT_FORKOP=$FORKOP_OLD
@@ -1160,7 +1148,7 @@ check_space() { # whether the packages and their dependencies fit the flash; may
 		need=$((need + size * percent / 100 / 1024))
 	done
 	need=$((need + DEPS_KB * percent / 100 + 1024))
-	for file in $REMOVE_FILES $LEFTOVERS; do
+	for file in $REMOVE_FILES; do
 		credit=$((credit + $(upper_kb "$file") * percent / 100))
 	done
 	if [ "$CORE_ACTION" = install ] && [ -e /usr/bin/sing-box ] && ! contains /usr/bin/sing-box "$REMOVE_FILES"; then
@@ -1184,39 +1172,35 @@ check_space() { # whether the packages and their dependencies fit the flash; may
 }
 
 check_config() { # what the new package does with /etc/config/forkop, from its own migration code
-	local root="$WORK/new" verdict='' status=1 note
+	local root="$WORK/new" verdict='' status=1 unpacked=1 note
 	[ "$NEED_FORKOP" = 1 ] && [ -f /etc/config/forkop ] || return 0
-	# a fork's config follows its own schema under the labels of Forkop's releases
-	if [ -n "$FORK_URL" ]; then
-		CONFIG_PLAN=reset CONFIG_FROM=foreign CONFIG_REASON=foreign
-		return 0
-	fi
 	if mkdir -p "$root" "$WORK/check" && cp /etc/config/forkop "$WORK/check/forkop"; then
 		if [ "$EXT" = apk ]; then
 			apk extract --allow-untrusted --no-chown --destination "$root" "$FILE_FORKOP" >>"$LOG" 2>&1
 		else
 			tar -xzOf "$FILE_FORKOP" ./data.tar.gz 2>/dev/null | tar -xzf - -C "$root" >>"$LOG" 2>&1
 		fi
-		verdict=$(ucode -L "$root/usr/lib/forkop" "$root/usr/lib/forkop/config/migration.uc" check "$WORK/check/forkop" 2>>"$LOG")
-		status=$?
+		unpacked=$?
+		if [ "$unpacked" = 0 ]; then
+			verdict=$(ucode -L "$root/usr/lib/forkop" "$root/usr/lib/forkop/config/migration.uc" check "$WORK/check/forkop" 2>>"$LOG")
+			status=$?
+		fi
 	fi
 	log "migration check: $status $verdict"
 	CONFIG_PLAN=$(printf '%s' "$verdict" | jsonfilter -e '@.result' 2>/dev/null)
 	CONFIG_FROM=$(printf '%s' "$verdict" | jsonfilter -e '@.from' 2>/dev/null)
 	CONFIG_REASON=$(printf '%s' "$verdict" | jsonfilter -e '@.reason' 2>/dev/null)
 	case "$status:$CONFIG_PLAN" in
-	0:migrate | 0:current | 0:reset | 1:fail) ;;
+	0:migrate | 0:current) ;;
+	1:fail)
+		fail 1 migration "$(t 'LoKi cannot use this configuration (%s); the file was left unchanged' 'LoKi не может использовать эту конфигурацию (%s); файл не изменён' "$CONFIG_REASON")"
+		;;
 	*)
-		CONFIG_PLAN=unknown CONFIG_REASON=unchecked verdict=''
-		log "the new package could not check the config in advance"
+		fail 1 check "$(t 'The LoKi configuration check did not complete; installation stopped' 'Проверка конфигурации LoKi не завершена; установка остановлена')"
 		;;
 	esac
 	[ -n "$CONFIG_FROM" ] || CONFIG_FROM=${CONFIG_VERSION:-unknown}
-	if [ "$CONFIG_PLAN" = fail ]; then
-		fail 1 migration "$(t 'Forkop %s cannot migrate this config: %s' 'Forkop %s не сможет перенести этот конфиг: %s' "$F_VERSION" "$CONFIG_REASON")" \
-			"$(t 'Report it in the Forkop chat. To start from a clean config, rename /etc/config/forkop' 'Сообщите об этом в чат Forkop. Чтобы начать с чистого конфига, переименуйте /etc/config/forkop')"
-	fi
-	# the notes are Forkop's own log lines, in English, which its log keeps: the text output leaves them out
+	# the notes are LoKi's own log lines, in English, which its log keeps: the text output leaves them out
 	printf '%s' "$verdict" | jsonfilter -e '@.warnings[*]' 2>/dev/null | while IFS= read -r note; do
 		[ -n "$note" ] || continue
 		log "migration note: $note"
@@ -1294,12 +1278,7 @@ backup_config() { # a copy that guards the transaction; the package keeps its ow
 	config_copies >"$WORK/copies"
 	[ -f /etc/config/forkop ] && [ "$NEED_FORKOP" = 1 ] || return 0
 	copy="/etc/config/forkop.$(file_label "${CONFIG_FROM:-unknown}")-$(date +%Y%m%d-%H%M%S)"
-	if [ -n "$FORK_URL" ]; then
-		# Forkop's package would read a fork's config as one of its own releases: it starts from its defaults
-		mv /etc/config/forkop "$copy" 2>>"$LOG" || fail 1 backup "$(t 'Cannot set /etc/config/forkop aside' 'Не удалось отложить /etc/config/forkop')"
-	else
-		cp -p /etc/config/forkop "$copy" 2>>"$LOG" || fail 1 backup "$(t 'Cannot copy /etc/config/forkop' 'Не удалось скопировать /etc/config/forkop')"
-	fi
+	cp -p /etc/config/forkop "$copy" 2>>"$LOG" || fail 1 backup "$(t 'Cannot copy /etc/config/forkop' 'Не удалось скопировать /etc/config/forkop')"
 	BACKUP=$copy
 	log "config copy: $BACKUP"
 }
@@ -1344,9 +1323,6 @@ remove_files() {
 	for file in $REMOVE_FILES; do
 		rm -f "$file" && removed "$file"
 	done
-	for file in $LEFTOVERS; do
-		rm -f "$file" && log "removed $file"
-	done
 }
 
 predelete_core() { # apk upgrades by writing beside the old file: make room first, a compressed copy in RAM
@@ -1370,10 +1346,6 @@ restore_core() {
 
 removals() { # "name version" a line: what the transaction takes away, a fork's own packages first
 	local name version
-	[ -z "$FORK_URL" ] || for name in forkop luci-app-forkop luci-i18n-forkop-ru; do
-		version=$(pkg_version "$name")
-		[ -z "$version" ] || printf '%s %s\n' "$name" "$version"
-	done
 	# shellcheck disable=SC2086
 	for name in $(printf '%s\n' $REMOVE_PKGS | sort); do
 		printf '%s %s\n' "$name" "$(pkg_version "$name")"
@@ -1381,18 +1353,11 @@ removals() { # "name version" a line: what the transaction takes away, a fork's 
 }
 
 gone() { # gone LINES: each "name version" of LINES no longer installed
-	local name version source
+	local name version
 	printf '%s\n' "$1" | while read -r name version; do
 		[ -n "$name" ] || continue
-		if [ -n "$FORK_URL" ] && contains "$name" "forkop luci-app-forkop luci-i18n-forkop-ru"; then
-			# a fork's packages are gone once Forkop's take their place, of the same version or not
-			[ "$(pkg_url forkop)" != "$FORK_URL" ] || continue
-		else
-			[ "$(pkg_version "$name")" != "$version" ] || continue
-		fi
-		source=''
-		[ "$name" != forkop ] || [ -z "$FORK_URL" ] || source=" (${FORK_URL#*://})"
-		removed "$name $version$source"
+		[ "$(pkg_version "$name")" != "$version" ] || continue
+		removed "$name $version"
 	done
 }
 
@@ -1513,7 +1478,6 @@ check_installed() { # what the transaction left, against what it was to install
 	[ -z "$FILE_CORE" ] || [ "$(pkg_version sing-box-forkop)" = "$(field "$(control_of "$FILE_CORE")" Version)" ] || problems="$problems sing-box-forkop"
 	[ -z "$FILE_CORE" ] || [ "$(cat /usr/share/sing-box-forkop/variant 2>/dev/null)" = "$CORE_VARIANT" ] || contains sing-box-forkop "$problems" || problems="$problems sing-box-forkop"
 	[ -z "$FILE_FORKOP" ] || [ "$(pkg_version forkop)" = "$F_VERSION" ] || problems="$problems forkop"
-	[ -z "$FORK_URL" ] || [ "$(pkg_url forkop)" != "$FORK_URL" ] || contains forkop "$problems" || problems="$problems forkop"
 	[ -z "$FILE_APP" ] || [ "$(pkg_version luci-app-forkop)" = "$F_VERSION" ] || problems="$problems luci-app-forkop"
 	[ -z "$FILE_I18N" ] || [ "$(pkg_version luci-i18n-forkop-ru)" = "$F_VERSION" ] || problems="$problems luci-i18n-forkop-ru"
 	[ -z "$FILE_IP" ] || [ -n "$(pkg_version ip-tiny)" ] || problems="$problems ip-tiny"
@@ -1549,7 +1513,7 @@ clean_up_after() {
 	for file in $CONFFILE_COPIES; do
 		[ ! -e "$file" ] || rm -f "$file"
 	done
-	if [ -n "$BACKUP" ] && [ -z "$FORK_URL" ]; then
+	if [ -n "$BACKUP" ]; then
 		rm -f "$BACKUP" && log "removed $BACKUP: the transaction went through"
 	fi
 	# what the package set aside: it keeps a config it replaces, and one it migrated past the label
@@ -1630,7 +1594,7 @@ finale() { # the closing line, set apart: what the run achieved
 summary() {
 	local result runs
 	runs=$(t ' and running' ' и запущен')
-	if [ -n "$FORK_URL" ] || [ -z "$FORKOP_OLD" ]; then
+	if [ -z "$FORKOP_OLD" ]; then
 		result=$(t 'Forkop %s is installed' 'Forkop %s установлен' "$RESULT_FORKOP")
 	elif [ "$NEED_FORKOP" = 1 ]; then
 		result=$(t 'Forkop is updated to %s' 'Forkop обновлён до %s' "$RESULT_FORKOP")
@@ -1650,8 +1614,8 @@ summary() {
 	finish 0
 }
 
-starts_over() { # Forkop starts from its default config: a first install, a config it could not keep, a fork's
-	{ [ -z "$FORKOP_OLD" ] || [ -n "$FORK_URL" ] || [ "$CONFIG_PLAN" = reset ]; } && clean_config
+starts_over() { # A clean LoKi installation has only the packaged defaults.
+	[ -z "$FORKOP_OLD" ] && clean_config
 }
 
 # --- removal --------------------------------------------------------------------------------

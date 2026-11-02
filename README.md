@@ -12,15 +12,21 @@ Project: [Zagorsky17/LoKi](https://github.com/Zagorsky17/LoKi). Report bugs and 
 
 As of November 2, 2026, this repository has no LoKi release. The installer obtains the application and patched core from **`Zagorsky17/LoKi`**, without falling back to Forkop releases. Installation needs package assets, `release.json`, `core-release.json` and `SHA256SUMS`; publishing source to `main` is not enough. The application requires the LoKi core build `1.14.4-r3` or newer; its technical package name remains `sing-box-forkop`. Router installation and upgrades have not been tested.
 
-The source still uses the technical names `forkop`, `luci-app-forkop` and `/etc/config/forkop`. Their coordinated replacement is planned. LoKi targets clean installation with its own configuration; migration from Forkop, Podkop or other applications is not supported. The inherited installer and legacy migrations still need reduction, and the required pre-install conflict check is not implemented yet.
+The source still uses the technical names `forkop`, `luci-app-forkop` and `/etc/config/forkop`. Their coordinated replacement is planned. LoKi targets clean installation with its own configuration; migration from Forkop, Podkop or other applications is not supported. Migrations from Forkop 1.0.x and automatic takeover of another project’s packages/configuration have been removed. The required standalone pre-install conflict check is not implemented yet; installation is not ready for production use.
 
 ## Planned scope
 
-LoKi will retain connection links, subscriptions, routing sections, DNS, monitoring and diagnostics. Hosting VPN/proxy servers on the router has been removed: there is no server tab, server listener generation, client profile issuance, server key generation or server diagnostics. Built-in DNS/TProxy listeners and outbound connections remain. Built-in client VPN tunnels (WireGuard, AmneziaWG, WARP, Tailscale, OpenVPN and OpenConnect) and JSON endpoints have also been removed. Connection links, subscriptions, JSON outbounds and existing network interfaces remain; custom JSON outbounds cannot restore the removed VPN types. Legacy migrations are still present and scheduled for removal.
+LoKi will retain connection links, subscriptions, routing sections, DNS, monitoring and diagnostics. Hosting VPN/proxy servers on the router has been removed: there is no server tab, server listener generation, client profile issuance, server key generation or server diagnostics. Built-in DNS/TProxy listeners and outbound connections remain. Built-in client VPN tunnels (WireGuard, AmneziaWG, WARP, Tailscale, OpenVPN and OpenConnect) and JSON endpoints have also been removed. Connection links, subscriptions, JSON outbounds and existing network interfaces remain; custom JSON outbounds cannot restore the removed VPN types. Only the framework for future LoKi migrations remains.
 
 The target platforms are OpenWrt 24.10 and 25.12. Compatibility with stock sing-box packages and newer versions remains unverified. Current development uses the patched LoKi core in the `sing-box-forkop` package.
 
 The built-in lists from [forkop-lists](https://github.com/ushan0v/forkop-lists) and the diagnostic domains `ip.podkop.fyi` and `fakeip.podkop.fyi` are retained external dependencies.
+
+## Configuration backups
+
+LoKi configurations carry `option config_format 'loki'` alongside their schema version. A matching version number alone does not make a Forkop or Podkop configuration compatible. Installation, startup and backup restoration refuse foreign, unsupported or malformed schemas without moving or resetting the file. Intermediate development configurations without the LoKi marker are not converted automatically.
+
+The configuration upload restores LoKi’s own backup as unsaved changes in the current LuCI session; it takes effect after you apply them. Uploads must be regular files of at most 1 MiB. Current configurations require no migration; future LoKi schema updates retain the migration framework and private backups. This does not replace the planned environment conflict check. Connection links and subscriptions remain separate supported inputs; global client settings are not imported.
 
 ## DNS settings in development
 
@@ -75,4 +81,4 @@ LoKi retains the project's [GPL-2.0-or-later license](LICENSE). The core patch a
 
 When distributing modified versions or binary packages, retain the applicable notices and license, identify modified files and their change dates, and provide the corresponding source as required by the [GNU GPL version 2](https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html). The software is provided without warranty under the license terms.
 
-This README was rewritten for LoKi on October 31, 2026, and updated on November 1, 2026.
+This README was rewritten for LoKi on October 31, 2026, and updated on November 2, 2026.

@@ -40,9 +40,7 @@ function reset(options) {
     fs.writefile(lifecycle.paths.sing_box_init, "#!/bin/sh\n");
     fs.chmod(lifecycle.paths.sing_box_init, 0755);
     fs.writefile(lifecycle.paths.config, "config forkop\n");
-    lifecycle.paths.shipped_config = dir + "/default-config";
-    fs.writefile(lifecycle.paths.shipped_config, "config settings 'settings'\n\toption config_version '2.0.0'\n");
-    fixture.seed({ settings: { config_version: options?.config_version ?? "2.0.0" } });
+    fixture.seed({ settings: { config_format: "loki", config_version: options?.config_version ?? "2.0.0" } });
 
     world = {
         dir,
@@ -63,7 +61,9 @@ function reset(options) {
     };
 
     migration.start = () => {
-        event("configuration migrated");
+        world.migration_checks = (world.migration_checks ?? 0) + 1;
+        if (world.config_version != null || world.migration_fails)
+            event("configuration migrated");
         return !world.migration_fails;
     };
     validator.check_requirements = () => { if (world.requirements_fail) die("requirements"); };
@@ -243,18 +243,19 @@ t.test("what the core sends bound to a device is routed from before it starts un
     t.eq(filter(world.events, (e) => e == "sing-box started"), []);
 });
 
-t.test("a configuration restored from an older release is migrated before anything else of a start", () => {
-    reset({ config_version: "1.0.5" });
+t.test("a restored LoKi configuration is checked before anything else of a start", () => {
+    reset({ config_version: "2.0.0" });
     let result = run(() => lifecycle.start());
     t.eq(result.result, 0);
     t.eq(world.events[0], "configuration migrated");
     t.contains(world.events, "sing-box started");
 
-    reset({ config_version: "1.0.5", migration_fails: true });
+    reset({ config_version: "2.0.0", migration_fails: true });
     result = run(() => lifecycle.start());
     t.eq(result.result, 1);
     t.eq(filter(world.events, (e) => e == "config checked" || e == "sing-box started"), [],
         "a configuration it could not migrate is never validated or run");
+    t.eq(world.migration_checks, 1, "even a current version reaches the shared format guard");
 });
 
 t.test("a start on a router with IPv6 off says that only IPv4 is routed", () => {
@@ -735,7 +736,7 @@ t.test("autostart is the rc.d link and nothing else", () => {
 t.test("repeated service cycles cannot prepare retired servers or tunnels", () => {
     let uci = require("uci");
     reset();
-    fixture.seed({ settings: { config_version: "2.0.0" }, server: [
+    fixture.seed({ settings: { config_format: "loki", config_version: "2.0.0" }, server: [
         { ".name": "server-private-name", enabled: "1", protocol: "vless", security: "reality", open_firewall: "1", listen_port: "18443" },
         { ".name": "json-private-name", enabled: "1", protocol: "json_inbound", inbound_json: "invalid-private-json" }
     ], tunnel: [

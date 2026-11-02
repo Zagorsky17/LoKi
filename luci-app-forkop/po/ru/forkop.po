@@ -7,8 +7,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: FORKOP\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-02 18:39+0300\n"
-"PO-Revision-Date: 2026-11-02 18:39+0300\n"
+"POT-Creation-Date: 2026-11-02 20:15+0300\n"
+"PO-Revision-Date: 2026-11-02 20:15+0300\n"
 "Last-Translator: ushan0v\n"
 "Language-Team: none\n"
 "Language: ru\n"
@@ -56,11 +56,11 @@ msgstr "%s не отвечает"
 msgid "%s error messages found in the last 60 seconds"
 msgstr "Найдено сообщений об ошибках за последние 60 секунд: %s"
 
-msgid "%s holds a configuration of Forkop %s, which is brought to %s as an update would bring it."
-msgstr "В файле %s — конфигурация Forkop %s. Её переведут на %s, как при обновлении."
+msgid "%s holds a configuration of LoKi %s, which is brought to %s as an update would bring it."
+msgstr "В файле %s — конфигурация LoKi %s. Её переведут на %s, как при обновлении."
 
-msgid "%s holds a configuration of Forkop %s."
-msgstr "В файле %s — конфигурация Forkop %s."
+msgid "%s holds a configuration of LoKi %s."
+msgstr "В файле %s — конфигурация LoKi %s."
 
 msgid "%s intercepts traffic"
 msgstr "%s перехватывает трафик"
@@ -896,8 +896,8 @@ msgstr "Только IPv6"
 msgid "Issues detected"
 msgstr "Обнаружены проблемы"
 
-msgid "It replaces the current one through unsaved changes, as if you made them by hand. Forkop runs it once you apply them."
-msgstr "Она заменит текущую через непринятые изменения, будто вы внесли их сами. Forkop заработает с ней, когда вы их примените."
+msgid "It replaces the current one through unsaved changes, as if you made them by hand. LoKi runs it once you apply them."
+msgstr "Она заменит текущую через непринятые изменения, будто вы внесли их сами. LoKi заработает с ней, когда вы их примените."
 
 msgid "JSON outbound"
 msgstr "JSON outbound"
@@ -1046,14 +1046,14 @@ msgstr "Нет домена"
 msgid "No error messages found in the last 60 seconds"
 msgstr "Сообщений об ошибках за последние 60 секунд не найдено"
 
-msgid "No Forkop release wrote configuration version %s"
-msgstr "Конфигурации версии %s нет ни в одном выпуске Forkop"
-
 msgid "No logs available"
 msgstr "Логи отсутствуют"
 
 msgid "No logs match the current filters"
 msgstr "Нет логов, соответствующих текущим фильтрам"
+
+msgid "No LoKi release wrote configuration version %s"
+msgstr "Конфигурации версии %s нет ни в одном выпуске LoKi"
 
 msgid "No sections with a proxy"
 msgstr "Нет секций с прокси"
@@ -1511,29 +1511,38 @@ msgstr "Тестирование задержки"
 msgid "The / character is not allowed"
 msgstr "Символ / недопустим"
 
-msgid "The configuration is from Forkop %s, and Forkop loads configurations from %s on"
-msgstr "Конфигурация от Forkop %s, а загрузить можно конфигурации от %s и новее"
+msgid "The configuration is from LoKi %s, and LoKi loads configurations from %s on"
+msgstr "Конфигурация от LoKi %s, а загрузить можно конфигурации от %s и новее"
 
-msgid "The configuration is from Forkop %s, newer than this one: update Forkop first"
-msgstr "Конфигурация от Forkop %s, он новее установленного: сначала обновите Forkop"
+msgid "The configuration is from LoKi %s, newer than this one: update LoKi first"
+msgstr "Конфигурация от LoKi %s, он новее установленного: сначала обновите LoKi"
 
-msgid "The configuration of Forkop %s cannot be brought to %s: %s"
-msgstr "Конфигурацию Forkop %s не удаётся перевести на %s: %s"
+msgid "The configuration must be a regular file of at most 1 MiB"
+msgstr "Конфигурация должна быть обычным файлом размером не более 1 МиБ"
+
+msgid "The configuration of LoKi %s cannot be brought to %s: %s"
+msgstr "Конфигурацию LoKi %s не удаётся перевести на %s: %s"
 
 msgid "The DNS server must use %s"
 msgstr "DNS-сервер должен использовать %s"
 
-msgid "The file is not a Forkop configuration: it names no version"
-msgstr "Это не конфигурация Forkop: в ней не указана версия"
+msgid "The file has unsupported or ambiguous LoKi sections"
+msgstr "Файл содержит неподдерживаемые или неоднозначные секции LoKi"
 
-msgid "The file is not a Forkop configuration: its version is not a release number"
-msgstr "Это не конфигурация Forkop: её версия не номер выпуска"
+msgid "The file is not a LoKi configuration; importing other applications is not supported"
+msgstr "Файл не является конфигурацией LoKi; импорт конфигураций других приложений не поддерживается"
+
+msgid "The file is not a LoKi configuration: it names no version"
+msgstr "Это не конфигурация LoKi: в ней не указана версия"
+
+msgid "The file is not a LoKi configuration: its version is not a release number"
+msgstr "Это не конфигурация LoKi: её версия не номер выпуска"
 
 msgid "The file is not a UCI configuration"
 msgstr "Это не конфигурация UCI"
 
-msgid "The file is over 1 MB, far larger than a Forkop configuration"
-msgstr "Файл больше 1 МБ, а конфигурация Forkop намного меньше"
+msgid "The file is over 1 MB, far larger than a LoKi configuration"
+msgstr "Файл больше 1 МБ, а конфигурация LoKi намного меньше"
 
 msgid "The group joins as the single node it has selected"
 msgstr "Группа участвует как один выбранный узел"
@@ -1601,8 +1610,8 @@ msgstr "Неизвестная ошибка"
 msgid "UNMASKED REPORT: contains keys and passwords. Do not share."
 msgstr "ОТЧЁТ СОДЕРЖИТ КЛЮЧИ И ПАРОЛИ. НЕ ПУБЛИКОВАТЬ."
 
-msgid "Unsaved changes to Forkop made earlier are replaced."
-msgstr "Непринятые изменения Forkop, сделанные раньше, будут заменены."
+msgid "Unsaved changes to LoKi made earlier are replaced."
+msgstr "Непринятые изменения LoKi, сделанные раньше, будут заменены."
 
 msgid "Unsupported link"
 msgstr "Ссылка не поддерживается"

@@ -465,3 +465,22 @@ describe('the Clash API key', () => {
     expect(option.validate('settings', 'chosen')).toBe(true);
   });
 });
+
+describe('LoKi configuration identity', () => {
+  it('survives editing settings without becoming a user option', async () => {
+    harness.uci.add('forkop', 'settings', 'settings');
+    harness.uci.set('forkop', 'settings', 'config_format', 'loki');
+    harness.uci.set('forkop', 'settings', 'config_version', '2.0.0');
+    const map = new harness.form.Map('forkop');
+    const settings = map.section(harness.form.TypedSection, 'settings');
+    harness.bundle.createSettingsContent(settings);
+    expect(settings.children.map((option) => option.option)).not.toContain(
+      'config_format',
+    );
+    await parseEveryOption(settings, 'settings');
+    expect(harness.uci.get('forkop', 'settings', 'config_format')).toBe('loki');
+    expect(harness.uci.get('forkop', 'settings', 'config_version')).toBe(
+      '2.0.0',
+    );
+  });
+});
