@@ -1,6 +1,6 @@
 """Record the current schema boundary against trusted, pre-verified Linux binaries.
 
-Usage: python3 core/tests/compatibility.py REFERENCE_R3 STOCK_BINARY_DIR OUTPUT_DIR
+Usage: python3 core/tests/compatibility.py REFERENCE_CORE STOCK_BINARY_DIR OUTPUT_DIR
 The directory holds each sing-box-VERSION and its official archive filename;
 archives match the pinned official release digests in compatibility_releases.json.
 This checks characterized limited schemas and refusals, not full stock support.
