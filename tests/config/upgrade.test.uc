@@ -149,33 +149,6 @@ t.test("1.0.5: groups and subscriptions behave as they did", () => {
         [ [ "Happ" ], [ "MY-HWID-0001" ], "Backup", { prefix: "Other " } ]);
 });
 
-t.test("1.0.5: servers take the same clients on the same ports", () => {
-    let reality = sb.inbound(built105, "Home Reality");
-    t.eq([ reality.listen, reality.listen_port, reality.users[0].uuid, reality.users[0].flow, reality.tls.reality.short_id,
-        reality.tls.reality.private_key ], [ "::", 443, "8d2c5f3a-1b4e-4c6d-8e9f-0a1b2c3d4e5f", "xtls-rprx-vision", [ "5a" ],
-        "kP1C4vzQnlzyKRo3DORq6f_v3n9u7nGY8dl0AKbx11A" ]);
-    let trojan = sb.inbound(built105, "Trojan TLS");
-    t.eq([ trojan.listen_port, trojan.users[0].password, trojan.transport, trojan.tls.server_name ],
-        [ 8443, "trojan-server-pass", { type: "ws", path: "/tr" }, "vpn.example.com" ]);
-    t.ok(rule(built105, "Main proxy", (item) => item.inbound == "Trojan TLS") ??
-        sb.route_rule(built105, (item) => item.inbound == "Trojan TLS" && item.outbound == "Main proxy"), "Trojan still goes to its section");
-    let socks = sb.inbound(built105, "Family SOCKS");
-    t.eq([ socks.type, socks.listen_port, socks.users ], [ "mixed", 1080, [ { username: "Family-SOCKS", password: "socks-pass" } ] ]);
-    let hysteria = sb.inbound(built105, "Hysteria");
-    t.eq([ hysteria.listen_port, hysteria.users[0].password, hysteria.obfs ],
-        [ 4443, "hy-server-pass", { type: "salamander", password: "obfs-pass" } ]);
-    t.eq(hysteria.tls.certificate_path, files + "/acme/vpn.example.com.crt", "the user's own certificate stays where it is");
-    let json_inbound = sb.inbound(built105, "JSON inbound");
-    t.eq([ json_inbound.type, json_inbound.listen_port, json_inbound.sniff ], [ "mixed", 1081, null ]);
-    let mixed = sb.inbound(built105, "Main proxy - Mixed proxy");
-    t.eq([ mixed.listen_port, mixed.users ], [ 2080, [ { username: "family", password: "family-pass" } ] ]);
-    t.eq(filter(built105.inbounds, (item) => item.type in [ "mtproxy", "shadowsocks" ]), [],
-        "MTProto is gone and the disabled Shadowsocks server stays off");
-    let trojan_server = filter(router105.config.server, (item) => item[".name"] == "server_trojan")[0];
-    t.eq([ trojan_server.tls_self_signed_certificate, trojan_server.tls_certificate_path ], [ trim(pem("CERTIFICATE")), null ],
-        "the certificate the release issued moves into the server");
-});
-
 /* --------------------------------------------------------------------- 1.0.2, a router */
 
 let router102 = migrate(released("forkop-1.0.2-router.conf"));
@@ -205,21 +178,14 @@ t.test("1.0.2: HTTP links became HTTP outbounds, and text conditions match as 1.
     t.eq(map([ "dns-server-1", "dns-server-2" ], (tag) => sb.dns_server_tag(built102, tag).server), [ "77.88.8.8", "77.88.8.1" ]);
 });
 
-t.test("1.0.2: groups, the subscription and the servers carry over", () => {
+t.test("1.0.2: groups and the subscription carry over", () => {
     let auto = sb.outbound(built102, "Proxy/Auto");
     t.eq([ auto.exclude, auto.interrupt_exist_connections, auto.providers ], [ "(?:(?:🇷🇺))", true, [ "Proxy/Sub" ] ]);
     let reserve = sb.outbound(built102, "Proxy/Reserve");
     t.eq([ reserve.interrupt_exist_connections, reserve.groups[0].include ], [ false, "(?:^(?:Finland)$)" ]);
     let subscription = sb.provider(built102, "Proxy/Sub");
     t.eq([ subscription.update_interval, subscription.override ], [ "12h", { prefix: "Sub " } ]);
-    let socks = sb.inbound(built102, "Home SOCKS");
-    t.eq([ socks.type, socks.users ], [ "mixed", [ { username: "home", password: "home-pass" } ] ]);
-    let ss = sb.inbound(built102, "SS 2022");
-    t.eq([ ss.method, ss.password, ss.users ], [ "2022-blake3-aes-128-gcm", "KtrdFDf5VbIQPg/hPmUZVA==",
-        [ { name: "SS 2022", password: "KtrdFDf5VbIQPg/hPmUZVA==" } ] ]);
-    let vmess = sb.inbound(built102, "VMess WS");
-    t.eq([ vmess.users[0].uuid, vmess.transport, vmess.tls.server_name ],
-        [ "0f1e2d3c-4b5a-4968-8776-5a4b3c2d1e0f", { type: "ws", path: "/vm" }, "home.example.net" ]);
+
 });
 
 /* --------------------------------------------------------- the forms older releases wrote */
@@ -241,8 +207,6 @@ t.test("the forms releases before 1.0.2 wrote mean what 1.0.5 read in them", () 
     let subscription = sb.provider(built_legacy, "Old proxy/Legacy");
     t.eq([ subscription.url, subscription.headers["User-Agent"], subscription.override ],
         [ "https://legacy.example.com/sub", [ "ClashMeta" ], { prefix: "Legacy " } ]);
-    let vless = sb.inbound(built_legacy, "Old VLESS");
-    t.eq(vless.users, [ { name: "phone", uuid: "6e5d4c3b-2a19-4807-b6c5-d4e3f2a1b0c9", flow: "xtls-rprx-vision" } ]);
     stays(legacy);
 });
 
@@ -250,12 +214,12 @@ t.test("the forms releases before 1.0.2 wrote mean what 1.0.5 read in them", () 
 
 let examples = migrate(released("forkop-1.0.5.conf"));
 
-t.test("1.0.5's shipped configuration with its examples filled in builds with every server", () => {
+t.test("legacy example records cannot restore removed server listeners", () => {
     t.eq(examples.decision.result, "migrate");
     let config = build(examples.config);
     let tags = map([ ...(config.inbounds ?? []), ...(config.endpoints ?? []) ], (item) => item.tag);
     for (let label in [ "JSON inbound", "VLESS Reality server", "Tailscale endpoint" ])
-        t.contains(tags, label);
+        t.excludes(tags, label);
     t.eq(filter(examples.config.server, (server) => server.protocol == "mtproto"), [], "MTProto is not served any more");
     let outbounds = sb.tags(config.outbounds);
     t.contains(outbounds, "Subscription");

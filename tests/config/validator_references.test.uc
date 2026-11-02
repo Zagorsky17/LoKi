@@ -75,15 +75,9 @@ t.test("no reference may lead to a section without servers", () => {
         { settings: { dns_detour_enabled: "1", dns_detour_section: "empty" }, section: [ empty ] },
         { section: [ empty, dns ] },
         { settings: { download_lists_via_proxy: "1", download_lists_via_proxy_section: "empty" }, section: [ empty ] },
-        { section: [ empty ], server: [ { ".name": "srv", enabled: "1", protocol: "mixed", listen_port: "18080", mixed_auth_enabled: "0",
-            routing_mode: "section", routing_section: "empty" } ] },
-        { section: [ empty ], server: [ { ".name": "srv", enabled: "1", protocol: "mixed", listen_port: "18080", routing_mode: "direct" } ],
-            server_client: [ { ".name": "srv_one", server: "srv", name: "one", password: "secret", routing_override: "1", routing_mode: "section", routing_section: "empty" } ] }
     ])
         v.refuses(data, "points to section 'empty', which has no servers");
-    v.refuses({ section: [ empty ], server: [ { ".name": "srv", enabled: "1", protocol: "mixed", listen_port: "18080", routing_mode: "direct" } ],
-        server_client: [ { ".name": "srv_one", server: "srv", name: "one", password: "secret", routing_override: "1", routing_mode: "section", routing_section: "gone" } ] },
-        "Server 'srv' client 'one' points to section 'gone', which does not exist");
+
 });
 
 function download_through(target, sections) {

@@ -64,15 +64,11 @@ t.test("a feature is there when every tag it needs is", () => {
 
 t.test("types name the feature they need by the kind of object they are", () => {
     t.eq(features.type_feature("outbound", "naive"), "naive");
-    t.eq(features.type_feature("inbound", "naive"), "naive", "one tag makes the NaiveProxy server and client");
-    t.eq(features.type_feature("inbound", "trusttunnel"), "trusttunnel");
     t.eq(features.type_feature("endpoint", "warp"), "wireguard");
     t.eq(features.type_feature("endpoint", "openvpn-client"), "openvpn");
     t.eq(features.type_feature("outbound", "vless"), "");
     t.eq(features.type_feature("outbound", "vmess"), "vmess");
-    t.eq(features.type_feature("inbound", "mieru"), "mieru");
     t.eq(features.type_feature("outbound", "ssh"), "ssh");
-    t.eq(features.type_feature("inbound", "ssh"), "", "there is no SSH server");
 });
 
 t.test("Forkop runs on a core with the Clash API whose tunnels have their gVisor stack", () => {

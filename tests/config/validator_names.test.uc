@@ -74,17 +74,13 @@ t.test("a name belongs to one server or group of its section and holds no slash"
         "Name 'Auto/Best' in section 'Main' contains '/'");
 });
 
-t.test("a refusal names sections and servers by the labels the page shows, not by their ids", () => {
+t.test("a refusal names sections by their display labels", () => {
     v.refuses({
         section: [ { ".name": "section_70536a", label: "Streaming", enabled: "1", action: "connection",
              ports: [ "99999" ] } ],
         connection_link: fixture.links("section_70536a", [ "socks5://127.0.0.1:1080" ])
     }, "Invalid port condition '99999' in section 'Streaming'");
-    v.refuses({
-        section: [ { ".name": "section_70536a", label: "Streaming", enabled: "1", action: "connection" } ],
-        connection_link: fixture.links("section_70536a", [ "socks5://127.0.0.1:1080" ]),
-        server: [ { ".name": "server_75e023", label: "Server #1", enabled: "1", protocol: "mixed", listen_port: "18080", routing_mode: "section", routing_section: "section_1f2e3d" } ]
-    }, "Server 'Server #1' points to section 'section_1f2e3d', which does not exist");
+
 });
 
 t.test("duplicate-json-tags", () => {
@@ -140,19 +136,6 @@ t.test("duplicate-section-names", () => {
     }, "Duplicate section display name 'Office'");
 });
 
-t.test("slash-server-name", () => {
-    v.refuses({
-        "settings": {},
-        "server": [
-            {
-                ".name": "server",
-                "label": "Home/Server",
-                "enabled": "0"
-            }
-        ]
-    }, "Server display name 'Home/Server' contains '/'");
-});
-
 t.test("duplicate-subscription-tags", () => {
     v.refuses({
         "settings": {},
@@ -178,26 +161,6 @@ t.test("duplicate-subscription-tags", () => {
             }
         ]
     }, "Duplicate subscription name 'premium'");
-});
-
-t.test("cross-namespace-display-name", () => {
-    v.refuses({
-        "settings": {},
-        "section": [
-            {
-                ".name": "proxy",
-                "label": "Shared",
-                "enabled": "0"
-            }
-        ],
-        "server": [
-            {
-                ".name": "server",
-                "label": "Shared",
-                "enabled": "0"
-            }
-        ]
-    }, "Duplicate server display name 'Shared'");
 });
 
 t.done();

@@ -38,7 +38,7 @@ function state(revision: number) {
       forkop: { running: 1, enabled: 1, status: 'running & enabled' },
       sing_box: { running: 1, enabled: 0, status: 'running but disabled' },
     },
-    capabilities: { server_inbounds_enabled_count: 0 },
+    capabilities: {},
     actions: { service: [] },
   };
 }

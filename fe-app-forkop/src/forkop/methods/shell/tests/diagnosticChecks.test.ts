@@ -24,7 +24,6 @@ describe('diagnostic checks', () => {
     ['checkService', 'check_service'],
     ['checkDns', 'check_dns'],
     ['checkTraffic', 'check_traffic'],
-    ['checkServers', 'check_servers'],
   ] as const)(
     '%s waits long enough for a slow router',
     async (method, command) => {

@@ -15,56 +15,12 @@ function section(extra) {
     return { ".name": "proxy", label: "Proxy", enabled: "1", action: "connection", ...(extra ?? {}) };
 }
 
-function server(protocol, extra) {
-    return { ".name": "srv", enabled: "1", protocol, ...(extra ?? {}) };
-}
-
 function needs(data, tags, message) {
     v.refuses(data, message, { core_tags: tags });
     let result = v.run(data, { core_tags: FULL });
     t.ok(result.error == null || index(result.error, "this sing-box build lacks") < 0,
         "a core with every tag refused it: " + result.error);
 }
-
-t.test("a server of a type the build lacks is refused by name", () => {
-    needs({ server: [ server("hysteria2") ] }, without(BASE, "with_quic"),
-        "Server 'srv' uses hysteria2, but this sing-box build lacks QUIC (built without with_quic)");
-    needs({ server: [ server("tuic") ] }, without(BASE, "with_quic"), "Server 'srv' uses tuic");
-    needs({ server: [ server("tailscale") ] }, BASE, "Server 'srv' uses tailscale, but this sing-box build lacks Tailscale (built without with_tailscale)");
-    needs({ server: [ server("openvpn") ] }, without(BASE, "with_openvpn"),
-        "Server 'srv' uses openvpn, but this sing-box build lacks OpenVPN (built without with_openvpn)");
-    needs({ server: [ server("vless", { security: "reality" }) ] }, without(BASE, "with_utls"), "Server 'srv' uses Reality");
-    needs({ server: [ server("naive", { naive_network: "udp" }) ] }, without(FULL, "with_quic"), "serves NaiveProxy over QUIC");
-    needs({ server: [ server("trusttunnel") ] }, without(BASE, "with_trusttunnel"),
-        "Server 'srv' uses trusttunnel, but this sing-box build lacks TrustTunnel (built without with_trusttunnel)");
-    needs({ server: [ server("trusttunnel", { trusttunnel_network: "tcp_udp" }) ] }, without(BASE, "with_quic"),
-        "serves TrustTunnel over QUIC");
-    let http2 = v.run({ server: [ server("trusttunnel") ] }, { core_tags: without(BASE, "with_quic") });
-    t.ok(index(http2.error ?? "", "this sing-box build lacks") < 0, "TrustTunnel over HTTP/2 needs no QUIC: " + http2.error);
-});
-
-t.test("an XHTTP server over HTTP/3 needs QUIC", () => {
-    let xhttp = { security: "tls", transport: "xhttp", tls_alpn: [ "h3" ] };
-    needs({ server: [ server("vless", xhttp) ] }, without(BASE, "with_quic"),
-        "Server 'srv' serves XHTTP over HTTP/3, but this sing-box build lacks QUIC (built without with_quic)");
-    let http2 = v.run({ server: [ server("vless", { ...xhttp, tls_alpn: [ "h2" ] }) ] }, { core_tags: without(BASE, "with_quic") });
-    t.ok(index(http2.error ?? "", "this sing-box build lacks") < 0, "XHTTP over HTTP/2 needs no QUIC: " + http2.error);
-});
-
-t.test("a server of a protocol the build was given no tag for is refused by name", () => {
-    needs({ server: [ server("vmess") ] }, without(BASE, "with_vmess"),
-        "Server 'srv' uses vmess, but this sing-box build lacks VMess (built without with_vmess)");
-    needs({ server: [ server("anytls") ] }, without(BASE, "with_anytls"), "Server 'srv' uses anytls");
-    needs({ server: [ server("mieru") ] }, BASE,
-        "Server 'srv' uses mieru, but this sing-box build lacks mieru (built without with_mieru)");
-    needs({ server: [ server("naive") ] }, BASE,
-        "Server 'srv' uses naive, but this sing-box build lacks NaiveProxy (built without with_naive)");
-});
-
-t.test("a disabled server asks nothing of the core", () => {
-    let result = v.run({ server: [ server("hysteria2", { enabled: "0" }) ] }, { core_tags: [ "with_clash_api" ] });
-    t.eq(result.error, null);
-});
 
 t.test("a tunnel of a type the build lacks is refused by name", () => {
     for (let kind in [ "wireguard", "amneziawg", "warp" ])

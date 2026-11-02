@@ -8,7 +8,6 @@ let constants = require("core.constants");
 let netstat = require("core.netstat");
 let uci = require("core.uci");
 let validator = require("config.validator");
-let server = require("server.service");
 let tailscale = require("singbox.tailscale");
 let generator = require("singbox.generator");
 let runtime = require("singbox.runtime");
@@ -36,7 +35,7 @@ const EXEC_GRACE = 3;
 const MAX_READY_WAIT = 300;
 const STOP_TIMEOUT = 15;
 const NOT_CAPTURING = "Forkop was not fully running after the nftables rules were applied";
-const NOTHING_TO_RUN = "Forkop has nothing to run: no section with servers and no VPN server is enabled. Set up a section or a VPN server, then start Forkop";
+const NOTHING_TO_RUN = "Forkop has nothing to run: no section with connections is enabled. Set up a section, then start Forkop";
 
 let paths = {
     config: "/etc/config/forkop",
@@ -84,20 +83,17 @@ function migrate_restored_config() {
     return migrated;
 }
 
-// The server ports open only once the configuration is known good.
+// Validate the configuration before changing the runtime.
 function validate() {
     try {
         validator.check_requirements();
-        server.prepare();
         validator.validate();
     }
     catch (e) {
         log("error", e.message);
         return false;
     }
-    server.remove_orphans();
     tailscale.remove_orphaned_states();
-    server.sync_firewall(false);
     return true;
 }
 
@@ -238,7 +234,6 @@ function stop_runtime(keep_watcher) {
 }
 
 function cleanup_failed_runtime(keep_watcher) {
-    server.sync_firewall(true);
     return stop_runtime(keep_watcher);
 }
 
@@ -375,9 +370,6 @@ function stop() {
         let active = health.sing_box_service_running() || nft_state.table_present(NFT_TABLE);
         if (active)
             log("info", "Stopping Forkop");
-        // The server ports close with the runtime. A reload keeps them: closing
-        // them in between would cost a second firewall reload.
-        server.sync_firewall(true);
         if (!common.write_file_atomic(paths.planned_stop, common.own_pid() + "\n"))
             log("warn", "Failed to mark the stop as planned");
         watch.stop_worker();
@@ -516,8 +508,6 @@ function reload_runtime(reason) {
     log("info", reload_announcement(reason, forced));
     if (!migrate_restored_config() || !validate())
         return reload_failed(false);
-    // After validation, which writes the defaults a new server needs, so this reload's own
-    // writing is not taken for somebody else's change.
     let fingerprint = config_fingerprint();
 
     if (!forkop_running()) {

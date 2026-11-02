@@ -670,17 +670,7 @@ export function createHarness(packageName = 'forkop') {
 
   const notifications = [];
 
-  const commands = {
-    generate_reality_keypair: () =>
-      Promise.resolve({
-        code: 0,
-        stdout: JSON.stringify({
-          success: true,
-          private_key: 'wIWKZmAoiFsYIPFCwG8FRPHKn0P6PLh0hbBjPfKgpU0',
-          public_key: 'SSw7I859PPdN4DQ7fxV9fobXM61Ms3mqZRlIY1aJvHQ',
-        }),
-      }),
-  };
+  const commands = {};
 
   const moduleGlobals = {
     form,

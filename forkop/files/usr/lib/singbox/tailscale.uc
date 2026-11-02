@@ -1,4 +1,4 @@
-// Where a Tailscale server or tunnel keeps its node key: its identity in the tailnet, which a
+// Where a Tailscale tunnel keeps its node key: its identity in the tailnet, which a
 // disabled one keeps and a removed one gives up.
 
 let fs = require("fs");
@@ -12,10 +12,6 @@ let paths = {
     state_root: "/etc/forkop/tailscale"
 };
 
-function server_state_directory(section_name) {
-    return paths.state_root + "/" + replace(common.as_string(section_name), /[^A-Za-z0-9_.-]/g, "_");
-}
-
 function tunnel_state_directory(section_name, tunnel_name) {
     return paths.state_root + "/" + common.as_string(section_name) + "-" + common.as_string(tunnel_name);
 }
@@ -27,9 +23,6 @@ function remove_orphaned_states() {
         return;
 
     let kept = {};
-    for (let server in uci.section_objects(CONFIG_NAME, "server"))
-        if (common.option(server, "protocol", "vless") == "tailscale")
-            kept[server_state_directory(server[".name"])] = true;
     for (let tunnel in uci.section_objects(CONFIG_NAME, "tunnel")) {
         kept[tunnel_state_directory(common.option(tunnel, "section", ""), tunnel[".name"])] = true;
         // A JSON tunnel may keep its state in a directory of the root it names itself.
@@ -43,8 +36,8 @@ function remove_orphaned_states() {
         if (kept[path] || fs.stat(path)?.type != "directory")
             continue;
         if (exec.ok([ "rm", "-rf", path ]))
-            exec.log("info", "Removed the Tailscale identity '" + entry + "' of a server or tunnel that no longer exists");
+            exec.log("info", "Removed the Tailscale identity '" + entry + "' of a tunnel that no longer exists");
     }
 }
 
-return { paths, server_state_directory, tunnel_state_directory, remove_orphaned_states };
+return { paths, tunnel_state_directory, remove_orphaned_states };

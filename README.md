@@ -10,13 +10,13 @@ Project: [Zagorsky17/LoKi](https://github.com/Zagorsky17/LoKi). Report bugs and 
 
 ## Development status
 
-As of November 1, 2026, this repository has no LoKi release. The installer obtains the application and patched core from **`Zagorsky17/LoKi`**, without falling back to Forkop releases. Installation needs package assets, `release.json`, `core-release.json` and `SHA256SUMS`; publishing source to `main` is not enough. The application requires the LoKi core build `1.14.4-r3` or newer; its technical package name remains `sing-box-forkop`. Router installation and upgrades have not been tested.
+As of November 2, 2026, this repository has no LoKi release. The installer obtains the application and patched core from **`Zagorsky17/LoKi`**, without falling back to Forkop releases. Installation needs package assets, `release.json`, `core-release.json` and `SHA256SUMS`; publishing source to `main` is not enough. The application requires the LoKi core build `1.14.4-r3` or newer; its technical package name remains `sing-box-forkop`. Router installation and upgrades have not been tested.
 
-The source still uses the technical names `forkop`, `luci-app-forkop` and `/etc/config/forkop`. Their coordinated replacement is planned together with configuration migration.
+The source still uses the technical names `forkop`, `luci-app-forkop` and `/etc/config/forkop`. Their coordinated replacement is planned. LoKi targets clean installation with its own configuration; migration from Forkop, Podkop or other applications is not supported. The inherited installer and legacy migrations still need reduction, and the required pre-install conflict check is not implemented yet.
 
 ## Planned scope
 
-LoKi will retain connection links, subscriptions, routing sections, DNS, monitoring and diagnostics. VPN servers, tunnels and migrations from Forkop 1.0.x are scheduled for removal; they are still present in the inherited source.
+LoKi will retain connection links, subscriptions, routing sections, DNS, monitoring and diagnostics. Hosting VPN/proxy servers on the router has been removed: there is no server tab, server listener generation, client profile issuance, server key generation or server diagnostics. Built-in DNS/TProxy listeners and outbound connections remain. Client tunnels and legacy migrations are still present and scheduled for removal.
 
 The target platforms are OpenWrt 24.10 and 25.12. Compatibility with stock sing-box packages and newer versions remains unverified. Current development uses the patched LoKi core in the `sing-box-forkop` package.
 

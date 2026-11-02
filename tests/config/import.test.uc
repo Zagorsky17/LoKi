@@ -206,4 +206,32 @@ t.test("the command line takes the session from the environment, never from its 
     t.eq(session.staged[1][".name"], "main");
 });
 
+t.test("staged unsupported server records cannot restore listeners or alter client links", () => {
+    let file = [
+        { ".name": "settings", ".type": "settings", config_version: "2.0.0", dns_server: [ "1.1.1.1" ], bootstrap_dns_server: [ "1.1.1.1" ] },
+        { ".name": "main", ".type": "section", action: "connection", enabled: "1" },
+        { ".name": "first", ".type": "connection_link", section: "main", name: "First", uri: "vless://test@127.0.0.1:443?security=reality&pbk=public-test&sid=00&sni=example.com&type=ws&path=%2Ftest#First", order: "0" },
+        { ".name": "second", ".type": "connection_link", section: "main", name: "Second", uri: "socks://user:synthetic-password@127.0.0.1:1080#Second", order: "1" },
+        { ".name": "sub", ".type": "subscription_url", section: "main", tag: "Provider", url: "https://example.com/sub", subscription_update_enabled: "0" },
+        { ".name": "injected", ".type": "server", enabled: "1", protocol: "json_inbound", inbound_json: "{\"type\":\"mixed\",\"tag\":\"injected\",\"listen\":\"0.0.0.0\",\"listen_port\":18443}", routing_mode: "rules" }
+    ];
+    let session = setup(file, current());
+    stub.commands([ [ () => true, {} ] ]);
+    t.eq(imports.check(FILE, SESSION).success, true);
+    t.eq(imports.stage(FILE, SESSION), { success: true });
+    let commands = stub.command_lines();
+    stub.restore();
+    t.eq(commands, [], "staging cannot run server commands");
+    uci.__seed("forkop", session.staged);
+    require("core.uci").reset();
+    let generator = require("singbox.generator");
+    let config = generator.build({ service_address: "127.0.0.1" });
+    t.ok(generator.runnable());
+    t.excludes(map(config.inbounds, (item) => item.tag), "injected");
+    t.eq(config.endpoints, []);
+    let clients = filter(config.outbounds, (item) => item.type == "parser");
+    t.eq(map(clients, (item) => item.link), [ file[2].uri, file[3].uri ]);
+    t.eq(map(config.providers, (item) => [ item.tag, item.url ]), [ [ "main/Provider", "https://example.com/sub" ] ]);
+});
+
 t.done();

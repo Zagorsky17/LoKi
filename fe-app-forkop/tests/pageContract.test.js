@@ -10,7 +10,6 @@ import {
   FAKEIP_CHECK_DOMAIN,
   RESERVED_RUNTIME_TAGS,
 } from '../src/constants';
-import { RESERVED_PORTS } from '../src/forkop/tabs/servers/constants';
 import {
   groupTypeChoices,
   providerTypeChoices,
@@ -34,12 +33,6 @@ const contract = JSON.parse(
 );
 
 describe('the tables the page carries', () => {
-  it('reserve the ports Forkop binds', () => {
-    expect(
-      RESERVED_PORTS.map(([port]) => Number(port)).sort((a, b) => a - b),
-    ).toEqual(contract.reserved_ports);
-  });
-
   it('reserve the tags Forkop uses', () => {
     expect([...RESERVED_RUNTIME_TAGS].sort()).toEqual(contract.reserved_tags);
   });
@@ -130,19 +123,12 @@ describe('a password field', () => {
     harness.uci.add('forkop', 'settings', 'settings');
     harness.uci.add('forkop', 'section', 'section_probe');
     harness.uci.set('forkop', 'section_probe', 'action', 'connection');
-    harness.uci.add('forkop', 'server', 'server_probe');
-    harness.uci.set('forkop', 'server_probe', 'protocol', 'vless');
 
     const sections = new harness.form.Map('forkop').section(
       harness.form.GridSection,
       'section',
     );
     view.createSectionContent(sections);
-    const servers = new harness.form.Map('forkop').section(
-      harness.form.GridSection,
-      'server',
-    );
-    view.createServerContent(servers);
     const settings = new harness.form.Map('forkop').section(
       harness.form.NamedSection,
       'settings',
@@ -151,22 +137,26 @@ describe('a password field', () => {
 
     const found = passwordFields([
       ...sections.children,
-      ...servers.children,
       ...settings.children,
     ]).map((field) => ({ field, typeName: '' }));
     for (const option of sections.children) {
       await dialogPasswordFields('section_probe', option, found);
-    }
-    for (const option of servers.children) {
-      await dialogPasswordFields('server_probe', option, found);
     }
     return found;
   }
 
   it('is one the contract names', async () => {
     const found = await renderedPasswordFields();
+    // The shared mask contract still protects credentials of retired server records.
+    const retired = [
+      'hysteria2_obfs_password',
+      'reality_private_key',
+      'shadowsocks_psk',
+    ];
     expect([...new Set(found.map(({ field }) => field))].sort()).toEqual(
-      Object.keys(contract.password_fields).sort(),
+      Object.keys(contract.password_fields)
+        .filter((field) => !retired.includes(field))
+        .sort(),
     );
   });
 

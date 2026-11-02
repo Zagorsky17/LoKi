@@ -7,7 +7,6 @@ let stub = require("stub");
 let fs = require("fs");
 let repo = require("repo");
 let validator = require("config.validator");
-let server = require("server.service");
 let generator = require("singbox.generator");
 let runtime = require("singbox.runtime");
 let nft = require("nft.apply");
@@ -23,7 +22,7 @@ let world = null;
 let real_sleep = global.sleep;
 
 const CHANGED_TABLE = "table inet ForkopTable\nadd rule inet ForkopTable mangle jump x\n";
-const NOTHING_TO_RUN = "[warn] Forkop has nothing to run: no section with servers and no VPN server is enabled. Set up a section or a VPN server, then start Forkop";
+const NOTHING_TO_RUN = "[warn] Forkop has nothing to run: no section with connections is enabled. Set up a section, then start Forkop";
 
 function event(name) {
     push(world.events, name);
@@ -69,9 +68,6 @@ function reset(options) {
     };
     validator.check_requirements = () => { if (world.requirements_fail) die("requirements"); };
     validator.validate = () => { if (world.invalid) die("Section 'x' is broken. Aborted."); };
-    server.prepare = () => {};
-    server.remove_orphans = () => { world.orphans_removed = true; };
-    server.sync_firewall = (clear) => event(clear ? "firewall closed" : "firewall opened");
     generator.runnable = () => !world.nothing_to_run;
     runtime.configure_service = () => {};
     runtime.write_config = (checked) => {
@@ -225,7 +221,7 @@ t.test("a start answers only once sing-box is ready, then turns the table on, th
     reset();
     let result = run(() => lifecycle.start());
     t.eq(result.result, 0);
-    t.eq(world.events, [ "firewall opened", "config checked", "sing-box started", "nft applied", "watcher started", "rule-set worker started" ]);
+    t.eq(world.events, [ "config checked", "sing-box started", "nft applied", "watcher started", "rule-set worker started" ]);
     t.eq(fs.readfile(lifecycle.paths.applied_nft), world.script, "the applied table is recorded");
     t.eq(world.logs, [ "[info] Starting Forkop", "[info] Forkop started" ]);
     t.eq(result.stdout, "", "a start prints nothing");
@@ -234,7 +230,7 @@ t.test("a start answers only once sing-box is ready, then turns the table on, th
 t.test("what the core sends bound to a device is routed from before it starts until it stops", () => {
     reset({ bound: [ "eth1", "wwan0" ] });
     t.eq(run(() => lifecycle.start()).result, 0);
-    t.eq(world.events, [ "firewall opened", "config checked", "bound to eth1 wwan0", "sing-box started", "nft applied", "watcher started",
+    t.eq(world.events, [ "config checked", "bound to eth1 wwan0", "sing-box started", "nft applied", "watcher started",
         "rule-set worker started" ]);
     run(() => lifecycle.stop());
     t.contains(world.events, "bound to nothing");
@@ -310,7 +306,6 @@ t.test("a configuration the validator refuses stops a start before anything runs
     let result = run(() => lifecycle.start());
     t.eq(result.result, 1);
     t.eq(filter(world.events, (e) => e == "sing-box started" || e == "nft applied"), []);
-    t.ok(!world.orphans_removed, "a refused configuration loses nothing");
     t.eq(result.stderr, "Section 'x' is broken. Aborted.\n", "the refusal is said once");
     t.eq(result.stdout, "");
 });
@@ -322,7 +317,6 @@ t.test("a start that fails after sing-box came up takes everything down again", 
     t.eq(world.logs, [ "[info] Starting Forkop", "[error] nft refused the ruleset: Error: broken" ],
         "the reason, once, and nothing about the cleanup behind it");
     t.contains(world.events, "sing-box stopped");
-    t.contains(world.events, "firewall closed");
     t.eq(world.pid, 0);
 });
 
@@ -363,14 +357,14 @@ t.test("each failed step of a start names itself in the log as an error", () => 
 t.test("a reload with nothing changed touches nothing", () => {
     let result = reloaded();
     t.eq(result.result, 0);
-    t.eq(world.events, [ "firewall opened", "config written" ]);
+    t.eq(world.events, [ "config written" ]);
     t.contains(world.logs, "[info] Configuration already applied; nothing changed");
 });
 
 t.test("a changed sing-box configuration is reloaded with the capture paused until the core is ready again, and the worker kept", () => {
     let result = reloaded({ config_changed: true });
     t.eq(result.result, 0);
-    t.eq(world.events, [ "firewall opened", "config written", "capture paused", "sing-box reloaded", "reloaded with the capture paused",
+    t.eq(world.events, [ "config written", "capture paused", "sing-box reloaded", "reloaded with the capture paused",
         "capture resumed" ]);
     t.contains(world.logs, "[info] Configuration applied");
     t.ok(world.slept > 0, "the reload waited out its window");
@@ -379,25 +373,25 @@ t.test("a changed sing-box configuration is reloaded with the capture paused unt
 t.test("a change to the providers a section reads alone starts the rule-set worker again, and is applied", () => {
     let result = reloaded({ worker_stale: true });
     t.eq(result.result, 0);
-    t.eq(world.events, [ "firewall opened", "config written", "rule-set worker started" ]);
+    t.eq(world.events, [ "config written", "rule-set worker started" ]);
     t.contains(world.logs, "[info] Configuration applied");
 });
 
 t.test("a changed table is rebuilt with the rule-set worker stopped around it, and sing-box is left alone", () => {
     let result = reloaded({ script: CHANGED_TABLE });
     t.eq(result.result, 0);
-    t.eq(world.events, [ "firewall opened", "config written", "rule-set worker stopped", "nft applied", "rule-set worker started" ]);
+    t.eq(world.events, [ "config written", "rule-set worker stopped", "nft applied", "rule-set worker started" ]);
     t.eq(world.logs, [ "[info] Applying configuration", "[info] Configuration applied" ]);
 });
 
 t.test("a reload routes the devices the new configuration binds before the core reads it", () => {
     let result = reloaded({ config_changed: true, bound: [ "eth1", "wwan0" ], bound_rules: [ "eth1", "gone0" ] });
     t.eq(result.result, 0);
-    t.eq(world.events, [ "firewall opened", "config written", "bound to eth1 wwan0", "capture paused", "sing-box reloaded",
+    t.eq(world.events, [ "config written", "bound to eth1 wwan0", "capture paused", "sing-box reloaded",
         "reloaded with the capture paused", "capture resumed" ]);
 
     result = reloaded({ bound: [ "wwan0" ], bound_rules: [ "wwan0" ] });
-    t.eq(world.events, [ "firewall opened", "config written", "bound to wwan0" ], "an unchanged configuration has them checked");
+    t.eq(world.events, [ "config written", "bound to wwan0" ], "an unchanged configuration has them checked");
     t.contains(world.logs, "[info] Configuration already applied; nothing changed");
 
     result = reloaded({ config_changed: true, bound: [ "wwan0" ], bound_rules_fail: true });
@@ -410,7 +404,7 @@ t.test("a reload routes the devices the new configuration binds before the core 
 t.test("a configuration refused while it is generated leaves the running runtime and its table alone, and is said once", () => {
     let result = reloaded({ config_fails: true, config_changed: true, script: CHANGED_TABLE });
     t.eq(result.result, 1);
-    t.eq(world.events, [ "firewall opened", "config written" ]);
+    t.eq(world.events, [ "config written" ]);
     t.eq(fs.readfile(lifecycle.paths.applied_nft), "table inet ForkopTable\n", "the table applied last is still the live one");
     t.eq(failures_logged(), [ "[error] Failed to generate sing-box configuration: broken" ]);
     t.eq(result.stderr, "Failed to generate sing-box configuration: broken\n");
@@ -420,19 +414,19 @@ t.test("a configuration refused while it is generated leaves the running runtime
 t.test("a table that cannot be built is said in one line and touches nothing", () => {
     let result = reloaded({ build_fails: true, config_changed: true });
     t.eq(result.result, 1);
-    t.eq(world.events, [ "firewall opened" ]);
+    t.eq(world.events, [ ]);
     t.eq(failures_logged(), [ "[error] Failed to build the nftables rules: duplicate nft section: x" ]);
 });
 
 t.test("a reload asked for by hand reloads sing-box even when nothing changed, and keeps the worker", () => {
     let result = reloaded({}, "");
     t.eq(result.result, 0);
-    t.eq(world.events, [ "firewall opened", "config written", "capture paused", "sing-box reloaded", "reloaded with the capture paused", "capture resumed" ]);
+    t.eq(world.events, [ "config written", "capture paused", "sing-box reloaded", "reloaded with the capture paused", "capture resumed" ]);
 });
 
 t.test("a queued reload applies what changed without forcing sing-box", () => {
     let result = reloaded({}, "pending");
-    t.eq(world.events, [ "firewall opened", "config written" ]);
+    t.eq(world.events, [ "config written" ]);
 });
 
 t.test("each failed step of a reload after the runtime was touched names itself once and takes the runtime down", () => {
@@ -484,7 +478,7 @@ t.test("a stop marks itself planned, closes the ports and takes everything down"
     running();
     let result = run(() => lifecycle.stop());
     t.eq(result.result, 0);
-    t.eq(world.events, [ "firewall closed", "watcher stopped", "rule-set worker stopped", "nft table deleted", "sing-box stopped" ]);
+    t.eq(world.events, [ "watcher stopped", "rule-set worker stopped", "nft table deleted", "sing-box stopped" ]);
     t.ok(fs.stat(lifecycle.paths.planned_stop) != null);
     t.ok(fs.stat(lifecycle.paths.applied_nft) == null, "no table is recorded once it is gone");
 });
@@ -541,7 +535,6 @@ t.test("a crash cleanup leaves a planned stop and a running runtime alone, and t
     t.eq(run(() => lifecycle.crash_cleanup("137")).result, 0);
     t.contains(world.logs, "[error] sing-box stopped after repeated crashes (exit code 137); Forkop is stopped");
     t.contains(world.events, "nft table deleted");
-    t.contains(world.events, "firewall closed");
     t.eq(length(filter(world.events, (e) => e == "watcher stopped")), 1, "the watcher runs the cleanup and is stopped once it finished");
 });
 
@@ -737,6 +730,30 @@ t.test("autostart is the rc.d link and nothing else", () => {
     fs.symlink("../init.d/forkop", lifecycle.paths.rc_dir + "/K99forkop");
     t.eq(lifecycle.disable(), 0);
     t.ok(fs.lstat(lifecycle.paths.rc_dir + "/S99forkop") == null && fs.lstat(lifecycle.paths.rc_dir + "/K99forkop") == null);
+});
+
+t.test("repeated service cycles cannot prepare servers or open their firewall ports", () => {
+    let uci = require("uci");
+    reset();
+    fixture.seed({ settings: { config_version: "2.0.0" }, server: [
+        { ".name": "server-private-name", enabled: "1", protocol: "vless", security: "reality", open_firewall: "1", listen_port: "18443" },
+        { ".name": "json-private-name", enabled: "1", protocol: "json_inbound", inbound_json: "invalid-private-json" }
+    ] });
+    let result = stub.capture(() => {
+        let statuses = [];
+        for (let cycle = 0; cycle < 2; cycle++) {
+            push(statuses, lifecycle.start());
+            push(statuses, lifecycle.reload("manual"));
+            push(statuses, lifecycle.stop());
+        }
+        return statuses;
+    });
+    let commands = stub.command_lines();
+    finish();
+    t.eq(result.result, [ 0, 0, 0, 0, 0, 0 ]);
+    t.eq(filter(commands, (line) => match(line, /firewall|reality-keypair|server-certs|forkop-servers/) != null), []);
+    t.eq(uci.__commits(), [], "server defaults are never written");
+    t.excludes(join("\n", world.logs), "private-");
 });
 
 t.done();

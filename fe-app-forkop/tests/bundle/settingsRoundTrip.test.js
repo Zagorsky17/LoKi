@@ -19,7 +19,6 @@ const SAMPLE_VALUE = {
   fallback_level: 'level1',
   tunnel: 'tunnel1',
   tunnel_peer: 'peer1',
-  server_client: 'client1',
 };
 const TYPE_BY_OPTION = { peer_ids: 'tunnel_peer' };
 
@@ -110,40 +109,25 @@ describe('a child item dialog', () => {
     harness.uci.set('forkop', 'section_probe', 'action', 'connection');
     harness.uci.set('forkop', 'section_probe', 'enabled', '1');
     harness.uci.set('forkop', 'section_probe', 'label', 'Section #1');
-    harness.uci.add('forkop', 'server', 'server_probe');
-    harness.uci.set('forkop', 'server_probe', 'protocol', 'vless');
-    harness.uci.set('forkop', 'server_probe', 'name', 'srv1');
 
     const map = new harness.form.Map('forkop');
     const connection = map.section(harness.form.GridSection, 'section');
     view.createSectionContent(connection);
 
-    const serverMap = new harness.form.Map('forkop');
-    const server = serverMap.section(harness.form.GridSection, 'server');
-    view.createServerContent(server);
-
-    const found = [...connection.children, ...server.children]
+    const found = [...connection.children]
       .filter(
         (option) =>
           typeof option.renderItemSettingsModal === 'function' &&
           (option.childType || TYPE_BY_OPTION[option.option]),
       )
       .map((option) => option.option);
-    for (const expected of [
-      'subscription_url',
-      'interfaces',
-      'urltest',
-      'clients',
-    ]) {
+    for (const expected of ['subscription_url', 'interfaces', 'urltest']) {
       expect(found, `the ${expected} dialog was not found`).toContain(expected);
     }
 
     const problems = [];
     for (const option of connection.children) {
       await checkDialog(problems, 'section_probe', option);
-    }
-    for (const option of server.children) {
-      await checkDialog(problems, 'server_probe', option);
     }
 
     expect(problems.join('\n')).toBe('');
@@ -184,27 +168,6 @@ function buildSection(action) {
   view.configureSectionSection(grid);
   delete grid.load;
   view.createSectionContent(grid);
-  return { section: grid, sid: 'probe' };
-}
-
-function buildServer(protocol) {
-  const view = harness.bundle;
-  harness.uci.add('forkop', 'server', 'probe');
-  Object.assign(harness.store.get('probe'), {
-    protocol,
-    enabled: '1',
-    label: 'Probe',
-  });
-  harness.uci.add('forkop', 'server_client', 'client_probe');
-  Object.assign(harness.store.get('client_probe'), {
-    server: 'probe',
-    name: 'client-1',
-    password: 'secret',
-    uuid: '3d0f9c1a-9c1a-4d0f-8c1a-9c1a3d0f9c1a',
-  });
-  const map = new harness.form.Map('forkop');
-  const grid = map.section(harness.form.GridSection, 'server');
-  view.createServerContent(grid);
   return { section: grid, sid: 'probe' };
 }
 
@@ -264,24 +227,16 @@ const choicesOf = async (build, seed, name) => {
 };
 
 const ACTIONS = await choicesOf(buildSection, 'connection', 'action');
-const PROTOCOLS = await choicesOf(buildServer, 'mixed', 'protocol');
 
-it('the action and protocol dropdowns offer what they used to', () => {
+it('the action dropdown offers the remaining routing actions', () => {
   expect(ACTIONS.length).toBeGreaterThanOrEqual(4);
-  expect(PROTOCOLS.length).toBeGreaterThanOrEqual(10);
 });
 
 describe.each([
   ['a section', ACTIONS, 'action'],
-  ['a server', PROTOCOLS, 'protocol'],
   ['the Settings page', [''], null],
 ])('%s', (label, states, selector) => {
-  const build =
-    label === 'a section'
-      ? buildSection
-      : label === 'a server'
-        ? buildServer
-        : buildSettings;
+  const build = label === 'a section' ? buildSection : buildSettings;
 
   it.each(states)(
     'writes nothing when a form it filled in itself is saved again (%s)',

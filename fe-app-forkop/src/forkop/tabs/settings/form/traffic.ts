@@ -5,8 +5,7 @@ import {
 } from '../../../../helpers/getClashApiUrl';
 import { required } from '../../../cbi/required';
 import { currentOptionValue } from '../../sections/subscriptions/model';
-import { addGenerateButton } from '../../servers/controls';
-import { randomHex } from '../../servers/credentials';
+import { addGenerateButton, randomHex } from '../../../cbi/generate';
 
 export function addTrafficOptions(section: CBISection) {
   let o = section.option(form.Flag, 'enable_yacd', _('Enable YACD'));

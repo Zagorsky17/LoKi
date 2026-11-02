@@ -398,12 +398,43 @@ export function getClashApiProxies() {
   );
 }
 
-export function getClashApiTailscale() {
-  return requestClashApi<ClashAPI.Tailscale>(
+export async function getClashApiTailscale(): Promise<
+  Forkop.MethodResponse<ClashAPI.Tailscale>
+> {
+  const response = await requestClashApi<ClashAPI.Tailscale>(
     '/tailscale',
     undefined,
     CLASH_API_FETCH_TIMEOUT_MS,
   );
+  if (!response.success) return response;
+  const strings = (value: unknown) =>
+    Array.isArray(value) && value.every((item) => typeof item === 'string');
+  const endpoints = response.data?.endpoints;
+  if (
+    !Array.isArray(endpoints) ||
+    !endpoints.every(
+      (endpoint) =>
+        endpoint != null &&
+        typeof endpoint.tag === 'string' &&
+        strings(endpoint.addresses) &&
+        strings(endpoint.health) &&
+        Array.isArray(endpoint.routes) &&
+        endpoint.routes.every(
+          (route) => route != null && typeof route.prefix === 'string',
+        ) &&
+        Array.isArray(endpoint.peers) &&
+        endpoint.peers.every(
+          (peer) =>
+            peer != null &&
+            typeof peer.name === 'string' &&
+            strings(peer.addresses) &&
+            (peer.subnets == null || strings(peer.subnets)),
+        ),
+    )
+  ) {
+    return { success: false, error: _('Invalid Clash API response') };
+  }
+  return response;
 }
 
 const TAILSCALE_PING_TIMEOUT_MS = '5000';

@@ -17,14 +17,10 @@ let runtime_rulesets = require("singbox.rulesets");
 let singbox_constants = require("singbox.constants");
 let features = require("singbox.features");
 let config_status = require("singbox.config_status");
-let runtime_servers = require("singbox.servers");
 let connections = require("config.connections");
 let health = require("service.health");
 let mask = require("diagnostics.mask");
-let firewall = require("diagnostics.firewall");
-let server_rules = require("diagnostics.inbounds");
 let conflicts = require("diagnostics.conflicts");
-let clash_api = require("singbox.clash_api");
 
 const CONFIG_NAME = constants.FORKOP_CONFIG_NAME;
 const STABLE_MIN_AGE = 2;
@@ -321,142 +317,4 @@ function traffic() {
     };
 }
 
-function wan_addresses() {
-    let result = [];
-    let add = (address) => { if (address != "" && index(result, address) < 0) push(result, address); };
-
-    for (let name in [ "wan", "wwan" ]) {
-        let interface_status = common.parse_json(exec.output([ "ubus", "-S", "call", "network.interface." + name, "status" ]));
-        for (let key in [ "ipv4-address", "ipv6-address" ])
-            for (let item in interface_status?.[key] ?? [])
-                add(common.as_string(item?.address));
-    }
-
-    // The device the default routes leave through, so a WAN not called wan is found.
-    for (let family in [ [ "-4", /(^|\n)[ \t]*inet[ \t]+([0-9.]+)\//g ], [ "-6", /(^|\n)[ \t]*inet6[ \t]+([^\/ \t]+)\//g ] ]) {
-        let device = match(output([ "ip", family[0], "route", "show", "default" ]), /[ \t]dev[ \t]+([^ \t\n]+)/);
-        if (device == null)
-            continue;
-        let argv = [ "ip", family[0], "addr", "show", "dev", device[1] ];
-        if (family[0] == "-6")
-            push(argv, "scope", "global");
-        for (let found in match(output(argv), family[1]) ?? [])
-            add(found[2]);
-    }
-    return join(" ", result);
-}
-
-function resolve_host(host) {
-    host = replace(host, /^\[(.*)\]$/, "$1");
-    if (host == "" || core_ip.valid_ip(host))
-        return host;
-    let reply = resolv.query([ host ], { type: [ "A", "AAAA" ], timeout: 2000, retries: 1 });
-    return join(" ", sort(addresses(reply, [ "A", "AAAA" ])));
-}
-
-function firewall_opens(port, transports, input_chain) {
-    return firewall.required_protocols_open(uci.section_objects("firewall", "rule"), port, transports) ||
-        firewall.forkop_accepts_port(input_chain, singbox_constants.SERVER_FIREWALL_COMMENT, port, transports);
-}
-
-// The core's Tailscale endpoints by tag; none when the core cannot be asked.
-function tailscale_endpoints() {
-    let reply;
-    try {
-        reply = clash_api.request("GET", "/tailscale", "");
-    }
-    catch (e) {
-        return {};
-    }
-    let result = {};
-    for (let endpoint in common.parse_json(reply.status == 200 ? reply.body : "")?.endpoints ?? [])
-        result[endpoint?.tag] = endpoint;
-    return result;
-}
-
-// A Tailscale server dials out and listens on nothing, so it is judged by its state in the tailnet.
-function tailscale_item(label, endpoint) {
-    let running = endpoint?.state == "Running";
-    let key_expiry = int(endpoint?.keyExpiry ?? 0);
-    return {
-        label,
-        protocol: "tailscale",
-        runtime: endpoint != null,
-        state: endpoint?.state ?? "",
-        connected: endpoint?.connected === true,
-        name: endpoint?.name ?? "",
-        exit_node_pending: running && endpoint.advertisesExitNode === true && endpoint.exitNodeApproved !== true,
-        pending_routes: join(" ", map(filter(endpoint?.routes ?? [], (route) => route?.approved !== true), (route) => route.prefix)),
-        key_expired: key_expiry > 0 && key_expiry < time()
-    };
-}
-
-// A router whose only WAN address is the provider's shared one is behind its NAT, where no port
-// can be opened.
-function servers() {
-    let config = runtime_config();
-    let wan = wan_addresses();
-    let wan_public = length(filter(common.words(wan), (address) => core_ip.valid_public_ip(address))) > 0;
-    let behind_cgnat = !wan_public && length(filter(common.words(wan), (address) => core_ip.prefix_contains(CGNAT_RANGE, address))) > 0;
-    let listeners = output([ "netstat", "-ln" ]);
-    let owners = output([ "netstat", "-lnp" ]);
-    let input_chain = null;
-    let tailscale = null;
-    let items = [];
-
-    for (let section in uci.section_objects(CONFIG_NAME, "server")) {
-        let protocol = common.option(section, "protocol", "vless");
-        if (!common.bool_option(section, "enabled", false))
-            continue;
-
-        let label = connections.server_display_name(section);
-        if (protocol == "tailscale") {
-            tailscale ??= tailscale_endpoints();
-            push(items, tailscale_item(label, tailscale[label]));
-            continue;
-        }
-        let runtime = config_status.summary(config, server_rules.runtime_kind(protocol), label);
-        let declared = protocol == "json_inbound";
-        let listen = declared ? (runtime.listen || "::") : common.option(section, "listen", "::");
-        let port = declared ? int(runtime.listen_port ?? 0) : int(common.option(section, "listen_port", "0"));
-        let transports = declared ? [ "tcp", "udp" ] : runtime_servers.listen_transports(section);
-        let open = filter(transports, (proto) => port > 0 && netstat.port_listening(listeners, listen, port, proto));
-        let listening = declared ? length(open) > 0 : length(open) == length(transports);
-
-        // A port another program holds reads as listening too.
-        let holders = [];
-        for (let proto in transports)
-            push(holders, ...netstat.port_conflict_owners(owners, listen, port, proto));
-
-        let exposed = !declared && server_rules.listen_requires_firewall(listen, wan);
-        let firewall_open = true;
-        if (exposed) {
-            input_chain ??= output([ "nft", "list", "chain", "inet", "fw4", "input" ]);
-            firewall_open = firewall_opens(port, join(" ", transports), input_chain);
-        }
-
-        let public_host = declared ? "" : common.option(section, "public_host", "");
-        let public_ips = public_host == "" ? "" : resolve_host(public_host);
-        let host = server_rules.public_host_flags(public_host, public_ips, wan, wan_public ? 1 : 0);
-        push(items, {
-            label,
-            protocol,
-            port,
-            transports: join(" ", declared && listening ? open : transports),
-            runtime: runtime.exists == 1,
-            listening,
-            owners: join(" ", netstat.sorted_unique(holders)),
-            exposed,
-            open_firewall: common.bool_option(section, "open_firewall", true),
-            firewall_open,
-            public_host,
-            public_ips,
-            resolved: host.resolved,
-            public: host.public_ip,
-            matches_wan: host.matches_wan
-        });
-    }
-    return { wan, behind_cgnat, items };
-}
-
-return { paths, last_error, core_log, list_overlaps, core, service, dns, traffic, servers };
+return { paths, last_error, core_log, list_overlaps, core, service, dns, traffic };

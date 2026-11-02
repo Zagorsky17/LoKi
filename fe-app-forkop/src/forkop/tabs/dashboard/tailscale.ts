@@ -5,6 +5,7 @@ import {
   renderRotateCcwIcon24,
 } from '../../../icons';
 import { latencyClassName } from '../../helpers/latencyClassName';
+import { validateUrl } from '../../../validators/validateUrl';
 import { CustomForkopMethods } from '../../methods';
 import { ClashAPI } from '../../types';
 import {
@@ -12,9 +13,7 @@ import {
   iconSvg,
   injectDetailsStyles,
   renderCloseRow,
-} from './details';
-import { option } from './formValues';
-import { getServerName } from './protocols';
+} from './tailscaleDetails';
 
 const REFRESH_INTERVAL_MS = 5000;
 const STYLE_ID = 'forkop-tailscale-styles';
@@ -113,7 +112,8 @@ function renderStatus(endpoint: ClashAPI.TailscaleEndpoint) {
     case 'NeedsLogin':
       return [
         text('warn', _('Waiting for sign-in')),
-        ...(endpoint.authURL
+        ...(typeof endpoint.authURL === 'string' &&
+        validateUrl(endpoint.authURL) === true
           ? [
               E(
                 'a',
@@ -460,17 +460,4 @@ export function showTailscaleDetailsModal(
   };
   refresh();
   timer = window.setInterval(refresh, REFRESH_INTERVAL_MS);
-}
-
-export function showTailscaleServerDetailsModal(sectionId: string) {
-  const tag = getServerName(sectionId);
-  showTailscaleDetailsModal(
-    _('Server details: %s').format(tag),
-    tag,
-    option(sectionId, 'enabled') === '0'
-      ? _('The server is disabled.')
-      : _(
-          'The server is not running yet. Apply the settings, or start Forkop.',
-        ),
-  );
 }

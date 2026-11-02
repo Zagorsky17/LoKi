@@ -140,15 +140,15 @@ t.test("the state tells what the service is apart from what is being done to it"
     t.eq(keys(state.actions), [ "service" ]);
 });
 
-t.test("the state counts the servers and sections that run, as the generator decides it", () => {
+t.test("the state counts only the remaining routing sections", () => {
     fresh();
     fixture.seed({
         server: [ { ".name": "a", enabled: "1" }, { ".name": "b", enabled: "0" }, { ".name": "never_saved" } ],
         section: [ { ".name": "s", action: "connection" }, { ".name": "t", action: "block", enabled: "1" }, { ".name": "off", enabled: "0" } ]
     });
-    t.eq(ui.current_state().capabilities, { server_inbounds_enabled_count: 1, sections_enabled_count: 2 });
+    t.eq(ui.current_state().capabilities, { sections_enabled_count: 2 });
     fixture.seed({ server: [ { ".name": "a", enabled: "1" } ] });
-    t.eq(ui.current_state().capabilities, { server_inbounds_enabled_count: 1, sections_enabled_count: 0 }, "a VPN server alone");
+    t.eq(ui.current_state().capabilities, { sections_enabled_count: 0 }, "unsupported server records add no capability");
 });
 
 t.test("while the installer runs the service is busy with it and takes no action of the page", () => {

@@ -38,8 +38,6 @@ beforeEach(() => {
     public_key: WG_PUB,
     allowed_ips: ['0.0.0.0/0'],
   });
-  add('server', 'srv', { protocol: 'vless', label: 'Home VPN' });
-  add('server_client', 'cl1', { server: 'srv', name: 'alice' });
   add('settings', 'settings', {});
 });
 
@@ -59,7 +57,6 @@ async function everyForm() {
   const sections = grid('section', (s) =>
     harness.bundle.createSectionContent(s),
   );
-  const servers = grid('server', (s) => harness.bundle.createServerContent(s));
   const settingsMap = new harness.form.Map('forkop');
   const settings = settingsMap.section(harness.form.TypedSection, 'settings');
   settings.cfgsections = () => ['settings'];
@@ -70,7 +67,6 @@ async function everyForm() {
   const group = await open(option(sections, 'fallback_group'), 'sec', 'grp1');
   return {
     sections,
-    servers,
     settings,
     link: fields(
       await open(option(sections, 'connection_link'), 'sec', 'link1'),
@@ -90,7 +86,6 @@ async function everyForm() {
     peer: fields(
       await open(option(fields(tunnel), 'peer_ids'), 'tun1', 'peer1'),
     ),
-    client: fields(await open(option(servers, 'clients'), 'srv', 'cl1')),
   };
 }
 
@@ -129,18 +124,13 @@ describe('a field that must not stay empty', () => {
     ['peer', 'port'],
     ['peer', 'public_key'],
     ['peer', 'allowed_ips'],
-    ['servers', 'label'],
-    ['servers', 'listen_port'],
-    ['servers', 'public_host'],
-    ['client', 'name'],
     ['settings', 'dns_server'],
     ['settings', 'bootstrap_dns_server'],
     ['settings', 'dns_rewrite_ttl'],
   ])('%s %s says it is required', async (form, name) => {
     const forms = await everyForm();
     const field = option(forms[form], name);
-    const id =
-      form === 'sections' ? 'sec' : form === 'servers' ? 'srv' : 'settings';
+    const id = form === 'sections' ? 'sec' : 'settings';
     field.formvalue = () => [];
 
     expect(field.validate(id, '')).toBe('Required');

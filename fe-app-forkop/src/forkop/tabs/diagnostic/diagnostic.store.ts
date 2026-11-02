@@ -6,7 +6,6 @@ import {
 import { IDiagnosticsChecksStoreItem, StoreType } from '../../services';
 
 export interface DiagnosticsCheckOptions {
-  includeServers?: boolean;
   includeSections?: boolean;
 }
 
@@ -25,15 +24,11 @@ export function createDiagnosticCheck(
   };
 }
 
-// The servers check is listed only for a configuration that has a server, the sections check
-// unless it has no section.
+// List the sections check unless the configuration has no sections.
 export function diagnosticsCheckCodes(options: DiagnosticsCheckOptions = {}) {
   return DIAGNOSTICS_CHECKS_ORDER.filter(
     (code) =>
-      (code !== DIAGNOSTICS_CHECKS.SERVERS ||
-        options.includeServers === true) &&
-      (code !== DIAGNOSTICS_CHECKS.SECTIONS ||
-        options.includeSections !== false),
+      code !== DIAGNOSTICS_CHECKS.SECTIONS || options.includeSections !== false,
   );
 }
 
@@ -69,7 +64,6 @@ export const initialDiagnosticStore: Pick<
     luci_app_version: 'loading',
     sing_box_version: 'loading',
     sing_box_variant: '',
-    server_inbounds_enabled_count: -1,
     sections_enabled_count: -1,
     openwrt_version: 'loading',
     device_model: 'loading',

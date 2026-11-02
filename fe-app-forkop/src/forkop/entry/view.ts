@@ -12,11 +12,6 @@ import {
   configureSectionSection,
   createSectionContent,
 } from '../tabs/sections';
-import {
-  configureServerSection,
-  createServerContent,
-  prepareAddedServer,
-} from '../tabs/servers';
 import { createSettingsContent } from '../tabs/settings';
 import { configureGridSection } from './gridSection';
 import { createPageStatus } from './pageStatus';
@@ -78,22 +73,6 @@ export const ForkopView = {
     };
     configureSectionSection(rulesSection);
     createSectionContent(rulesSection);
-
-    const serverSection = forkopMap.section(
-      form.GridSection,
-      'server',
-      _('VPN server'),
-      _('The router itself becomes a proxy server for your devices'),
-    );
-    configureGridSection(
-      serverSection,
-      'server',
-      _('Server'),
-      _('Add a server inbound'),
-      prepareAddedServer,
-    );
-    configureServerSection(serverSection);
-    createServerContent(serverSection);
 
     const settingsSection = forkopMap.section(
       form.TypedSection,

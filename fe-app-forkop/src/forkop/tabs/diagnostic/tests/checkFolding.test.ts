@@ -27,7 +27,7 @@ const mocks = vi.hoisted(() => {
     renderStub: () => ({}),
     uiState: {
       service: {},
-      capabilities: { server_inbounds_enabled_count: 0 },
+      capabilities: {},
       actions: { service: [] },
     } as unknown as Forkop.UiState,
   };
@@ -71,7 +71,6 @@ for (const [module, runner] of [
   ['dns', 'runDnsCheck'],
   ['traffic', 'runTrafficCheck'],
   ['sections', 'runSectionsCheck'],
-  ['servers', 'runServersCheck'],
 ]) {
   vi.doMock(`../checks/${module}`, () => ({ [runner]: async () => passed }));
 }

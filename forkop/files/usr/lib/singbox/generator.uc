@@ -6,7 +6,6 @@ let runtime_constants = require("singbox.constants");
 let runtime_dns = require("singbox.dns");
 let runtime_route = require("singbox.route");
 let runtime_rulesets = require("singbox.rulesets");
-let runtime_servers = require("singbox.servers");
 let runtime_tailscale = require("singbox.tailscale");
 let subscription_headers_module = require("singbox.subscription_headers");
 let runtime_urltest = require("singbox.urltest");
@@ -34,11 +33,6 @@ function runtime_generate_unsupported(reason) {
 
 function section_enabled(section) {
     return bool_option(section, "enabled", true);
-}
-
-// A server without the switch was never saved from its dialog, so it was never checked.
-function server_enabled(section) {
-    return bool_option(section, "enabled", false);
 }
 
 function runtime_settings() {
@@ -1142,6 +1136,8 @@ function add_connection_tunnels(config, section, selector_tags, urltest_candidat
         let endpoint = connections.tunnel_endpoint(tunnel);
         let endpoint_type = lc(as_string(endpoint.type || ""));
         let wrapper_kind = lc(as_string(connections.option(tunnel, "kind", "wireguard")));
+        if (trim(endpoint_type) == "openvpn-server")
+            runtime_generate_unsupported("VPN server endpoints are not supported");
         if (wrapper_kind != "json" &&
             (endpoint_type != "wireguard" && endpoint_type != "amneziawg" && endpoint_type != "warp" && endpoint_type != "tailscale" &&
                 endpoint_type != "openvpn-client" && endpoint_type != "openconnect"))
@@ -1746,115 +1742,10 @@ function runtime_sections(sections) {
     return result;
 }
 
-function enabled_servers() {
-    let result = [];
-    for (let section in uci_core.section_objects(CONFIG_NAME, "server"))
-        if (server_enabled(section))
-            push(result, section);
-    return result;
-}
-
-// Whether the configuration gives sing-box a section or a server to run.
+// Whether the configuration gives sing-box a section to run.
 function runnable() {
     connections.load();
-    return length(runtime_sections(enabled_sections())) > 0 || length(enabled_servers()) > 0;
-}
-
-function section_by_name(sections, name) {
-    name = as_string(name);
-    for (let section in sections)
-        if (as_string(section[".name"]) == name)
-            return section;
-    return null;
-}
-
-// "rules" clones the shared set onto the inbound and is handled by the caller.
-function server_route_rule(sections, routing_mode, routing_section_name, label) {
-    if (routing_mode == "direct")
-        return { action: "route", outbound: runtime_constants.DIRECT_OUTBOUND_TAG };
-
-    if (routing_mode != "section")
-        runtime_generate_unsupported("unsupported " + label + " routing_mode " + routing_mode);
-
-    let routing_section = section_by_name(sections, routing_section_name);
-    if (routing_section == null)
-        runtime_generate_unsupported(label + " references missing routing section " + routing_section_name);
-    let action = option(routing_section, "action", "");
-    if (action == "bypass" || action == "block")
-        runtime_generate_unsupported(label + " routing section " + routing_section_name + " cannot use action " + action);
-    let target = runtime_route.target(routing_section, outbound_tag(routing_section[".name"]));
-    if (target.unsupported)
-        runtime_generate_unsupported(target.unsupported);
-
-    let rule = { action: target.action };
-    if (target.outbound)
-        rule.outbound = target.outbound;
-    return rule;
-}
-
-// Accounts with a route of their own. An account that follows the shared rules gets them
-// cloned only when its server does not clone them already.
-function add_server_client_routes(config, server, sections, inbound, server_mode) {
-    for (let client in connections.server_clients(server)) {
-        if (!bool_option(client, "routing_override", false))
-            continue;
-
-        let identity = runtime_servers.client_match(server, client);
-        if (identity == null)
-            continue;
-
-        let client_mode = option(client, "routing_mode", "direct");
-        if (client_mode == "rules") {
-            if (server_mode != "rules")
-                runtime_servers.clone_rules_for_inbound(
-                    config,
-                    runtime_constants.TPROXY_INBOUND_TAG,
-                    inbound,
-                    runtime_constants.CHECK_PROXY_IP_DOMAIN,
-                    identity
-                );
-            continue;
-        }
-
-        let rule = server_route_rule(
-            sections,
-            client_mode,
-            option(client, "routing_section", ""),
-            "server client '" + option(client, "name", client[".name"]) + "'"
-        );
-        rule.inbound = inbound;
-        for (let key, value in identity)
-            rule[key] = value;
-        push(config.route.rules, rule);
-    }
-}
-
-function add_server_routes(config, servers, sections) {
-    for (let server in servers) {
-        runtime_servers.add_sniff_rule(config, server);
-
-        let inbound = runtime_constants.server_inbound_tag(connections.server_display_name(server));
-        let routing_mode = option(server, "routing_mode", "rules");
-        add_server_client_routes(config, server, sections, inbound, routing_mode);
-        if (routing_mode == "rules") {
-            runtime_servers.clone_rules_for_inbound(
-                config,
-                runtime_constants.TPROXY_INBOUND_TAG,
-                inbound,
-                runtime_constants.CHECK_PROXY_IP_DOMAIN
-            );
-        }
-        else {
-            let rule = server_route_rule(
-                sections,
-                routing_mode,
-                option(server, "routing_section", ""),
-                "server"
-            );
-            rule.inbound = inbound;
-            push(config.route.rules, rule);
-        }
-    }
+    return length(runtime_sections(enabled_sections())) > 0;
 }
 
 // Throws with the reason when the configuration cannot be expressed.
@@ -1867,16 +1758,13 @@ function build(context) {
     let settings = runtime_settings();
 
     let sections = runtime_sections(enabled_sections());
-    let servers = enabled_servers();
-    if (length(sections) == 0 && length(servers) == 0)
-        runtime_generate_unsupported("no usable sections or servers");
+    if (length(sections) == 0)
+        runtime_generate_unsupported("no usable sections");
 
     let config = base_config(settings, context.service_address);
     add_source_aware_dns_support(config);
     let static_hosts = static_hosts_config();
     add_static_hosts_support(config, static_hosts);
-    for (let server in servers)
-        runtime_servers.add_server(config, server);
     for (let section in sections)
         add_outbound_for_section(config, section);
     add_service_route_rules(config, sections);
@@ -1885,7 +1773,6 @@ function build(context) {
     add_static_hosts_dns_rule(config, static_hosts);
     add_source_aware_dns_fallback(config);
     add_tunnel_dns_rules(config);
-    add_server_routes(config, servers, sections);
     add_service_mixed_proxy(config, settings);
 
     assert_unique_outbound_tags(config);

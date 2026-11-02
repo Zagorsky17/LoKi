@@ -25,16 +25,6 @@ t.test("a command takes only the arguments it declares", () => {
     t.eq(run([ "reload", "manual", "extra" ]).commands, [ "/etc/init.d/forkop reload manual" ]);
 });
 
-t.test("a key material command answers the page with success and its fields, or with the reason", () => {
-    stub.commands([ [ "sing-box generate reality-keypair", { stdout: "PrivateKey: a\nPublicKey: b\n" } ] ]);
-    let good = stub.capture(() => cli.main([ "generate_reality_keypair" ], "/lib"));
-    stub.commands([ [ "sing-box generate reality-keypair", { status: 1 } ] ]);
-    let bad = stub.capture(() => cli.main([ "generate_reality_keypair" ], "/lib"));
-    stub.restore();
-    t.eq([ good.result, json(good.stdout) ], [ 0, { success: true, private_key: "a", public_key: "b" } ]);
-    t.eq([ bad.result, json(bad.stdout) ], [ 1, { success: false, message: "Failed to generate Reality key pair" } ]);
-});
-
 t.test("autostart answers the page whether the switch moved or not", () => {
     let lifecycle = require("service.lifecycle");
     let dir = stub.tmpdir();
@@ -62,7 +52,7 @@ t.test("the log command answers an empty log with nothing, successfully", () => 
 
 t.test("an unknown or retired command prints the help and fails without running anything", () => {
     for (let name in [ "", "main", "get_sing_box_status", "service_action_status", "check_sing_box_logs", "check_nft",
-        "generate_server_certificate", "get_tls_certificate_sha256", "generate_ssh_host_key",
+        "check_servers", "generate_reality_keypair", "generate_server_certificate", "get_tls_certificate_sha256", "generate_ssh_host_key",
         "component_action", "component_action_async", "component_action_status", "component_updates_if_due",
         "component_update_check_cache", "global_check", "check_proxy", "check_nft_rules", "check_fakeip", "check_sing_box",
         "check_dns_available", "check_inbounds", "check_inbounds_config" ]) {
@@ -100,6 +90,15 @@ t.test("report defaults to masked JSON and only an explicit raw request returns 
         }
         else
             t.excludes(result.stdout, "cli-report-secret");
+    }
+});
+
+t.test("retired server commands with arbitrary arguments have no side effects", () => {
+    for (let command in [ "check_servers", "generate_reality_keypair", "generate_server_certificate" ]) {
+        let result = run([ command, "; touch /tmp/retired-server-command", "private-argument" ]);
+        t.eq(result.result, 1, command);
+        t.eq(result.commands, [], command);
+        t.excludes(result.stdout + result.stderr, "private-argument");
     }
 });
 

@@ -44,9 +44,7 @@ const mocks = vi.hoisted(() => {
     renderStub: () => ({}),
     uiState: {
       service: {},
-      capabilities: {
-        server_inbounds_enabled_count: 0,
-      },
+      capabilities: {},
       actions: { service: [] },
     } as unknown as Forkop.UiState,
   };
@@ -95,9 +93,6 @@ vi.mock('../checks/traffic', () => ({
 }));
 vi.mock('../checks/sections', () => ({
   runSectionsCheck: mocks.createCheckRunner('SECTIONS'),
-}));
-vi.mock('../checks/servers', () => ({
-  runServersCheck: mocks.createCheckRunner('SERVERS'),
 }));
 
 let store: StoreService<StoreType>;
@@ -219,10 +214,9 @@ describe('diagnostic run lifecycle', () => {
     expect(mocks.isReportOffered()).toBe(false);
   });
 
-  it('checks a VPN server alone without a sections check, idle or running', async () => {
+  it('omits the sections check when no sections are configured, idle or running', async () => {
     const capabilities = mocks.uiState.capabilities;
     mocks.uiState.capabilities = {
-      server_inbounds_enabled_count: 1,
       sections_enabled_count: 0,
     };
     const codes = () =>
@@ -236,11 +230,11 @@ describe('diagnostic run lifecycle', () => {
       await flush();
     }
 
-    expect(mocks.runnerCalls).toEqual(['SERVICE', 'DNS', 'TRAFFIC', 'SERVERS']);
+    expect(mocks.runnerCalls).toEqual(['SERVICE', 'DNS', 'TRAFFIC']);
     expect(codes()).not.toContain('SECTIONS');
 
     await showTab('dashboard');
-    expect(codes()).toEqual(['SERVICE', 'DNS', 'TRAFFIC', 'SERVERS']);
+    expect(codes()).toEqual(['SERVICE', 'DNS', 'TRAFFIC']);
 
     mocks.uiState.capabilities = capabilities;
   });

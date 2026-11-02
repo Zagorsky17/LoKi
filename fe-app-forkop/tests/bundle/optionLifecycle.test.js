@@ -41,14 +41,6 @@ function sectionGrid(providers = ALL_PROVIDERS) {
   return grid;
 }
 
-function serverGrid() {
-  const view = harness.bundle;
-  const map = new harness.form.Map('forkop');
-  const grid = map.section(harness.form.GridSection, 'server');
-  view.createServerContent(grid);
-  return grid;
-}
-
 async function parseEveryOption(grid, sid) {
   grid.cfgsections = () => [sid];
   await grid.load();
@@ -216,25 +208,6 @@ function survivingChildren() {
   return CHILD_TYPES.flatMap((type) => itemsOfType(type)).sort();
 }
 
-const MIXED_SERVER_VALUES = {
-  protocol: 'mixed',
-  enabled: '1',
-  label: 'Server #1',
-  listen: '0.0.0.0',
-  listen_port: '1080',
-  public_host: '192.168.1.1',
-  open_firewall: '1',
-  mixed_auth_enabled: '1',
-  routing_mode: 'rules',
-  security: 'none',
-};
-const MIXED_SERVER = ['server', 'srv', MIXED_SERVER_VALUES];
-const SERVER_ACCOUNT = [
-  'server_client',
-  'cl1',
-  { server: 'srv', name: 'client-1', password: 'Ux-2LP-vrTXCc1wxJt5QUUvK' },
-];
-
 describe('a list the dialog hides keeps its items', () => {
   it.each(['bypass', 'block', 'dns', 'zapret'])(
     'changing a Connection section to %s keeps everything under it',
@@ -254,25 +227,6 @@ describe('a list the dialog hides keeps its items', () => {
       expect(harness.uci.get('forkop', 'sec', 'outbound_jsons')).toBeTruthy();
     },
   );
-
-  it.each([
-    ['switching the protocol to tailscale', { protocol: 'tailscale' }],
-    ['switching the protocol to json_inbound', { protocol: 'json_inbound' }],
-    ['turning the authentication switch off', { mixed_auth_enabled: '0' }],
-  ])('%s keeps the accounts of the server', async (_label, seed) => {
-    addSections([MIXED_SERVER, SERVER_ACCOUNT]);
-    const grid = serverGrid();
-    grid.cfgsections = () => ['srv'];
-    await grid.load();
-    widgetAnswers(grid, seed);
-    for (const option of grid.children) {
-      await Promise.resolve()
-        .then(() => option.parse('srv'))
-        .catch(() => {});
-    }
-
-    expect(itemsOfType('server_client')).not.toEqual([]);
-  });
 });
 
 describe('the destinations of a section', () => {
@@ -513,20 +467,6 @@ describe('a list the user can see owns its items', () => {
 });
 
 describe('removing an owner takes its children', () => {
-  it('deleting a server takes its accounts', async () => {
-    addSections([MIXED_SERVER, SERVER_ACCOUNT]);
-    const grid = serverGrid();
-    harness.bundle.configureServerSection(grid);
-    grid.cfgsections = () => ['srv'];
-    grid.map.data.remove = () => {};
-    await grid.load();
-    await Promise.resolve()
-      .then(() => grid.handleRemove('srv'))
-      .catch(() => {});
-
-    expect(itemsOfType('server_client')).toEqual([]);
-  });
-
   it('deleting a section takes everything under it', async () => {
     addSections(connectionChildren());
     const grid = sectionGrid();
@@ -584,79 +524,6 @@ describe.each([
     await parseEveryOption(sectionGrid(), 'sec');
 
     expect(harness.uci.get('forkop', 'sec', 'dns_detour_section')).toBe(
-      'target',
-    );
-  });
-
-  it('on a server routing section', async () => {
-    addSections([
-      [
-        'server',
-        'srv',
-        {
-          ...MIXED_SERVER_VALUES,
-          routing_mode: 'section',
-          routing_section: 'target',
-        },
-      ],
-      SERVER_ACCOUNT,
-      LIVE_SECTION,
-      ...extra,
-    ]);
-    await parseEveryOption(serverGrid(), 'srv');
-
-    expect(harness.uci.get('forkop', 'srv', 'routing_section')).toBe('target');
-  });
-
-  it("on a server account's own routing section", async () => {
-    addSections([
-      MIXED_SERVER,
-      [
-        'server_client',
-        'cl1',
-        {
-          ...SERVER_ACCOUNT[2],
-          routing_override: '1',
-          routing_mode: 'section',
-          routing_section: 'target',
-        },
-      ],
-      LIVE_SECTION,
-      ...extra,
-    ]);
-    const grid = serverGrid();
-    const list = grid.children.find((option) => option.option === 'clients');
-    const dialog = await harness.openDialog(list, 'srv', 'cl1');
-    const result = await dialog.save().catch(() => ({ saved: false }));
-
-    expect(result.saved, 'the account dialog refused to save').toBe(true);
-    expect(harness.uci.get('forkop', 'cl1', 'routing_section')).toBe('target');
-  });
-
-  it('on a server tailscale detour', async () => {
-    addSections([
-      [
-        'server',
-        'srv',
-        {
-          protocol: 'tailscale',
-          enabled: '1',
-          label: 'Server #1',
-          routing_mode: 'rules',
-          security: 'none',
-          tailscale_auth_key: 'tskey',
-          tailscale_hostname: 'router',
-          tailscale_control_url: 'https://controlplane.tailscale.com',
-          tailscale_detour_enabled: '1',
-          tailscale_detour_section: 'target',
-        },
-      ],
-      LIVE_SECTION,
-      ...extra,
-    ]);
-    await parseEveryOption(serverGrid(), 'srv');
-
-    expect(harness.uci.get('forkop', 'srv', 'tailscale_detour_section')).toBe(
       'target',
     );
   });

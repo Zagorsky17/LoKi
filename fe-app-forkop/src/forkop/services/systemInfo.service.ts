@@ -10,7 +10,6 @@ const UNKNOWN_SYSTEM_INFO: StoreType['diagnosticsSystemInfo'] = {
   luci_app_version: _('unknown'),
   sing_box_version: _('unknown'),
   sing_box_variant: '',
-  server_inbounds_enabled_count: -1,
   sections_enabled_count: -1,
   openwrt_version: _('unknown'),
   device_model: _('unknown'),
@@ -67,8 +66,6 @@ export async function ensureSystemInfo({
           loading: false,
           loaded: true,
           capabilitiesLoaded: true,
-          server_inbounds_enabled_count:
-            currentSystemInfo.server_inbounds_enabled_count,
           sections_enabled_count: currentSystemInfo.sections_enabled_count,
           ...systemInfo.data,
         };
@@ -90,8 +87,6 @@ export async function ensureSystemInfo({
         loading: false,
         loaded: false,
         capabilitiesLoaded: latestSystemInfo.capabilitiesLoaded,
-        server_inbounds_enabled_count:
-          latestSystemInfo.server_inbounds_enabled_count,
         sections_enabled_count: latestSystemInfo.sections_enabled_count,
       };
 

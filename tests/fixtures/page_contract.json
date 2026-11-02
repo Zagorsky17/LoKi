@@ -268,25 +268,12 @@
         "anytls": "anytls",
         "mieru": "mieru"
       },
-      "inbound": {
-        "hysteria": "quic",
-        "hysteria2": "quic",
-        "tuic": "quic",
-        "naive": "naive",
-        "trusttunnel": "trusttunnel",
-        "vmess": "vmess",
-        "snell": "snell",
-        "shadowtls": "shadowtls",
-        "anytls": "anytls",
-        "mieru": "mieru"
-      },
       "endpoint": {
         "wireguard": "wireguard",
         "amneziawg": "wireguard",
         "warp": "wireguard",
         "tailscale": "tailscale",
         "openvpn-client": "openvpn",
-        "openvpn-server": "openvpn",
         "openconnect": "openconnect"
       }
     },

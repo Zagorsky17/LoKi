@@ -12,8 +12,6 @@ import {
   analyzeDnsDestinationText,
 } from '../../forkop/tabs/sections/conditions';
 import { JSON_OUTBOUND_PLACEHOLDER } from '../../forkop/tabs/sections/outboundJson';
-import { JSON_INBOUND_PLACEHOLDER } from '../../forkop/tabs/servers/form/identity';
-import { validateInboundJson } from '../../forkop/tabs/servers/validators';
 import { STATIC_HOSTS_PLACEHOLDER } from '../../forkop/tabs/settings/staticHosts';
 import {
   OVERRIDE_PATCH_PLACEHOLDER,
@@ -32,11 +30,6 @@ function loadSection() {
     analyzeDnsDestinationText,
     reservedOverridePatchPath,
   };
-}
-
-function loadServer() {
-  installLuciStubs();
-  return { JSON_INBOUND_PLACEHOLDER, validateInboundJson };
 }
 
 function loadSettings() {
@@ -108,14 +101,6 @@ describe('JSON placeholders', () => {
     ).toBe(true);
     expect(endpoint.tag.trim()).not.toBe('');
     expect(Buffer.from(endpoint.private_key, 'base64')).toHaveLength(32);
-  });
-
-  it('offers a JSON inbound the inbound validator accepts', () => {
-    const server = loadServer();
-
-    expect(
-      server.validateInboundJson('srv', server.JSON_INBOUND_PLACEHOLDER),
-    ).toBe(true);
   });
 
   it('offers a server-parameters patch the field does not refuse', () => {
