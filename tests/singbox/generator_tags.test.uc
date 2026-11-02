@@ -68,7 +68,7 @@ t.test("BitTorrent goes direct when the setting asks for it", () => {
 t.test("the section selector lists its groups first, then its own nodes, and its own subscriptions", () => {
     let config = runtime_tags_config();
     let manual = q.outbound(config, "Main/manual");
-    t.eq([ manual.type, manual.link ], [ "parser", "socks://127.0.0.1:1080#manual" ]);
+    t.eq(manual, { type: "socks", tag: "Main/manual", server: "127.0.0.1", server_port: 1080, version: "5" });
     let selector = q.outbound(config, "Main");
     t.eq(selector.providers, [ "Main/sub1" ]);
     t.eq(selector.outbounds, [
@@ -95,7 +95,7 @@ t.test("group filters match nodes by their display name", () => {
     t.eq([ level.tag, level.providers ], [ null, [ "Main/sub1" ] ]);
 });
 
-t.test("manual link names follow the core parser", () => {
+t.test("manual link names stay the same across standard and parser outbounds", () => {
     let config = build({
         settings: {},
         section: [ {
@@ -118,7 +118,7 @@ t.test("manual link names follow the core parser", () => {
             "trojan://secret@example.com:443"
         ])
     });
-    t.eq(q.tags(filter(config.outbounds, (o) => o.type == "parser")), [
+    t.eq(q.tags(filter(config.outbounds, (o) => o.type == "parser" || o.type == "http" || o.type == "socks")), [
         "Links/AnyTLS Node", "Links/Naive+Node", "Links/HTTP Node",
         "Links/Hysteria Node", "Links/Hysteria2 Node", "Links/Mieru+Node",
         "Links/SOCKS Node", "Links/SS Node", "Links/Trojan Node",

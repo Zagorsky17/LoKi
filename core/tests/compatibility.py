@@ -19,6 +19,9 @@ REFERENCE_VERSION = re.search(r'^CORE_VERSION=(.+)$', (ROOT / 'core/upstream.env
 RELEASES = json.loads((ROOT / 'core/tests/compatibility_releases.json').read_text())
 SCHEMA_BOUNDARIES = {
     '1.12.22': {
+        'http-link': 'unknown field "timeout"',
+        'https-link': 'unknown field "timeout"',
+        'complex-link': 'unknown field "timeout"',
         'manual-json': 'unknown field "timeout"',
         'manual-json-native': 'unknown field "timeout"',
         'share-link': 'unknown field "timeout"',
@@ -26,6 +29,9 @@ SCHEMA_BOUNDARIES = {
         'subscription': 'unknown field "timeout"',
     },
     '1.13.21': {
+        'http-link': 'unknown field "timeout"',
+        'https-link': 'unknown field "timeout"',
+        'complex-link': 'unknown field "timeout"',
         'manual-json': 'unknown field "timeout"',
         'manual-json-native': 'unknown field "timeout"',
         'share-link': 'unknown field "timeout"',
@@ -33,9 +39,12 @@ SCHEMA_BOUNDARIES = {
         'subscription': 'unknown field "timeout"',
     },
     '1.14.4': {
+        'http-link': None,
+        'https-link': None,
+        'complex-link': 'unknown outbound type: parser',
         'manual-json': 'unknown field "unified_delay"',
         'manual-json-native': None,
-        'share-link': 'unknown outbound type: parser',
+        'share-link': None,
         'dns-fallback': 'unknown transport type: fallback',
         'subscription': 'unknown field "providers"',
     },
@@ -89,9 +98,18 @@ def profiles(output):
     result = {'manual-json': base, 'manual-json-native': native}
     links = json.loads(json.dumps(base))
     links['section'][0].pop('outbound_jsons')
+    links['settings']['unified_delay'] = '0'
     links['connection_link'] = [{'.name': 'link', 'section': 'main', 'name': 'Local', 'order': '0',
                                 'uri': 'socks://user:synthetic-password@127.0.0.1:18080#Local'}]
     result['share-link'] = links
+    for profile, uri in {
+        'http-link': 'http://user:synthetic-password@127.0.0.1:18080#Local',
+        'https-link': 'https://user:synthetic-password@127.0.0.1:18080/connect#Local',
+        'complex-link': 'socks5://user:synthetic-password@127.0.0.1:18080?extra=preserved#Local',
+    }.items():
+        fixture = json.loads(json.dumps(links))
+        fixture['connection_link'][0]['uri'] = uri
+        result[profile] = fixture
     dns = json.loads(json.dumps(base))
     dns['settings']['dns_server'] = ['127.0.0.1', '127.0.0.2']
     result['dns-fallback'] = dns
@@ -135,7 +153,7 @@ def main(reference, directory, output):
             results.append(result)
             print(json.dumps(result), flush=True)
     (output / 'results.json').write_text(json.dumps(results, indent=2))
-    print(f'{len(results)} schema boundary checks passed; only the limited manual schema is accepted by stock 1.14.4')
+    print(f'{len(results)} schema boundary checks passed; limited manual and plain-link schemas are accepted by stock 1.14.4')
 
 
 if __name__ == '__main__':

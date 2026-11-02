@@ -243,8 +243,13 @@ t.test("removed records are refused and the same client backup without them keep
     t.ok(generator.runnable());
     t.excludes(map(config.inbounds, (item) => item.tag), "injected");
     t.eq(config.endpoints, null);
-    let clients = filter(config.outbounds, (item) => item.type == "parser");
-    t.eq(map(clients, (item) => item.link), [ file[2].uri, file[3].uri ]);
+    t.eq(map(filter(session.staged, (item) => item[".type"] == "connection_link"), (item) => item.uri),
+        [ file[2].uri, file[3].uri ], "restoration preserves both original links in order");
+    let clients = filter(config.outbounds, (item) => item.tag == "main/First" || item.tag == "main/Second");
+    t.eq(map(clients, (item) => item.tag), [ "main/First", "main/Second" ]);
+    t.eq([ clients[0].type, clients[0].link ], [ "parser", file[2].uri ]);
+    t.eq(clients[1], { type: "socks", tag: "main/Second", server: "127.0.0.1", server_port: 1080,
+        version: "5", username: "user", password: "synthetic-password" });
     t.eq(map(config.providers, (item) => [ item.tag, item.url ]), [ [ "main/Provider", "https://example.com/sub" ] ]);
 });
 

@@ -32,6 +32,15 @@ class CompatibilityTests(unittest.TestCase):
         with self.assertRaises(AssertionError):
             assert_result('uncharacterized-profile', '1.14.4', 0, '')
 
+    def test_plain_links_must_succeed_but_complex_links_still_require_the_parser(self):
+        for profile in ('share-link', 'http-link', 'https-link'):
+            assert_result(profile, '1.14.4', 0, '')
+            with self.subTest(profile=profile), self.assertRaises(AssertionError):
+                assert_result(profile, '1.14.4', 1, 'unknown outbound type: parser')
+        assert_result('complex-link', '1.14.4', 1, 'unknown outbound type: parser')
+        with self.assertRaises(AssertionError):
+            assert_result('complex-link', '1.14.4', 0, '')
+
     def test_a_new_core_is_not_silently_assumed_to_follow_the_same_schema(self):
         for message in ['unknown field "providers"', 'unknown field "timeout"', 'unknown transport type: fallback']:
             with self.subTest(message=message), self.assertRaises(AssertionError):
