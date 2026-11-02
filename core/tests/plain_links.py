@@ -23,6 +23,7 @@ from urllib.parse import quote
 ROOT = Path(__file__).resolve().parents[2]
 USER, PASSWORD = 'test+user', 'synthetic:p@ss'
 MARKER = b'authenticated-loopback-proxy'
+AUTH = 'Basic ' + base64.b64encode(f'{USER}:{PASSWORD}'.encode()).decode()
 
 
 def exact(stream, count):
@@ -54,7 +55,7 @@ class Proxy(socketserver.StreamRequestHandler):
                 assert exact(self.rfile, 1) == b'\x01'
                 user = exact(self.rfile, exact(self.rfile, 1)[0]).decode()
                 password = exact(self.rfile, exact(self.rfile, 1)[0]).decode()
-                if (user, password) != (USER, PASSWORD):
+                if self.server.reject_auth or (user, password) != (USER, PASSWORD):
                     self.server.rejected += 1
                     self.wfile.write(b'\x01\x01')
                     return
@@ -84,8 +85,7 @@ class Proxy(socketserver.StreamRequestHandler):
             else:
                 line = first + self.rfile.readline(8193)
                 headers = self.headers()
-                wanted = 'Basic ' + base64.b64encode(f'{USER}:{PASSWORD}'.encode()).decode()
-                if headers.get('proxy-authorization') != wanted:
+                if self.server.reject_auth or headers.get('proxy-authorization') != AUTH:
                     self.server.rejected += 1
                     self.wfile.write(b'HTTP/1.1 407 Proxy Authentication Required\r\nContent-Length: 0\r\nConnection: close\r\n\r\n')
                     return
@@ -138,10 +138,11 @@ class Trap(socketserver.StreamRequestHandler):
         self.wfile.write(b'HTTP/1.1 200 OK\r\nContent-Length: 6\r\nConnection: close\r\n\r\nbypass')
 
 
-def serve(stack, handler, tls=None):
-    server = Peer(('127.0.0.1', 0), handler)
+def serve(stack, handler, tls=None, port=0):
+    server = Peer(('127.0.0.1', port), handler)
     server.tls, server.records, server.failures = tls, [], []
     server.rejected, server.tls_rejected, server.hits = 0, 0, 0
+    server.reject_auth = False
     threading.Thread(target=server.serve_forever, kwargs={'poll_interval': .02}, daemon=True).start()
     stack.callback(server.server_close)
     stack.callback(server.shutdown)
@@ -154,28 +155,48 @@ def free_port():
         return value.getsockname()[1]
 
 
-def generate(uri, output):
-    fixture = {'settings': {'dns_server': ['127.0.0.1'], 'bootstrap_dns_server': ['127.0.0.1'], 'unified_delay': '0'},
-               'section': [{'.name': 'main', 'action': 'connection'}],
-               'connection_link': [{'.name': 'link', 'section': 'main', 'name': 'Node', 'uri': uri}]}
+def generate_fixture(fixture, output):
     program = output / 'generate.uc'
     program.write_text('let f=require("fixture");f.seed(json(getenv("LINK_FIXTURE")));'
                        'print(sprintf("%J",require("singbox.generator").build({service_address:"127.0.0.1",local_prefixes:[]})));\n')
     reply = subprocess.run(['ucode', '-L', str(ROOT / 'tests/fakes'), '-L', str(ROOT / 'tests/lib'),
                             '-L', str(ROOT / 'forkop/files/usr/lib'), str(program)],
                            env={**os.environ, 'LINK_FIXTURE': json.dumps(fixture)}, check=True, capture_output=True, text=True, timeout=10)
-    product = json.loads(reply.stdout)
+    return json.loads(reply.stdout)
+
+
+def generate(uri, output):
+    fixture = {'settings': {'dns_server': ['127.0.0.1'], 'bootstrap_dns_server': ['127.0.0.1'], 'unified_delay': '0'},
+               'section': [{'.name': 'main', 'action': 'connection'}],
+               'connection_link': [{'.name': 'link', 'section': 'main', 'name': 'Node', 'uri': uri}]}
+    product = generate_fixture(fixture, output)
     outbound = next(item for item in product['outbounds'] if item['tag'] == 'main/Node')
     assert outbound['type'] != 'parser', 'the ordinary link did not become a standard outbound'
     return product, outbound
 
 
-def run(binary, outbound, directory, target, certificate):
+def request(port, target):
+    with socket.create_connection(('127.0.0.1', port), timeout=3) as sock:
+        sock.sendall(f'GET http://127.0.0.1:{target}/test HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n'.encode())
+        reply = b''
+        while len(reply) < 16384:
+            try:
+                part = sock.recv(4096)
+            except ConnectionResetError:
+                break
+            if not part:
+                break
+            reply += part
+        return reply
+
+
+@contextlib.contextmanager
+def running(binary, outbounds, final, directory, certificate):
     directory.mkdir(mode=0o700)
     port = free_port()
     config = {'log': {'level': 'error'},
               'inbounds': [{'type': 'mixed', 'tag': 'test', 'listen': '127.0.0.1', 'listen_port': port}],
-              'outbounds': [outbound], 'route': {'final': outbound['tag']},
+              'outbounds': outbounds, 'route': {'final': final},
               'certificate': {'store': 'none'}}
     if certificate:
         config['certificate']['certificate_path'] = str(certificate)
@@ -189,24 +210,13 @@ def run(binary, outbound, directory, target, certificate):
             while True:
                 assert process.poll() is None, 'core exited before readiness'
                 try:
-                    sock = socket.create_connection(('127.0.0.1', port), timeout=3)
-                    break
+                    with socket.create_connection(('127.0.0.1', port), timeout=3):
+                        break
                 except OSError:
                     if time.monotonic() >= deadline:
                         raise AssertionError('core did not become ready')
                     time.sleep(.02)
-            with sock:
-                sock.sendall(f'GET http://127.0.0.1:{target}/test HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n'.encode())
-                reply = b''
-                while len(reply) < 16384:
-                    try:
-                        part = sock.recv(4096)
-                    except ConnectionResetError:
-                        break
-                    if not part:
-                        break
-                    reply += part
-            return reply
+            yield port, process
         finally:
             process.terminate()
             try:
@@ -216,15 +226,25 @@ def run(binary, outbound, directory, target, certificate):
                 process.wait(timeout=5)
 
 
-def main(core, output, reference):
-    output.mkdir(mode=0o700, parents=True)
-    certificate, key = output / 'loopback.crt', output / 'loopback.key'
+def run(binary, outbound, directory, target, certificate):
+    with running(binary, [outbound], outbound['tag'], directory, certificate) as (port, _):
+        return request(port, target)
+
+
+def test_certificate(output, name):
+    certificate, key = output / f'{name}.crt', output / f'{name}.key'
     subprocess.run(['openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1',
                     '-keyout', str(key), '-out', str(certificate), '-subj', '/CN=127.0.0.1',
                     '-addext', 'subjectAltName=IP:127.0.0.1'], check=True, capture_output=True, timeout=20)
     key.chmod(0o600)
     tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     tls.load_cert_chain(certificate, key)
+    return certificate, tls
+
+
+def main(core, output, reference):
+    output.mkdir(mode=0o700, parents=True)
+    certificate, tls = test_certificate(output, 'loopback')
     with contextlib.ExitStack() as stack:
         plain = serve(stack, Proxy)
         secure = serve(stack, Proxy, tls)

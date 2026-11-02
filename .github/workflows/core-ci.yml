@@ -58,3 +58,4 @@ jobs:
           python3 core/tests/dns_bootstrap.py "$RUNNER_TEMP/core-build/build/amd64/base/sing-box" "$RUNNER_TEMP/core-dns-results"
           python3 core/tests/log_repeats.py "$RUNNER_TEMP/core-build/build/amd64/base/sing-box" "$RUNNER_TEMP/core-log-results"
           python3 -B core/tests/plain_links.py "$RUNNER_TEMP/core-build/build/amd64/base/sing-box" "$RUNNER_TEMP/core-link-results"
+          python3 -B core/tests/cascade_links.py "$RUNNER_TEMP/core-build/build/amd64/base/sing-box" "$RUNNER_TEMP/core-cascade-results"

@@ -71,6 +71,8 @@ DNS validation errors identify the affected setting and cause without printing t
 
 On Linux, `python3 core/tests/plain_links.py CORE OUTPUT_DIR [REFERENCE_R3]` compares generated HTTP(S)/SOCKS outbounds with the existing parser using local authenticated peers, including wrong-password and untrusted-certificate refusals. Use trusted, verified binary paths and a new output directory; pass the r3 reference when `CORE` is an official 1.14.4 binary. The test changes its own listeners and files only.
 
+For generated proxy cascades, run `python3 core/tests/cascade_links.py CORE NEW_OUTPUT_DIR [REFERENCE_R3]` with the same trusted binaries. It tests HTTP/HTTPS first hops, HTTP/HTTPS/SOCKS5 exits, both peers becoming unavailable, authentication/TLS refusals, stream interruption and recovery. A deliberately removed detour must be detected even when the response succeeds. All peers are local; this does not certify router routing or every cascade protocol.
+
 ## Documentation and testing
 
 The public project documentation is maintained in this README and [README.ru.md](README.ru.md). The inherited documentation site and its GitHub Pages workflow have been removed.
