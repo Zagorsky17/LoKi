@@ -47,6 +47,7 @@ jobs:
         run: |
           python3 core/tests/test_release.py
           python3 -B core/tests/test_compatibility.py
+          python3 -B core/tests/test_dns_timeout.py
       - name: Test logging, DNS and connection concurrency
         run: core/test.sh -race -count=1
       - name: Build the patched core and verify real DNS and proxy traffic
@@ -59,3 +60,4 @@ jobs:
           python3 core/tests/log_repeats.py "$RUNNER_TEMP/core-build/build/amd64/base/sing-box" "$RUNNER_TEMP/core-log-results"
           python3 -B core/tests/plain_links.py "$RUNNER_TEMP/core-build/build/amd64/base/sing-box" "$RUNNER_TEMP/core-link-results"
           python3 -B core/tests/cascade_links.py "$RUNNER_TEMP/core-build/build/amd64/base/sing-box" "$RUNNER_TEMP/core-cascade-results"
+          python3 -B core/tests/dns_timeout.py "$RUNNER_TEMP/core-build/build/amd64/base/sing-box" "$RUNNER_TEMP/core-timeout-results"
