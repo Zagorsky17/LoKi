@@ -176,4 +176,17 @@ t.test("retired tunnel modules and commands cannot enter the packages", () => {
         t.excludes(bundle, entry);
 });
 
+t.test("project documentation cannot publish an inherited GitHub Pages site", () => {
+    t.eq(fs.stat(repo.path("docs")), null, "only the product READMEs remain");
+    t.eq(fs.stat(repo.path(".github/workflows/docs.yml")), null);
+    for (let name in fs.lsdir(repo.path(".github/workflows")) ?? []) {
+        if (!match(name, /\.ya?ml$/))
+            continue;
+        let workflow = fs.readfile(repo.path(".github/workflows/" + name));
+        t.excludes(workflow, "actions/deploy-pages@", name);
+        t.excludes(workflow, "actions/upload-pages-artifact@", name);
+        t.eq(match(workflow, /pages[ \t]*:[ \t]*write/), null, name + " cannot write Pages");
+    }
+});
+
 t.done();
