@@ -63,7 +63,7 @@ Reports open with values masked. An unmasked report requires confirmation and st
 
 ## Documentation and testing
 
-The public project documentation is maintained in this README and [README.ru.md](README.ru.md). The inherited `docs/` site describes Forkop and is scheduled for removal.
+The public project documentation is maintained in this README and [README.ru.md](README.ru.md). The inherited documentation site and its GitHub Pages workflow have been removed.
 
 Run tests and package builds on a dedicated Linux development server. DNS failures, traffic interception and installation must also be tested on a laboratory OpenWrt router before a release. Use synthetic credentials and local test endpoints for security tests.
 
