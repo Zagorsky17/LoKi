@@ -3,7 +3,7 @@
 Usage: python3 core/tests/compatibility.py REFERENCE_R3 STOCK_BINARY_DIR OUTPUT_DIR
 The directory holds each sing-box-VERSION and its official archive filename;
 archives match the pinned official release digests in compatibility_releases.json.
-This checks known schema boundaries and one limited manual profile, not full stock support.
+This checks characterized limited schemas and refusals, not full stock support.
 """
 import hashlib
 import json
@@ -19,24 +19,26 @@ REFERENCE_VERSION = re.search(r'^CORE_VERSION=(.+)$', (ROOT / 'core/upstream.env
 RELEASES = json.loads((ROOT / 'core/tests/compatibility_releases.json').read_text())
 SCHEMA_BOUNDARIES = {
     '1.12.22': {
-        'http-link': 'unknown field "timeout"',
-        'https-link': 'unknown field "timeout"',
-        'complex-link': 'unknown field "timeout"',
-        'manual-json': 'unknown field "timeout"',
-        'manual-json-native': 'unknown field "timeout"',
-        'share-link': 'unknown field "timeout"',
+        'http-link': None,
+        'https-link': None,
+        'complex-link': 'unknown outbound type: parser',
+        'manual-json': 'unknown field "unified_delay"',
+        'manual-json-native': None,
+        'share-link': None,
         'dns-fallback': 'unknown transport type: fallback',
-        'subscription': 'unknown field "timeout"',
+        'subscription': 'unknown field "providers"',
+        'custom-dns-timeout': 'unknown field "timeout"',
     },
     '1.13.21': {
-        'http-link': 'unknown field "timeout"',
-        'https-link': 'unknown field "timeout"',
-        'complex-link': 'unknown field "timeout"',
-        'manual-json': 'unknown field "timeout"',
-        'manual-json-native': 'unknown field "timeout"',
-        'share-link': 'unknown field "timeout"',
+        'http-link': None,
+        'https-link': None,
+        'complex-link': 'unknown outbound type: parser',
+        'manual-json': 'unknown field "unified_delay"',
+        'manual-json-native': None,
+        'share-link': None,
         'dns-fallback': 'unknown transport type: fallback',
-        'subscription': 'unknown field "timeout"',
+        'subscription': 'unknown field "providers"',
+        'custom-dns-timeout': 'unknown field "timeout"',
     },
     '1.14.4': {
         'http-link': None,
@@ -47,6 +49,7 @@ SCHEMA_BOUNDARIES = {
         'share-link': None,
         'dns-fallback': 'unknown transport type: fallback',
         'subscription': 'unknown field "providers"',
+        'custom-dns-timeout': None,
     },
 }
 
@@ -95,7 +98,9 @@ def profiles(output):
     }
     native = json.loads(json.dumps(base))
     native['settings']['unified_delay'] = '0'
-    result = {'manual-json': base, 'manual-json-native': native}
+    custom = json.loads(json.dumps(native))
+    custom['settings']['dns_timeout'] = '4s'
+    result = {'manual-json': base, 'manual-json-native': native, 'custom-dns-timeout': custom}
     links = json.loads(json.dumps(base))
     links['section'][0].pop('outbound_jsons')
     links['settings']['unified_delay'] = '0'
@@ -153,7 +158,7 @@ def main(reference, directory, output):
             results.append(result)
             print(json.dumps(result), flush=True)
     (output / 'results.json').write_text(json.dumps(results, indent=2))
-    print(f'{len(results)} schema boundary checks passed; limited manual and plain-link schemas are accepted by stock 1.14.4')
+    print(f'{len(results)} schema boundary checks passed; limited manual and plain-link schemas are accepted by all three stock versions')
 
 
 if __name__ == '__main__':

@@ -17,7 +17,7 @@ t.test("a configuration without providers has no provider extension or subscript
     t.eq(config.experimental.cache_file.store_subscriptions, null);
     t.eq(config.experimental.cache_file.store_fakeip, true);
     t.eq(config.experimental.cache_file.enabled, true);
-    t.eq(config.dns.timeout, "10s");
+    t.eq(config.dns.timeout, null, "the shared 10s default needs no core extension");
     t.eq(config.experimental.unified_delay.enabled, true, "the default delay setting is unchanged");
 });
 

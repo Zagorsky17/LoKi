@@ -1642,6 +1642,9 @@ function build(context) {
     add_source_aware_dns_fallback(config);
 
     assert_unique_outbound_tags(config);
+    // All pinned target cores use 10s when the DNS timeout is absent.
+    if (config.dns.timeout == "10s")
+        delete config.dns.timeout;
     if (length(config.providers) == 0) {
         delete config.providers;
         delete config.experimental.cache_file.store_subscriptions;

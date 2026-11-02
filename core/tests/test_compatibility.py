@@ -15,7 +15,7 @@ class CompatibilityTests(unittest.TestCase):
             assert_result('manual-json', REFERENCE_VERSION, 1, 'unknown field "providers"')
 
     def test_only_the_characterized_schema_rejection_is_accepted(self):
-        assert_result('manual-json', '1.12.22', 1, 'dns.timeout: unknown field "timeout"')
+        assert_result('custom-dns-timeout', '1.12.22', 1, 'dns.timeout: unknown field "timeout"')
         assert_result('manual-json', '1.14.4', 1, 'experimental.unified_delay: unknown field "unified_delay"')
         assert_result('dns-fallback', '1.14.4', 1, 'unknown transport type: fallback')
         for status, message in [(0, ''), (127, 'command missing'), (-11, 'crash'), (1, 'certificate missing'),
@@ -23,9 +23,10 @@ class CompatibilityTests(unittest.TestCase):
             with self.subTest(status=status, message=message), self.assertRaises(AssertionError):
                 assert_result('manual-json', '1.14.4', status, message)
 
-    def test_the_limited_native_schema_must_succeed_on_114_and_fail_for_the_known_older_boundary(self):
+    def test_the_limited_native_schema_must_succeed_on_each_characterized_core(self):
         assert_result('manual-json-native', '1.14.4', 0, '')
-        assert_result('manual-json-native', '1.12.22', 1, 'unknown field "timeout"')
+        assert_result('manual-json-native', '1.12.22', 0, '')
+        assert_result('manual-json-native', '1.13.21', 0, '')
         for status, message in [(1, 'unknown field "providers"'), (-11, 'crash'), (127, 'missing core')]:
             with self.subTest(status=status), self.assertRaises(AssertionError):
                 assert_result('manual-json-native', '1.14.4', status, message)
@@ -40,6 +41,13 @@ class CompatibilityTests(unittest.TestCase):
         assert_result('complex-link', '1.14.4', 1, 'unknown outbound type: parser')
         with self.assertRaises(AssertionError):
             assert_result('complex-link', '1.14.4', 0, '')
+
+    def test_custom_timeout_is_not_misclassified_as_supported_on_older_cores(self):
+        for version in ('1.12.22', '1.13.21'):
+            assert_result('custom-dns-timeout', version, 1, 'unknown field "timeout"')
+            with self.subTest(version=version), self.assertRaises(AssertionError):
+                assert_result('custom-dns-timeout', version, 0, '')
+        assert_result('custom-dns-timeout', '1.14.4', 0, '')
 
     def test_a_new_core_is_not_silently_assumed_to_follow_the_same_schema(self):
         for message in ['unknown field "providers"', 'unknown field "timeout"', 'unknown transport type: fallback']:
