@@ -341,9 +341,10 @@ t.test("a URLTest group filters its members and becomes the selector default", (
     t.eq(q.outbound(u, "proxy").default, "proxy/Fastest");
 });
 
-t.test("manual links stay verbatim in parser outbounds, JSON outbounds keep their transport", () => {
+t.test("plain links use standard outbounds, complex links and JSON transports stay unchanged", () => {
     let socks = build({ settings: { dns_server: "1.1.1.1" }, section: [ { ".name": "proxy", enabled: "1", action: "connection" } ], connection_link: fixture.links("proxy", [ "socks5://127.0.0.1:8080" ]) });
-    t.eq(q.outbound(socks, "proxy/Node #1").type, "parser");
+    t.eq(q.outbound(socks, "proxy/Node #1"), { type: "socks", tag: "proxy/Node #1",
+        server: "127.0.0.1", server_port: 8080, version: "5" });
 
     let link = "vless://11111111-1111-4111-8111-111111111111@127.0.0.1:443?security=tls&type=ws&path=%2Fws&host=example.com&sni=example.com&alpn=h2%2Chttp%2F1.1&encryption=mlkem768x25519plus.native.test#WS";
     let manual = build({

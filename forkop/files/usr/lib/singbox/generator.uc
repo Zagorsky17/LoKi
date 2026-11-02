@@ -8,6 +8,7 @@ let runtime_route = require("singbox.route");
 let runtime_rulesets = require("singbox.rulesets");
 let subscription_headers_module = require("singbox.subscription_headers");
 let runtime_urltest = require("singbox.urltest");
+let plain_links = require("singbox.plain_links");
 let connections = require("config.connections");
 let runtime_settings_cache = null;
 let runtime_local_ptr_zone = null;
@@ -538,7 +539,9 @@ function add_subscription_providers(config, section) {
 function add_manual_link_outbounds(config, section, selector_tags, urltest_candidate_tags) {
     for (let link in connections.connection_link_items(section)) {
         let tag_name = child_outbound_tag(section, connections.link_display_name(link));
-        let outbound = { type: "parser", tag: tag_name, link: connections.option(link, "uri", "") };
+        let uri = connections.option(link, "uri", "");
+        let outbound = plain_links.outbound(uri) ?? { type: "parser", link: uri };
+        outbound.tag = tag_name;
         let detour = cascade_tag(link);
         if (detour != "")
             outbound.detour = detour;
