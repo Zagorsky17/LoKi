@@ -34,7 +34,7 @@ t.test("invalid and mismatching encryption settings are refused by both validati
         [ "1", "", "https://dns.example/dns-query", "Choose DoH (https) or DoT (tls)" ],
         [ "1", "quic", "quic://dns.example", "Choose DoH (https) or DoT (tls)" ],
         [ "1", "udp", "192.0.2.54", "Choose DoH (https) or DoT (tls)" ],
-        [ "1", "https", "http://dns.example/dns-query", "unsupported DNS server URI scheme 'http'" ],
+        [ "1", "https", "http://dns.example/dns-query", "unsupported DNS server URI scheme; use udp, tcp, tls, quic, https or h3" ],
         [ "1", "https", "192.0.2.54", "Main DNS protocol must match the explicit encryption setting (https)" ],
         [ "1", "tls", "https://dns.example/dns-query", "Main DNS protocol must match the explicit encryption setting (tls)" ],
         [ "0", "https", "https://dns.example/dns-query", "Main DNS protocol must match the explicit encryption setting (udp)" ],

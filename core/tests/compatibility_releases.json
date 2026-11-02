@@ -1,0 +1,20 @@
+[
+  {
+    "version": "1.12.22",
+    "url": "https://github.com/SagerNet/sing-box/releases/download/v1.12.22/sing-box-1.12.22-linux-amd64.tar.gz",
+    "sha256": "50a70a1b71064a7d8ef63737fbef2aa36c991d8dc1c54598b9513c2a15e25e9f",
+    "published_at": "2026-02-15T13:49:13Z"
+  },
+  {
+    "version": "1.13.21",
+    "url": "https://github.com/SagerNet/sing-box/releases/download/v1.13.21/sing-box-1.13.21-linux-amd64.tar.gz",
+    "sha256": "24f9ef8e7234e13e71e74c3598a4164c5fe07b7b67ccc6e96cf68b54789f72cd",
+    "published_at": "2026-08-30T11:24:04Z"
+  },
+  {
+    "version": "1.14.4",
+    "url": "https://github.com/SagerNet/sing-box/releases/download/v1.14.4/sing-box-1.14.4-linux-amd64.tar.gz",
+    "sha256": "699a1b510aa4396b2176d32d1181920399ebf1e267835da6f3b598d0f7c24968",
+    "published_at": "2026-10-24T01:04:25Z"
+  }
+]

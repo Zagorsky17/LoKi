@@ -118,7 +118,7 @@ function core_problem(present) {
     return "";
 }
 
-function type_feature(kind, type_name) {
+function type_feature(type_name) {
     return OUTBOUND_TYPES[lc(trim("" + (type_name ?? "")))] ?? "";
 }
 
@@ -167,7 +167,7 @@ const ALWAYS_TLS_TYPES = { trojan: true, tuic: true, hysteria: true, hysteria2: 
 
 // A fingerprint on a TLS link, or Reality, which always sends one; the rules are the core's
 // link parser.
-function link_uses_utls(scheme, type_name, link) {
+function link_uses_utls(type_name, link) {
     if (type_name == "vmess") {
         let payload = vmess_payload(link);
         if (payload != null) {
@@ -216,16 +216,14 @@ function link_uses_xhttp_http3(link) {
 // The features a share link needs from the core that will parse it.
 function link_features(link) {
     link = trim("" + (link ?? ""));
-    let separator = index(link, "://");
-    let scheme = separator > 0 ? lc(substr(link, 0, separator)) : "";
     let type_name = link_type(link);
     let result = [];
-    let feature = type_feature("outbound", type_name);
+    let feature = type_feature(type_name);
     if (feature != "")
         push(result, feature);
     if (uses_xhttp_http3(type_name, link))
         push(result, "quic");
-    if (link_uses_utls(scheme, type_name, link))
+    if (link_uses_utls(type_name, link))
         push(result, "utls");
     return result;
 }

@@ -62,13 +62,13 @@ t.test("a feature is there when every tag it needs is", () => {
     t.ok(!features.available("no-such-feature", tags));
 });
 
-t.test("types name the feature they need by the kind of object they are", () => {
-    t.eq(features.type_feature("outbound", "naive"), "naive");
-    t.eq(features.type_feature("outbound", "warp"), "");
-    t.eq(features.type_feature("outbound", "openvpn-client"), "");
-    t.eq(features.type_feature("outbound", "vless"), "");
-    t.eq(features.type_feature("outbound", "vmess"), "vmess");
-    t.eq(features.type_feature("outbound", "ssh"), "ssh");
+t.test("outbound types name the feature they need without a retired endpoint kind", () => {
+    t.eq(features.type_feature("naive"), "naive");
+    t.eq(features.type_feature("warp"), "");
+    t.eq(features.type_feature("openvpn-client"), "");
+    t.eq(features.type_feature("vless"), "");
+    t.eq(features.type_feature("vmess"), "vmess");
+    t.eq(features.type_feature("ssh"), "ssh");
 });
 
 t.test("LoKi requires the Clash API without requiring a tunnel stack", () => {
@@ -88,6 +88,28 @@ t.test("the page is told each feature, the tags that make it and the types that 
     t.eq(report.types.outbound.hysteria2, "quic");
     t.eq(report.links.hy2, "hysteria2");
     stub.restore();
+});
+
+t.test("retired tunnel tags never add requirements or endpoint types to the report", () => {
+    let retired = [ "with_gvisor", "with_wireguard", "with_tailscale", "with_openvpn", "with_openconnect" ];
+    for (let tags in [ [ "with_clash_api" ], [ "with_clash_api", ...retired ] ]) {
+        let report = features.report(tags);
+        t.eq(features.core_problem(tags), "");
+        t.eq(keys(report.types), [ "outbound" ]);
+        for (let name in [ "wireguard", "tailscale", "openvpn", "openconnect", "gvisor" ])
+            t.eq(report.features[name], null);
+        for (let name in [ "clash_api", "quic", "utls", "vmess", "anytls", "naive", "trusttunnel", "mieru" ])
+            t.ok(report.features[name] != null, name + " remains part of the protocol contract");
+    }
+});
+
+t.test("empty, unknown and malformed share links keep bounded feature results", () => {
+    for (let link in [ null, "", " ", "unknown://synthetic-secret", "without-a-scheme" ])
+        t.eq(features.link_features(link), []);
+    for (let link in [ "vmess://broken%%%", "vmess://e30=" ])
+        t.eq(features.link_features(link), [ "vmess" ]);
+    for (let i = 0; i < 3; i++)
+        t.eq(features.link_features("vless://u@example.com:443?security=reality&pbk=synthetic-key"), [ "utls" ]);
 });
 
 t.done();

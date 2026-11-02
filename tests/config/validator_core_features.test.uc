@@ -57,14 +57,15 @@ t.test("a subscription is left to the core, which skips what it cannot build", (
 
 t.test("DNS over QUIC and HTTP/3 need QUIC", () => {
     needs({ settings: { dns_server: [ "quic://dns.adguard-dns.com" ] } }, without(BASE, "with_quic"),
-        "DNS server 'quic://dns.adguard-dns.com' uses DNS over QUIC, but this sing-box build lacks QUIC");
+        "A configured DNS server uses DNS over QUIC, but this sing-box build lacks QUIC");
     needs({ settings: { bootstrap_dns_server: [ "h3://1.1.1.1/dns-query" ] } }, without(BASE, "with_quic"),
-        "DNS server 'h3://1.1.1.1/dns-query' uses DNS over HTTP/3");
+        "A configured DNS server uses DNS over HTTP/3");
 });
 
 t.test("a DNS section's servers need QUIC for DNS over QUIC too", () => {
     needs({ section: [ { ".name": "dns", enabled: "1", action: "dns", dns_server: [ "quic://dns.example.com" ], destinations: "example.org" } ] },
-        without(BASE, "with_quic"), "DNS server 'quic://dns.example.com' uses DNS over QUIC");
+        without(BASE, "with_quic"), "A configured DNS server uses DNS over QUIC");
 });
+
 
 t.done();

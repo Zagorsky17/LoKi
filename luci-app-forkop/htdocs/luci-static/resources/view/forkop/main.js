@@ -6200,17 +6200,11 @@ function coreHas(feature) {
 function coreFeatureTags(feature) {
   return report?.features[feature]?.tags || [];
 }
-function coreFeatureOfType(type, kinds = ["outbound"]) {
-  for (const kind of kinds) {
-    const feature = report?.types[kind]?.[type];
-    if (feature) {
-      return feature;
-    }
-  }
-  return "";
+function coreFeatureOfType(type) {
+  return report?.types?.outbound?.[type] || "";
 }
-function coreSupportsType(type, kinds) {
-  const feature = coreFeatureOfType(type, kinds);
+function coreSupportsType(type) {
+  const feature = coreFeatureOfType(type);
   return !feature || coreHas(feature);
 }
 function missingCoreTags(feature) {
@@ -6301,7 +6295,7 @@ function linkCoreFeatures(link) {
   const scheme = separator > 0 ? value.slice(0, separator).toLowerCase() : "";
   const type = report?.links[scheme] || "";
   const features = [];
-  const feature = coreFeatureOfType(type, ["outbound"]);
+  const feature = coreFeatureOfType(type);
   if (feature) {
     features.push(feature);
   }
@@ -14990,9 +14984,7 @@ var CONNECTION_URI_TYPES = [
 ];
 function connectionUriDescription() {
   return _("Supported URIs: %s").format(
-    CONNECTION_URI_TYPES.filter(
-      ([, type]) => coreSupportsType(type, ["outbound"])
-    ).map(([name]) => name).join(", ")
+    CONNECTION_URI_TYPES.filter(([, type]) => coreSupportsType(type)).map(([name]) => name).join(", ")
   );
 }
 function validateConnectionUriCore(link) {
