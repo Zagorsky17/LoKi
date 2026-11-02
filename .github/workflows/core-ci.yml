@@ -38,7 +38,9 @@ jobs:
           sudo cmake --install "$RUNNER_TEMP/ucode/build"
           sudo ldconfig
       - name: Test source integrity and core manifests
-        run: python3 core/tests/test_release.py
+        run: |
+          python3 core/tests/test_release.py
+          python3 -B core/tests/test_compatibility.py
       - name: Test logging, DNS and connection concurrency
         run: core/test.sh -race -count=1
       - name: Build the patched core and verify real DNS traffic

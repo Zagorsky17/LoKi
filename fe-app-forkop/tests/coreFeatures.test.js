@@ -51,11 +51,11 @@ describe('the base build', () => {
     expect(coreHas('ssh')).toBe(false);
   });
 
-  it('looks a type up by the kind of object it is', () => {
+  it('looks outbound types up in the unchanged backend report', () => {
     setCoreFeatures(coreFeatures());
     expect(coreFeatureOfType('tuic')).toBe('quic');
     expect(coreSupportsType('ssh')).toBe(false);
-    expect(coreSupportsType('naive', ['outbound'])).toBe(false);
+    expect(coreSupportsType('naive')).toBe(false);
     expect(coreSupportsType('vless')).toBe(true);
   });
 
@@ -140,4 +140,49 @@ describe('what a section asks of the core', () => {
 
     expect(sectionMissingCoreFeatures('sec').sort()).toEqual(['naive']);
   });
+});
+
+describe('retired tunnel tags and malformed links', () => {
+  it.each([
+    [],
+    [
+      'with_gvisor',
+      'with_wireguard',
+      'with_tailscale',
+      'with_openvpn',
+      'with_openconnect',
+    ],
+  ])('keeps outbound requirements with retired tags %j', (add) => {
+    const value = coreFeatures({ add });
+    setCoreFeatures(value);
+    expect(Object.keys(value.types)).toEqual(['outbound']);
+    expect(coreFeatureOfType('vmess')).toBe('vmess');
+    expect(coreFeatureOfType('wireguard')).toBe('');
+    expect(coreSupportsType('naive')).toBe(false);
+    expect(
+      linkCoreFeatures(
+        'vless://u@example.com:443?security=reality&pbk=synthetic-key',
+      ),
+    ).toEqual(['utls']);
+  });
+  it('returns only protocol requirements for damaged VMess and no requirements for empty or unknown links', () => {
+    setCoreFeatures(coreFeatures());
+    for (const link of [
+      '',
+      ' ',
+      'unknown://synthetic-secret',
+      'without-a-scheme',
+    ])
+      expect(linkCoreFeatures(link)).toEqual([]);
+    for (const link of ['vmess://broken%%%', 'vmess://e30='])
+      expect(linkCoreFeatures(link)).toEqual(['vmess']);
+  });
+});
+
+it('keeps an absent outbound table from a partial report from crashing the page', () => {
+  for (const types of [{}, undefined]) {
+    setCoreFeatures({ ...coreFeatures(), types });
+    expect(coreFeatureOfType('vmess')).toBe('');
+    expect(coreSupportsType('vmess')).toBe(true);
+  }
 });

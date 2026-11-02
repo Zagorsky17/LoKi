@@ -27,9 +27,7 @@ const CONNECTION_URI_TYPES = [
 
 export function connectionUriDescription() {
   return _('Supported URIs: %s').format(
-    CONNECTION_URI_TYPES.filter(([, type]) =>
-      coreSupportsType(type, ['outbound']),
-    )
+    CONNECTION_URI_TYPES.filter(([, type]) => coreSupportsType(type))
       .map(([name]) => name)
       .join(', '),
   );

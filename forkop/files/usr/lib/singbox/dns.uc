@@ -138,13 +138,13 @@ function parse_server_uri(value, ip_only) {
     if (scheme == "")
         scheme = "udp";
     if (DNS_URI_TYPES[scheme] == null)
-        return { unsupported: "unsupported DNS server URI scheme '" + scheme + "'" };
+        return { unsupported: "unsupported DNS server URI scheme; use udp, tcp, tls, quic, https or h3" };
 
     let server = runtime_url.host(value);
     if (!core_ip.valid_ip(server)) {
         let ascii_server = domain_config.suffix_to_ascii(server);
         if (ascii_server == null || !dns_domain_valid(ascii_server))
-            return { unsupported: "invalid DNS server host '" + server + "'" };
+            return { unsupported: "invalid DNS server host" };
         server = ascii_server;
     }
     if (ip_only && !core_ip.valid_ip(server))
@@ -152,7 +152,7 @@ function parse_server_uri(value, ip_only) {
 
     let port = runtime_url.port(value);
     if (port != "" && (match(port, /^[0-9]+$/) == null || int(port) < 1 || int(port) > 65535))
-        return { unsupported: "invalid DNS server port '" + port + "'" };
+        return { unsupported: "DNS server port must be a number from 1 to 65535" };
 
     let path = runtime_url.path(value);
     if (path != "" && scheme != "https" && scheme != "h3")

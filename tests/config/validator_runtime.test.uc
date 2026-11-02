@@ -314,7 +314,7 @@ t.test("bad DNS rule protocol", () => {
                 "destinations": "example.org"
             }
         ]
-    }, "unsupported DNS server URI scheme 'http'");
+    }, "unsupported DNS server URI scheme; use udp, tcp, tls, quic, https or h3");
 });
 
 t.test("bad DNS rule fallback strategy", () => {
@@ -455,7 +455,7 @@ t.test("bad interface resolver server", () => {
                 ]
             }
         ]
-    }, "unsupported DNS server URI scheme 'http'");
+    }, "unsupported DNS server URI scheme; use udp, tcp, tls, quic, https or h3");
 });
 
 t.test("bad interface resolver query mode", () => {

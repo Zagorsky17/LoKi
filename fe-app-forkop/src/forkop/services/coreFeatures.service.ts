@@ -6,8 +6,6 @@ import {
   FORKOP_SERVICE_OBJECT,
 } from './forkopWaitTransport';
 
-type CoreTypeKind = 'outbound';
-
 // What the installed sing-box can do, as singbox/features.uc reads it. Until the router answers,
 // and without a core, everything counts as available: the router still refuses what it cannot run.
 let report: Forkop.CoreFeatures | null = null;
@@ -29,21 +27,12 @@ export function coreFeatureTags(feature: string) {
 }
 
 // Group members use outbound features reported by the backend.
-export function coreFeatureOfType(
-  type: string,
-  kinds: CoreTypeKind[] = ['outbound'],
-) {
-  for (const kind of kinds) {
-    const feature = report?.types[kind]?.[type];
-    if (feature) {
-      return feature;
-    }
-  }
-  return '';
+export function coreFeatureOfType(type: string) {
+  return report?.types?.outbound?.[type] || '';
 }
 
-export function coreSupportsType(type: string, kinds?: CoreTypeKind[]) {
-  const feature = coreFeatureOfType(type, kinds);
+export function coreSupportsType(type: string) {
+  const feature = coreFeatureOfType(type);
   return !feature || coreHas(feature);
 }
 
@@ -182,7 +171,7 @@ export function linkCoreFeatures(link: string) {
   const scheme = separator > 0 ? value.slice(0, separator).toLowerCase() : '';
   const type = report?.links[scheme] || '';
   const features: string[] = [];
-  const feature = coreFeatureOfType(type, ['outbound']);
+  const feature = coreFeatureOfType(type);
   if (feature) {
     features.push(feature);
   }

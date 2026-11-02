@@ -346,15 +346,15 @@ function validate_dns_settings(settings, sections, context) {
         fail_validation("At least one main DNS server is required");
     if (length(bootstrap_servers) == 0)
         fail_validation("At least one Bootstrap DNS server is required");
-    for (let value in main_servers) {
+    for (let i, value in main_servers) {
         let parsed = runtime_dns.parse_server_uri(value, false);
         if (parsed.unsupported)
-            fail_validation("Invalid main DNS server '" + value + "': " + parsed.unsupported);
+            fail_validation("Invalid main DNS server #" + (i + 1) + ": " + parsed.unsupported);
     }
-    for (let value in bootstrap_servers) {
+    for (let i, value in bootstrap_servers) {
         let parsed = runtime_dns.parse_server_uri(value, true);
         if (parsed.unsupported)
-            fail_validation("Invalid Bootstrap DNS server '" + value + "': " + parsed.unsupported);
+            fail_validation("Invalid Bootstrap DNS server #" + (i + 1) + ": " + parsed.unsupported);
     }
 
     let encryption_error = runtime_dns.encryption_error(settings);
@@ -736,10 +736,10 @@ function validate_interface_domain_resolvers(section, sections, context) {
         if (!contains([ "sequential", "parallel" ], strategy))
             fail_validation(label + " uses unsupported DNS query mode '" + strategy + "'. Use sequential or parallel");
 
-        for (let value in connections.interface_domain_resolver_dns_servers(section, interface_name)) {
+        for (let i, value in connections.interface_domain_resolver_dns_servers(section, interface_name)) {
             let parsed = runtime_dns.parse_server_uri(value, false);
             if (parsed.unsupported)
-                fail_validation(label + " has an invalid DNS server '" + value + "': " + parsed.unsupported);
+                fail_validation(label + " has an invalid DNS server #" + (i + 1) + ": " + parsed.unsupported);
         }
 
         if (!connections.interface_domain_resolver_dns_detour_enabled(section, interface_name))
@@ -763,10 +763,10 @@ function validate_dns_action(section, sections, context) {
     let dns_servers = dns_setting_values(section, "dns_server");
     if (length(dns_servers) == 0)
         fail_validation("Section '" + section_label(name) + "' must contain at least one DNS server");
-    for (let dns_server in dns_servers) {
+    for (let i, dns_server in dns_servers) {
         let parsed = runtime_dns.parse_server_uri(dns_server, false);
         if (parsed.unsupported)
-            fail_validation("Section '" + section_label(name) + "' has an invalid DNS server '" + dns_server + "': " + parsed.unsupported);
+            fail_validation("Section '" + section_label(name) + "' has an invalid DNS server #" + (i + 1) + ": " + parsed.unsupported);
     }
     if (length(connections.rule_sets_with_subnets(section)) > 0)
         fail_validation("Section '" + section_label(name) + "' can use domain-only rule sets, but subnet extraction is enabled. Disable 'Include IP addresses and subnets'");
@@ -948,7 +948,7 @@ function validate_core_features(settings, sections, core_tags) {
     for (let value in dns_servers) {
         let parsed = runtime_dns.parse_server_uri(value, false);
         if (parsed.type == "quic" || parsed.type == "h3")
-            refuse_without("quic", core_tags, "DNS server '" + value + "' uses " + (parsed.type == "quic" ? "DNS over QUIC" : "DNS over HTTP/3"));
+            refuse_without("quic", core_tags, "A configured DNS server uses " + (parsed.type == "quic" ? "DNS over QUIC" : "DNS over HTTP/3"));
     }
 
 }

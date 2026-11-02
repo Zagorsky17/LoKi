@@ -18,7 +18,9 @@ The source still uses the technical names `forkop`, `luci-app-forkop` and `/etc/
 
 LoKi will retain connection links, subscriptions, routing sections, DNS, monitoring and diagnostics. Hosting VPN/proxy servers on the router has been removed: there is no server tab, server listener generation, client profile issuance, server key generation or server diagnostics. Built-in DNS/TProxy listeners and outbound connections remain. Built-in client VPN tunnels (WireGuard, AmneziaWG, WARP, Tailscale, OpenVPN and OpenConnect) and JSON endpoints have also been removed. Connection links, subscriptions, JSON outbounds and existing network interfaces remain; custom JSON outbounds cannot restore the removed VPN types. Only the framework for future LoKi migrations remains.
 
-The target platforms are OpenWrt 24.10 and 25.12. Compatibility with stock sing-box packages and newer versions remains unverified. Current development uses the patched LoKi core in the `sing-box-forkop` package.
+The target platforms are OpenWrt 24.10 and 25.12. Current generated configurations are incompatible with the compared official Linux builds corresponding to the target stock versions; stock-core adaptation remains in progress. Current development uses the patched LoKi core in the `sing-box-forkop` package.
+
+On Linux, run the schema baseline with `python3 core/tests/compatibility.py REFERENCE_R3 STOCK_BINARY_DIR OUTPUT_DIR`. Replace `REFERENCE_R3` with the trusted r3 binary path, `STOCK_BINARY_DIR` with a directory containing the official archives listed in `core/tests/compatibility_releases.json` and their binaries renamed to `sing-box-VERSION`, and `OUTPUT_DIR` with a results directory. Archive digests and extracted bytes are verified before execution. The expected result is 16 checks: r3 accepts each profile and stock cores reject the known schema extensions. This does not certify stock-core support.
 
 The built-in lists from [forkop-lists](https://github.com/ushan0v/forkop-lists) and the diagnostic domains `ip.podkop.fyi` and `fakeip.podkop.fyi` are retained external dependencies.
 
@@ -65,7 +67,7 @@ The LoKi core folds exact ERROR repeats from the same component within a 10-seco
 
 The service check shows the number of sing-box ERROR/FATAL messages found in the available log during the last 60 seconds. It counts log records, not network failures: a DNS repeat summary counts as one record. On-demand reading is capped at 64 KiB and 1000 lines; limits or malformed data are reported as incomplete, and read failures as unavailable. No history or separate log files are created, and the new response field contains no log text. Logd eviction and clock changes limit accuracy; this counter does not reduce the original log traffic.
 
-Reports open with values masked. An unmasked report requires confirmation and starts with a warning that it contains keys and passwords. Copy and download are disabled while switching modes; afterwards they export the displayed mode. For a report to share, use the masked mode or `forkop report masked`, and review its contents before sending it: masking cannot identify every possible secret. Update the backend and LuCI packages together so their report formats agree.
+DNS validation errors identify the affected setting and cause without printing the original DNS URI. Reports open with values masked. An unmasked report requires confirmation and starts with a warning that it contains keys and passwords. Copy and download are disabled while switching modes; afterwards they export the displayed mode. For a report to share, use the masked mode or `forkop report masked`, and review its contents before sending it: masking cannot identify every possible secret. Update the backend and LuCI packages together so their report formats agree.
 
 ## Documentation and testing
 

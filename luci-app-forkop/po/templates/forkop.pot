@@ -7,8 +7,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: FORKOP\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-02 20:15+0300\n"
-"PO-Revision-Date: 2026-11-02 20:15+0300\n"
+"POT-Creation-Date: 2026-11-02 21:10+0300\n"
+"PO-Revision-Date: 2026-11-02 21:10+0300\n"
 "Last-Translator: ushan0v <ushanov2204@gmail.com>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
 "Language: \n"
@@ -1985,7 +1985,7 @@ msgstr ""
 msgid "sing-box %s, not sing-box-forkop"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/services/coreFeatures.service.ts:67
+#: fe-app-forkop/src/forkop/services/coreFeatures.service.ts:56
 msgid "sing-box is built without %s"
 msgstr ""
 
@@ -2190,7 +2190,7 @@ msgstr ""
 msgid "The group joins as the single node it has selected"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/services/coreFeatures.service.ts:58
+#: fe-app-forkop/src/forkop/services/coreFeatures.service.ts:47
 msgid "the installed sing-box lacks %s"
 msgstr ""
 
