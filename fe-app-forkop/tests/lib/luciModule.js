@@ -2,6 +2,7 @@
 // directives, and the file ends in `return baseclass.extend({...})`.
 import fs from 'fs';
 import path from 'path';
+import { parse } from '@babel/parser';
 
 // luci.js installs String.prototype.format, which view code uses.
 if (!String.prototype.format) {
@@ -11,7 +12,7 @@ if (!String.prototype.format) {
   };
 }
 
-const REQUIRE_LINE = /^"require ([\w.]+)(?: as (\w+))?";$/;
+const REQUIRE_DIRECTIVE = /^require ([\w.]+)(?: as (\w+))?$/;
 
 export function createLoader(viewDir, globals = {}) {
   const loaded = new Map();
@@ -20,16 +21,16 @@ export function createLoader(viewDir, globals = {}) {
     if (loaded.has(name)) return loaded.get(name);
 
     const source = fs.readFileSync(path.join(viewDir, `${name}.js`), 'utf8');
-    const lines = source.split('\n');
+    const { directives } = parse(source, {
+      sourceType: 'script',
+      allowReturnOutsideFunction: true,
+    }).program;
     const deps = [];
-    for (const line of lines) {
-      const trimmed = line.trim();
-      const matched = REQUIRE_LINE.exec(trimmed);
+    for (const directive of directives) {
+      const matched = REQUIRE_DIRECTIVE.exec(directive.value.value);
       if (matched) {
         deps.push([matched[1], matched[2]]);
-        continue;
       }
-      if (trimmed && !/^"[^"]*";$/.test(trimmed)) break;
     }
 
     const names = ['_', 'baseclass'];
@@ -53,10 +54,7 @@ export function createLoader(viewDir, globals = {}) {
       values.push(value);
     }
 
-    const body = lines
-      .filter((line) => !REQUIRE_LINE.test(line.trim()))
-      .join('\n');
-    const module = new Function(...names, body)(...values);
+    const module = new Function(...names, source)(...values);
     loaded.set(name, module);
     return module;
   }

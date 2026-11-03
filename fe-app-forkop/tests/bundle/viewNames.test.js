@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 
 import { Linter } from 'eslint';
+import { parse } from '@babel/parser';
 import { describe, expect, it } from 'vitest';
 
 import { VIEW_DIR } from '../lib/paths.js';
@@ -70,7 +71,7 @@ const PROVIDED = [
   'XHR',
 ];
 
-const REQUIRE_LINE = /^"require ([A-Za-z0-9_.]+)(?: as ([A-Za-z0-9_]+))?";$/gm;
+const REQUIRE_DIRECTIVE = /^require ([A-Za-z0-9_.]+)(?: as ([A-Za-z0-9_]+))?$/;
 
 const views = fs.readdirSync(VIEW_DIR).filter((name) => name.endsWith('.js'));
 
@@ -78,9 +79,14 @@ describe.each(views)('%s', (name) => {
   // ESLint takes more than five seconds to analyze the 1 MB bundle on a single CPU.
   it('reads no name nothing defines', () => {
     const source = fs.readFileSync(path.join(VIEW_DIR, name), 'utf8');
-    const injected = [...source.matchAll(REQUIRE_LINE)].map(
-      (match) => match[2] || match[1],
-    );
+    const { directives } = parse(source, {
+      sourceType: 'script',
+      allowReturnOutsideFunction: true,
+    }).program;
+    const injected = directives
+      .map(({ value }) => REQUIRE_DIRECTIVE.exec(value.value))
+      .filter(Boolean)
+      .map((match) => match[2] || match[1]);
 
     const messages = new Linter().verify(
       `(function () {\n${source}\n});\n`,
