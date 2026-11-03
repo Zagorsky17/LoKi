@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Modified for LoKi on 2026-10-31: use the project release repository.
+# Modified for LoKi on 2026-11-03: verify and bound SDK downloads before extraction.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -40,6 +40,10 @@ SDK_CACHE_DIR="${SDK_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/forkop/openwrt-s
 SDK_DIR="${SDK_DIR:-$SDK_CACHE_DIR/extracted}"
 IPK_SDK_URL="${IPK_SDK_URL:-https://downloads.openwrt.org/releases/24.10.8/targets/x86/64/openwrt-sdk-24.10.8-x86-64_gcc-13.3.0_musl.Linux-x86_64.tar.zst}"
 APK_SDK_URL="${APK_SDK_URL:-https://downloads.openwrt.org/releases/25.12.6/targets/x86/64/openwrt-sdk-25.12.6-x86-64_gcc-14.3.0_musl.Linux-x86_64.tar.zst}"
+IPK_SDK_SHA256="${IPK_SDK_SHA256:-ac4a0405d2eea821b06f93c14ba13ffa90ad0457648903df7dde02570027ab21}"
+APK_SDK_SHA256="${APK_SDK_SHA256:-1864152619092e781fa36a401960c8e9ae42d6a364c44ee5f0b197ca5f3c0fcc}"
+IPK_SDK_BYTES="${IPK_SDK_BYTES:-258916431}"
+APK_SDK_BYTES="${APK_SDK_BYTES:-285832189}"
 
 BACKEND_DESCRIPTION="Rule-based traffic routing for OpenWrt"
 APP_DESCRIPTION="Web interface for LoKi"
@@ -78,6 +82,7 @@ ensure_host_deps() {
     patch
     perl
     sha256sum
+    stat
     tar
     unshare
     zstd
@@ -100,47 +105,92 @@ ensure_host_deps() {
   fi
 }
 
-download_sdk_archive() {
+download_sdk_archive() (
   local url="$1"
-  local archive_path="$SDK_CACHE_DIR/$(basename "$url")"
+  local expected_sha256="$2"
+  local expected_size="$3"
+  local archive_path
+  local download
+  local cached_mode
 
-  mkdir -p "$SDK_CACHE_DIR"
-  if [[ ! -f "$archive_path" ]]; then
-    echo "Downloading SDK: $url" >&2
-    curl --fail --location --retry 3 --output "$archive_path.part" "$url"
-    mv "$archive_path.part" "$archive_path"
+  if [[ "$url" != https://* || ! "$expected_sha256" =~ ^[a-f0-9]{64}$ ||
+    ! "$expected_size" =~ ^[1-9][0-9]{0,8}$ ]]; then
+    echo "Expected an HTTPS SDK URL, SHA-256 and byte size below 1 GB" >&2
+    return 1
+  fi
+  archive_path="$SDK_CACHE_DIR/$expected_sha256.tar.zst"
+
+  mkdir -p "$SDK_CACHE_DIR" || return 1
+  if [[ -L "$archive_path" || ( -e "$archive_path" && ( ! -f "$archive_path" || ! -O "$archive_path" ) ) ]]; then
+    echo "SDK cache entry must be an owned regular file" >&2
+    return 1
+  fi
+  if [[ -f "$archive_path" ]]; then
+    cached_mode="$(stat -c %a -- "$archive_path")" || return 1
+    if (( (8#$cached_mode & 022) != 0 )); then
+      echo "SDK cache entry must not be writable by other users" >&2
+      return 1
+    fi
+  fi
+  if [[ ! -e "$archive_path" ]]; then
+    download="$(mktemp "$SDK_CACHE_DIR/download.XXXXXX")" || return 1
+    trap 'rm -f -- "$download"' EXIT
+    echo "Downloading SDK over HTTPS" >&2
+    # head also bounds bodies without Content-Length on older curl versions.
+    if ! curl --disable --fail --location --globoff --proto '=https' --proto-redir '=https' \
+      --max-redirs 5 --connect-timeout 20 --max-time 600 --max-filesize "$expected_size" \
+      --output - --url "$url" | head -c "$((expected_size + 1))" > "$download"; then
+      echo "SDK HTTPS download failed" >&2
+      return 1
+    fi
+    if [[ "$(wc -c < "$download")" != "$expected_size" ]] ||
+      ! printf '%s  %s\n' "$expected_sha256" "$download" | sha256sum --check --status; then
+      echo "SDK download size or SHA-256 mismatch" >&2
+      return 1
+    fi
+    mv -- "$download" "$archive_path" || return 1
+  fi
+  if [[ "$(wc -c < "$archive_path")" != "$expected_size" ]] ||
+    ! printf '%s  %s\n' "$expected_sha256" "$archive_path" | sha256sum --check --status; then
+    echo "SDK cache size or SHA-256 mismatch" >&2
+    return 1
   fi
 
   printf '%s\n' "$archive_path"
-}
+)
 
-extract_sdk() {
+extract_sdk() (
   local kind="$1"
   local archive_path="$2"
-  local sdk_url="$3"
+  local sdk_sha256="$3"
   local destination="$SDK_DIR/$kind"
-  local marker_file="$destination/.forkop-sdk-url"
+  local marker_file="$destination/.forkop-sdk-sha256"
   local temp_dir
   local extracted_root
 
-  mkdir -p "$SDK_DIR"
-  if [[ -d "$destination" && -f "$marker_file" ]] && [[ "$(cat "$marker_file")" == "$sdk_url" ]]; then
+  mkdir -p "$SDK_DIR" || return 1
+  if [[ -d "$destination" && -f "$marker_file" ]] && [[ "$(cat "$marker_file")" == "$sdk_sha256" ]]; then
     printf '%s\n' "$destination"
     return 0
   fi
 
-  rm -rf "$destination"
-  temp_dir="$(mktemp -d "$SDK_DIR/.${kind}.XXXXXX")"
+  temp_dir="$(mktemp -d "$SDK_DIR/.${kind}.XXXXXX")" || return 1
   trap 'rm -rf -- "$temp_dir"' EXIT
-  tar --zstd -xf "$archive_path" -C "$temp_dir"
-  extracted_root="$(find "$temp_dir" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
-  mv "$extracted_root" "$destination"
-  printf '%s\n' "$sdk_url" > "$marker_file"
-  rmdir "$temp_dir" 2>/dev/null || true
-  trap - EXIT
+  tar --zstd -xf "$archive_path" -C "$temp_dir" || return 1
+  shopt -s dotglob nullglob
+  local roots=("$temp_dir"/*)
+  if (( ${#roots[@]} != 1 )) || [[ ! -d "${roots[0]}" || -L "${roots[0]}" ]]; then
+    echo "Expected exactly one SDK root directory" >&2
+    return 1
+  fi
+  extracted_root="${roots[0]}"
+  printf '%s\n' "$sdk_sha256" > "$extracted_root/.forkop-sdk-sha256" || return 1
+  rm -rf -- "$destination" || return 1
+  mv -- "$extracted_root" "$destination" || return 1
+  rmdir "$temp_dir" || return 1
 
   printf '%s\n' "$destination"
-}
+)
 
 ensure_po2lmo() {
   local ipk_sdk_dir="$1"
@@ -730,10 +780,10 @@ main() {
   rm -f "$output_dir"/forkop_* "$output_dir"/luci-app-forkop_* "$output_dir"/luci-i18n-forkop-ru_* \
     "$output_dir/install.sh" "$output_dir/release.json" "$output_dir/SHA256SUMS"
 
-  ipk_archive="$(download_sdk_archive "$IPK_SDK_URL")"
-  apk_archive="$(download_sdk_archive "$APK_SDK_URL")"
-  ipk_sdk_dir="$(extract_sdk ipk "$ipk_archive" "$IPK_SDK_URL")"
-  apk_sdk_dir="$(extract_sdk apk "$apk_archive" "$APK_SDK_URL")"
+  ipk_archive="$(download_sdk_archive "$IPK_SDK_URL" "$IPK_SDK_SHA256" "$IPK_SDK_BYTES")"
+  apk_archive="$(download_sdk_archive "$APK_SDK_URL" "$APK_SDK_SHA256" "$APK_SDK_BYTES")"
+  ipk_sdk_dir="$(extract_sdk ipk "$ipk_archive" "$IPK_SDK_SHA256")"
+  apk_sdk_dir="$(extract_sdk apk "$apk_archive" "$APK_SDK_SHA256")"
 
   po2lmo_bin="$(ensure_po2lmo "$ipk_sdk_dir")"
   ipkg_build_bin="$ipk_sdk_dir/scripts/ipkg-build"

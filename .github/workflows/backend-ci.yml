@@ -40,7 +40,7 @@ jobs:
         shell: bash
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential cmake git libjson-c-dev pkg-config
+          sudo apt-get install -y build-essential cmake curl git libjson-c-dev openssl pkg-config zstd
           git clone --depth 1 --branch v0.0.20250529 https://github.com/jow-/ucode.git /tmp/ucode
           cmake -S /tmp/ucode -B /tmp/ucode/build \
             -DUBUS_SUPPORT=OFF \
@@ -61,6 +61,9 @@ jobs:
       - name: Run tests
         shell: bash
         run: tests/run.sh
+
+      - name: Check SDK download integrity
+        run: python3 -m unittest discover -s tests/packaging -p 'test_*.py'
 
       - name: Check cached generator equivalence
         run: python3 tests/bench_bytecode.py

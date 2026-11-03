@@ -52,6 +52,8 @@ Captured PTR lookups use the local resolver for locally served reverse zones and
 
 Build on Linux with the Go version in `core/GO_VERSION`, Bash, Git, curl, Python 3 and the existing package build tools. This example builds the application packages and the base core for `aarch64_cortex-a53`; `0.1.0` is an example version, not a published release. The apk tool comes from the default SDK cache after building the application; adjust its path if using another SDK directory.
 
+The application builder pins the OpenWrt 24.10.8 and 25.12.6 SDK archives by SHA-256 and exact byte size. Downloads and redirects require HTTPS; cached archives are checked again before extraction. `IPK_SDK_URL` and `APK_SDK_URL` can select HTTPS mirrors of these archives. A different SDK also requires its independently verified `IPK_SDK_SHA256`/`IPK_SDK_BYTES` or `APK_SDK_SHA256`/`APK_SDK_BYTES`; changing the URL alone does not trust new contents. Use build/cache directories controlled by your build user. An old URL-only extraction marker causes re-extraction. A decompression or SDK-root validation failure preserves the previous extracted SDK. Run the local HTTPS regressions on Linux with `python3 -m unittest discover -s tests/packaging -p 'test_*.py'` (curl, OpenSSL and zstd are required).
+
 ```sh
 ./build.sh 0.1.0 "$PWD/release"
 export PATH="$HOME/.cache/forkop/openwrt-sdk/extracted/apk/staging_dir/host/bin:$PATH"
