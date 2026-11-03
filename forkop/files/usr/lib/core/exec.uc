@@ -1,3 +1,4 @@
+// Modified for LoKi on 2026-11-03: isolate temporary command output from shared /tmp paths.
 // Every external command runs through here, as an argv array quoted for /bin/sh.
 
 let fs = require("fs");
@@ -37,18 +38,24 @@ function capture(argv) {
 // All at once, each writing to a file: with a ubus connection open, a child that exits while
 // another's pipe is read interrupts that read for good.
 function capture_parallel(commands) {
+    if (!length(commands))
+        return [];
     let now = clock();
     let base = sprintf("/tmp/forkop-exec.%d.%d.%d", common.own_pid(), now[0], now[1]);
+    // Never reuse a path another process could have prepared in the shared directory.
+    if (!fs.mkdir(base, 0700))
+        return map(commands, () => ({ status: 1, stdout: "" }));
     let jobs = [];
     for (let i = 0; i < length(commands); i++)
-        push(jobs, sprintf("{ %s >%s 2>/dev/null; echo $? >%s; } &", command_line(commands[i]), quote(base + "." + i), quote(base + "." + i + ".status")));
+        push(jobs, sprintf("{ %s >%s 2>/dev/null; echo $? >%s; } &", command_line(commands[i]), quote(base + "/" + i), quote(base + "/" + i + ".status")));
     system(join(" ", jobs) + " wait");
     let results = [];
     for (let i = 0; i < length(commands); i++) {
-        push(results, { status: int(trim(fs.readfile(base + "." + i + ".status") ?? "1")), stdout: fs.readfile(base + "." + i) ?? "" });
-        fs.unlink(base + "." + i);
-        fs.unlink(base + "." + i + ".status");
+        push(results, { status: int(trim(fs.readfile(base + "/" + i + ".status") ?? "1")), stdout: fs.readfile(base + "/" + i) ?? "" });
+        fs.unlink(base + "/" + i);
+        fs.unlink(base + "/" + i + ".status");
     }
+    fs.rmdir(base);
     return results;
 }
 
@@ -70,13 +77,19 @@ function output(argv) {
 // Writes text to the command's stdin and returns { status, stderr }.
 function feed(argv, text) {
     let now = clock();
-    let error_path = sprintf("/tmp/forkop-exec.%d.%d.err", now[0], now[1]);
-    let pipe = fs.popen(command_line(argv) + " >/dev/null 2>" + quote(error_path), "w");
-    if (!pipe)
+    let base = sprintf("/tmp/forkop-exec.%d.%d.%d", common.own_pid(), now[0], now[1]);
+    if (!fs.mkdir(base, 0700))
         return { status: 1, stderr: "" };
+    let error_path = base + "/stderr";
+    let pipe = fs.popen(command_line(argv) + " >/dev/null 2>" + quote(error_path), "w");
+    if (!pipe) {
+        fs.rmdir(base);
+        return { status: 1, stderr: "" };
+    }
     let written = pipe.write(common.as_string(text)) != null;
     let result = { status: pipe.close(), stderr: fs.readfile(error_path) ?? "" };
     fs.unlink(error_path);
+    fs.rmdir(base);
     if (!written && result.status == 0)
         result.status = 1;
     return result;
