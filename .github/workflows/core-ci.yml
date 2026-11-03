@@ -46,6 +46,7 @@ jobs:
       - name: Test source integrity and core manifests
         run: |
           python3 core/tests/test_release.py
+          python3 -B core/tests/test_subscription_selection.py
           python3 -B core/tests/test_compatibility.py
           python3 -B core/tests/test_dns_timeout.py
       - name: Test logging, DNS and connection concurrency
