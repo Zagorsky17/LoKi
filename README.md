@@ -24,6 +24,8 @@ On Linux, run the schema baseline with `python3 core/tests/compatibility.py REFE
 
 Provider selections in r4 use the connection parameters within the selected subscription, so reordering duplicate names or renaming a node does not switch connections. Changing authentication, transport or TLS creates a different identity; an unavailable selected identity uses the existing default/first-member policy until it returns or a new choice is made. A pre-r4 cache stores only names and cannot safely identify an old provider choice: select the desired node again after upgrading. Display names remain unchanged, and a failed cache write rejects a manual selection without changing the running choice.
 
+Synthetic client-profile tests on r4 verify connection-only import from sing-box JSON and selected Xray JSON/base64 forms. Real loopback HTTP(S), VLESS WebSocket/TLS and Reality handshakes preserve the tested connection parameters; client DNS, routing, inbounds/TUN, log and cache settings do not replace LoKi settings. Run `python3 core/tests/subscription_profiles.py CORE NEW_OUTPUT_DIR` as an unprivileged Linux user with a trusted core. This does not confirm an owner-provided subscription, all client formats or OpenWrt; input size limits and cache protections remain under review.
+
 The built-in lists from [forkop-lists](https://github.com/ushan0v/forkop-lists) and the diagnostic domains `ip.podkop.fyi` and `fakeip.podkop.fyi` are retained external dependencies.
 
 ## Configuration backups
