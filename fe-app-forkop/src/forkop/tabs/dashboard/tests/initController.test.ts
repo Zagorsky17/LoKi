@@ -40,12 +40,10 @@ beforeEach(() => {
   mocks.disconnect.mockReset();
   mocks.resetAll.mockReset();
   mocks.readCoreUsage.mockReset();
-  mocks.getClashApiConnectionsSummary
-    .mockReset()
-    .mockResolvedValue({
-      success: true,
-      data: { downloadTotal: 10, uploadTotal: 5, connections: 2 },
-    });
+  mocks.getClashApiConnectionsSummary.mockReset().mockResolvedValue({
+    success: true,
+    data: { downloadTotal: 10, uploadTotal: 5, connections: 2 },
+  });
   vi.stubGlobal('L', { hasViewPermission: () => true });
   mocks.readCoreUsage.mockResolvedValue({
     success: false,
