@@ -22,12 +22,13 @@ import sys
 import threading
 import time
 from urllib.error import HTTPError
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 import plain_links as links
 import subscription_selection as selection
 
 UUID = '8e2948ac-2437-49b3-80d8-421628bd16cd'
 SHORT_ID = '13a25b36'
+SS_PASSWORDS = ['synthetic-ss-account-one', 'synthetic-ss-account-two']
 
 
 class Origin(http.server.BaseHTTPRequestHandler):
@@ -248,6 +249,11 @@ def main(core, output, measure_sizes=False):
 
         expected = ['main/One/Node', 'main/One/Node #2', 'main/Two/Node', 'main/Two/Node #2']
         processes = [ws_process, reality_process]
+        active_peers = [plain, secure, ws_relay, reality_relay]
+        uses_origin = [False, False, True, True]
+        markers = [b'http-authenticated', b'https-authenticated', b'profile-loopback-origin', b'profile-loopback-origin']
+        active_format = 'sing-box'
+        ss_nodes = []
 
         def check_side_effects():
             assert not any(path.exists() for path in forbidden_files), 'client profile created its own file'
@@ -273,25 +279,26 @@ def main(core, output, measure_sizes=False):
 
         def check(index, successful=True):
             runtime.choose(expected[index])
-            peer = [plain, secure, ws_relay, reality_relay][index]
-            before, before_origin = peer.hits if index >= 2 else len(peer.records), origin.hits
-            reply = links.request(runtime.port, trap.server_address[1] if index < 2 else origin.server_address[1])
+            peer = active_peers[index]
+            before, before_origin = peer.hits if uses_origin[index] else len(peer.records), origin.hits
+            reply = links.request(runtime.port, origin.server_address[1] if uses_origin[index] else trap.server_address[1])
             body = reply.split(b'\r\n\r\n', 1)[-1]
-            expected_body = [b'http-authenticated', b'https-authenticated', b'profile-loopback-origin', b'profile-loopback-origin'][index]
+            expected_body = markers[index]
             if successful:
                 assert body == expected_body, f'connection {index} did not reach its authenticated loopback peer'
-                assert (peer.hits if index >= 2 else len(peer.records)) == before + 1, 'connection bypassed the protocol peer'
-                if index >= 2:
+                assert (peer.hits if uses_origin[index] else len(peer.records)) == before + 1, 'connection bypassed the protocol peer'
+                if uses_origin[index]:
                     assert origin.hits == before_origin + 1
             else:
                 assert body != expected_body, 'invalid connection parameters still reached the marker'
                 assert origin.hits == before_origin, 'invalid connection reached the origin'
-                if index < 2:
+                if not uses_origin[index]:
                     assert len(peer.records) == before
                 else:
                     assert peer.hits > before, 'negative control did not reach its protocol peer'
             check_side_effects()
-            results.append({'connection': index, 'result': 'authenticated-loopback' if successful else 'refused'})
+            results.append({'format': active_format, 'connection': index,
+                            'result': 'authenticated-loopback' if successful else 'refused'})
 
         def refresh(provider):
             selection.api(runtime.api_port, '/providers/proxies/' + quote('main/' + provider, safe=''), 'PUT')
@@ -411,6 +418,194 @@ def main(core, output, measure_sizes=False):
             refresh('Two')
             check(3)
             check_dns()
+
+            def clash_documents(values, partial=False):
+                documents = []
+                for group in [values[:2], values[2:]]:
+                    proxies = []
+                    for item in group:
+                        proxy = {'name': 'Node', 'type': item['type'], 'server': item['server'],
+                                 'port': str(item['server_port'])}
+                        if item['type'] == 'http':
+                            proxy.update(username=item['username'], password=item['password'])
+                        else:
+                            proxy['uuid'] = item['uuid']
+                        if item.get('tls'):
+                            tls_options = item['tls']
+                            proxy.update(tls=True, sni=tls_options['server_name'], **{'skip-cert-verify': False})
+                            if tls_options.get('reality'):
+                                proxy.update({'client-fingerprint': 'chrome',
+                                              'reality-opts': {'public-key': tls_options['reality']['public_key'],
+                                                               'short-id': tls_options['reality']['short_id']}})
+                            else:
+                                proxy['ca-str'] = certificate.read_text()
+                        if item.get('transport'):
+                            proxy.update(network='ws', **{'ws-opts': {'path': item['transport']['path'],
+                                                                     'headers': item['transport']['headers']}})
+                        proxies.append(proxy)
+                    # Clash accepts option-name case and underscore spellings; header names remain data.
+                    proxies[1] = {key.upper().replace('-', '_'): value for key, value in proxies[1].items()}
+                    if partial:
+                        proxies.append({'name': 'Incomplete', 'type': 'vless', 'password': links.PASSWORD})
+                    globals_ = dict(globals_for_client(), **{
+                        'mixed-port': forbidden_ports[0], 'external-controller': f'127.0.0.1:{forbidden_ports[1]}',
+                        'secret': 'client-api-key-must-not-apply', 'rules': ['MATCH,REJECT'],
+                        'tun': {'enable': True, 'device': interface.name},
+                        'dns': {'enable': True, 'listen': f'127.0.0.1:{forbidden_ports[0]}',
+                                'nameserver': [f'udp://127.0.0.1:{client_dns.server_address[1]}']},
+                        'profile': {'store-selected': True, 'store-fake-ip': True}})
+                    document = 'proxies:\n' + ''.join('  - ' + json.dumps(proxy) + '\n' for proxy in proxies)
+                    document += ''.join(key + ': ' + json.dumps(value) + '\n' for key, value in globals_.items())
+                    documents.append(document.encode())
+                return documents
+
+            def raw_documents(values, partial=False):
+                documents = []
+                for group in [values[:2], values[2:]]:
+                    lines = ['# client settings are comments: ' + json.dumps(globals_for_client()), '']
+                    for item in group:
+                        if item['type'] == 'http':
+                            scheme = 'https' if item.get('tls') else 'http'
+                            account = quote(item['username'], safe='') + ':' + quote(item['password'], safe='')
+                            link = f'{scheme}://{account}@{item["server"]}:{item["server_port"]}'
+                        else:
+                            tls_options = item['tls']
+                            query = {'security': 'reality' if tls_options.get('reality') else 'tls',
+                                     'sni': tls_options['server_name'], 'encryption': 'none'}
+                            if tls_options.get('reality'):
+                                query.update(pbk=tls_options['reality']['public_key'],
+                                             sid=tls_options['reality']['short_id'], fp='chrome')
+                            if item.get('transport'):
+                                query.update(type='ws', path=item['transport']['path'],
+                                             host=item['transport']['headers']['Host'])
+                            link = f'vless://{item["uuid"]}@{item["server"]}:{item["server_port"]}?' + urlencode(query)
+                        lines.append('  ' + link + '#Node  ')
+                    if partial:
+                        lines.append('vless://')
+                    documents.append(('\r\n'.join(lines) + '\r\n').encode())
+                return documents
+
+            def sip008_documents(values, partial=False):
+                documents = []
+                for group in [values[:2], values[2:]]:
+                    servers = [{'remarks': 'Node', 'server': item['server'], 'server_port': str(item['server_port']),
+                                'password': item['password'], 'method': item['method']} for item in group]
+                    if partial:
+                        servers.append({'remarks': 'Incomplete', 'server': '127.0.0.1', 'password': SS_PASSWORDS[0]})
+                    documents.append(json.dumps(dict(globals_for_client(), version=1, bytes_used=1,
+                                                     bytes_remaining=2, servers=servers)).encode())
+                return documents
+
+            def exercise_format(name, builder, values, malformed, negative_controls):
+                nonlocal active_format
+                active_format = name
+                expected[:] = ['main/One/Node', 'main/One/Node #2', 'main/Two/Node', 'main/Two/Node #2']
+
+                def replace_documents(documents, encoded=False):
+                    for path, body in zip(['/one', '/two'], documents):
+                        subscription.responses[path] = (base64.b64encode(body) if encoded else body, {}, 0)
+                    refresh('One')
+                    refresh('Two')
+                    assert set(runtime.group()['all']) == set(expected), f'{name} lost a subscription or duplicate name'
+
+                for encoded in [False, True]:
+                    replace_documents(builder(values), encoded)
+                    for index in range(4):
+                        check(index)
+                    check_dns()
+                    refresh('One')
+                    refresh('Two')
+                    assert runtime.group()['now'] == expected[3], f'{name} repeated update changed selection'
+                    check(3)
+                # A broken sibling is skipped without losing the representable connections.
+                replace_documents(builder(values, partial=True))
+                for index in range(4):
+                    check(index)
+                for index, path, wrong in negative_controls:
+                    changed = copy.deepcopy(values)
+                    field = changed[index]
+                    for part in path[:-1]:
+                        field = field[part]
+                    field[path[-1]] = wrong
+                    replace_documents(builder(changed))
+                    check(index, False)
+                    replace_documents(builder(values))
+                    check(index)
+                check(3)
+                valid = subscription.responses['/two']
+                for body, extra, status in [(body, 0, 200) for body in malformed] + [
+                        (valid[0], 11, 200), (valid[0], 0, 503)]:
+                    subscription.responses['/two'] = (body, {}, extra, status)
+                    before = runtime.group()
+                    try:
+                        refresh('Two')
+                        raise AssertionError(f'{name} failed response replaced the authenticated set')
+                    except HTTPError as error:
+                        assert error.code == 503, 'unexpected provider update failure status'
+                    after = runtime.group()
+                    assert set(after['all']) == set(before['all']) and after['now'] == before['now'], \
+                        f'{name} failed update changed the old set or chosen member'
+                    check(3)
+                    subscription.responses['/two'] = valid
+                    refresh('Two')
+                    check(3)
+                check_dns()
+
+            controls = [(1, ['password'], 'incorrect-account'),
+                        (2, ['tls', 'server_name'], 'wrong.test'),
+                        (2, ['transport', 'path'], '/wrong-path'),
+                        (3, ['tls', 'reality', 'short_id'], '87b65a24')]
+            exercise_format('Clash', clash_documents, nodes,
+                            [b'proxies: [', b'proxies: []\n',
+                             b'proxies:\n  - {name: Incomplete, type: vless, password: "' + links.PASSWORD.encode() + b'"}\n'],
+                            controls)
+            exercise_format('raw-links', raw_documents, nodes,
+                            [b'# no connections\r\n', b'vless://\r\n',
+                             b'http://test%ZZ:synthetic-payload@127.0.0.1:1#Incomplete\r\n'], controls)
+
+            ss_relays = []
+            for index, method in enumerate(['aes-128-gcm', 'chacha20-ietf-poly1305']):
+                port = links.free_port()
+                inbound = {'type': 'shadowsocks', 'tag': 'ss-peer', 'listen': '127.0.0.1', 'listen_port': port,
+                           'method': method, 'password': SS_PASSWORDS[index], 'network': 'tcp'}
+                processes.append(stack.enter_context(peer_core(core, output / f'ss-peer-{index}', inbound,
+                                                               origin.server_address[1])))
+                relay = links.serve(stack, Relay)
+                relay.target = port
+                ss_relays.append(relay)
+                ss_nodes.append({'type': 'shadowsocks', 'tag': 'Node', 'server': '127.0.0.1',
+                                 'server_port': relay.server_address[1], 'method': method, 'password': SS_PASSWORDS[index]})
+            active_peers[:] = ss_relays * 2
+            uses_origin[:] = [True] * 4
+            markers[:] = [b'profile-loopback-origin'] * 4
+            exercise_format('SIP008', sip008_documents, ss_nodes * 2,
+                            [b'{"servers":[', b'{"servers":[]}',
+                             b'{"servers":[{"server":"127.0.0.1","password":"' + SS_PASSWORDS[0].encode() + b'"}]}'],
+                            [(0, ['password'], 'incorrect-account'), (3, ['password'], 'incorrect-account')])
+            # Both SS peers return the same origin marker: the peer counter must still distinguish them.
+            saved = expected[0]
+            expected[0] = expected[1]
+            try:
+                try:
+                    check(0)
+                    raise RuntimeError('traffic oracle accepted another Shadowsocks peer')
+                except AssertionError as error:
+                    assert str(error) == 'connection bypassed the protocol peer'
+            finally:
+                expected[0] = saved
+            check(0)
+            for index in [0, 1]:
+                runtime.choose(expected[index])
+                before_peer, before_origin = active_peers[index].hits, origin.hits
+                reply = links.request(runtime.port, trap.server_address[1])
+                assert b'profile-loopback-origin' not in reply
+                assert active_peers[index].hits == before_peer + 1 and origin.hits == before_origin, \
+                    'Shadowsocks test peer allowed an unrelated target or bypassed the peer'
+                check_side_effects()
+            active_peers[:] = [plain, secure, ws_relay, reality_relay]
+            uses_origin[:] = [False, False, True, True]
+            markers[:] = [b'http-authenticated', b'https-authenticated', b'profile-loopback-origin', b'profile-loopback-origin']
+            active_format = 'Xray'
             def xray_document(item):
                 source = {'tag': 'Node', 'protocol': item['type']}
                 if item['type'] == 'http':
@@ -488,13 +683,15 @@ def main(core, output, measure_sizes=False):
     # Only the consumer logs are product diagnostics. Synthetic inbound peers can log a rejected UUID.
     # Error logs and shared masked output have separate privacy checks.
     secrets = [links.USER, links.PASSWORD, links.AUTH, UUID, SHORT_ID, keys['publickey'], keys['privatekey'],
-               'incorrect-account', '65f676b9-cb1f-45b4-a824-a0a5856cf009', 'client-api-key-must-not-apply']
+               'incorrect-account', '65f676b9-cb1f-45b4-a824-a0a5856cf009', 'client-api-key-must-not-apply',
+               'synthetic-payload']
+    secrets += SS_PASSWORDS
     for log in directory.glob('core-*.log'):
         content = log.read_text()
         for number, value in enumerate(secrets):
             assert value not in content, f'core log exposed synthetic credential {number}'
     source = output / 'profile-to-mask.json'
-    private_json(source, {'outbounds': nodes})
+    private_json(source, {'outbounds': nodes + ss_nodes})
     program = output / 'mask.uc'
     program.write_text('let fs=require("fs");let m=require("diagnostics.mask");'
                        'let v=json(fs.readfile(getenv("PROFILE_SOURCE")));'
@@ -503,15 +700,16 @@ def main(core, output, measure_sizes=False):
                '-L', str(links.ROOT / 'forkop/files/usr/lib'), str(program)]
     masked = subprocess.run(command, env={**os.environ, 'PROFILE_SOURCE': str(source)},
                             check=True, capture_output=True, timeout=10).stdout
-    for number, value in enumerate(secrets[:5] + [keys['publickey']]):
+    for number, value in enumerate(secrets[:5] + [keys['publickey']] + SS_PASSWORDS):
         assert value.encode() not in masked, f'masked output exposed synthetic credential {number}'
     (output / 'masked-profile.json').write_bytes(masked)
     (output / 'masked-profile.json').chmod(0o600)
     private_json(output / 'results.json', results)
     if measure_sizes:
         private_json(output / 'size-observations.json', measurements)
-    print(json.dumps({'connection_checks': len(results), 'oracle_controls': 2,
-                      'peer_safety_controls': 2, 'size_observations': len(measurements)}))
+    print(json.dumps({'connection_checks': len(results), 'oracle_controls': 3,
+                      'peer_safety_controls': 4, 'size_observations': len(measurements),
+                      'formats': sorted({result['format'] for result in results})}))
 
 
 if __name__ == '__main__':
