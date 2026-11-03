@@ -202,4 +202,18 @@ t.test("packages contain only LoKi's configuration migration framework", () => {
         t.eq(match(name, /^forkop-1\.0\..*\.conf$/), null);
 });
 
+
+t.test("LoKi menu labels retain the technical route and permission identifiers", () => {
+    let menu = json(fs.readfile(repo.path("luci-app-forkop/root/usr/share/luci/menu.d/luci-app-forkop.json")));
+    t.eq(keys(menu), [ "admin/services/forkop" ]);
+    t.eq(menu["admin/services/forkop"].title, "LoKi");
+    t.eq(menu["admin/services/forkop"].action.path, "forkop/forkop");
+    t.eq(menu["admin/services/forkop"].depends.acl, [ "luci-app-forkop" ]);
+    let acl = json(fs.readfile(repo.path("luci-app-forkop/root/usr/share/rpcd/acl.d/luci-app-forkop.json")));
+    t.eq(keys(acl), [ "luci-app-forkop" ]);
+    t.contains(acl["luci-app-forkop"].description, "LoKi");
+    t.contains(acl["luci-app-forkop"].read.uci, "forkop");
+    t.eq(acl["luci-app-forkop"].read.file["/usr/bin/loki"], null);
+});
+
 t.done();

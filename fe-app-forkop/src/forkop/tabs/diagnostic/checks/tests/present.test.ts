@@ -73,7 +73,7 @@ describe('informational findings', () => {
 describe('the service check', () => {
   it('passes a running Forkop with nothing in its way, one line per question', () => {
     expect(presentService(service())).toEqual([
-      { state: 'success', key: 'Forkop', value: 'running for 2 h 15 min' },
+      { state: 'success', key: 'LoKi', value: 'running for 2 h 15 min' },
       {
         state: 'success',
         key: 'Core',
@@ -165,7 +165,7 @@ describe('the service check', () => {
       )[0],
     ).toEqual({
       state: 'error',
-      key: 'Forkop',
+      key: 'LoKi',
       value: 'not running: Port 9090 is busy',
     });
     expect(
@@ -245,7 +245,7 @@ describe('the service check', () => {
     ).filter((item) => item.key === 'Conflicts');
     expect(items.map((item) => [item.state, item.value])).toEqual([
       ['error', 'inet PodkopTable intercepts traffic'],
-      ['error', 'ip adguard takes DNS queries before Forkop'],
+      ['error', 'ip adguard takes DNS queries before LoKi'],
       ['error', 'another sing-box is running (PID 812, 990)'],
     ]);
   });
@@ -345,13 +345,13 @@ function traffic(
 describe('the traffic check', () => {
   it('shows the exit of the first section beside the direct one', () => {
     expect(presentTraffic(traffic(), { fakeip: true })).toEqual([
-      { state: 'success', key: 'Router', value: 'goes through Forkop' },
+      { state: 'success', key: 'Router', value: 'goes through LoKi' },
       {
         state: 'success',
         key: 'Exit via "Main"',
         value: '38.107.233.96, direct 46.138.78.196',
       },
-      { state: 'success', key: 'This device', value: 'goes through Forkop' },
+      { state: 'success', key: 'This device', value: 'goes through LoKi' },
     ]);
   });
 
@@ -474,11 +474,11 @@ describe('the traffic check', () => {
         { fakeip: true },
       )[0];
     expect(router({ dns_fakeip: false, fakeip: false }).value).toBe(
-      'resolves past Forkop',
+      'resolves past LoKi',
     );
     expect(router({ fakeip: false })).toMatchObject({
       state: 'error',
-      value: 'goes past Forkop',
+      value: 'goes past LoKi',
     });
     expect(router({ answered: false, fakeip: false }).value).toBe(
       'not checked: the check service did not answer',
@@ -502,7 +502,7 @@ describe('the traffic check', () => {
       ).slice(0, 2),
     ).toEqual([
       { state: 'success', key: 'Router', value: 'excluded from routing' },
-      { state: 'success', key: 'This device', value: 'goes through Forkop' },
+      { state: 'success', key: 'This device', value: 'goes through LoKi' },
     ]);
   });
 });

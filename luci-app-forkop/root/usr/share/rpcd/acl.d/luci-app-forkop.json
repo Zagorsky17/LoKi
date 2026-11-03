@@ -1,6 +1,6 @@
 {
   "luci-app-forkop": {
-    "description": "Grant UCI and RPC access to LuCI app Forkop",
+    "description": "Grant UCI and RPC access to LuCI app LoKi",
     "read": {
       "file": {
         "/usr/bin/forkop": [

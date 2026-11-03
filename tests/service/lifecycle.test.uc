@@ -22,7 +22,7 @@ let world = null;
 let real_sleep = global.sleep;
 
 const CHANGED_TABLE = "table inet ForkopTable\nadd rule inet ForkopTable mangle jump x\n";
-const NOTHING_TO_RUN = "[warn] Forkop has nothing to run: no section with connections is enabled. Set up a section, then start Forkop";
+const NOTHING_TO_RUN = "[warn] LoKi has nothing to run: no section with connections is enabled. Set up a section, then start LoKi";
 
 function event(name) {
     push(world.events, name);
@@ -223,7 +223,7 @@ t.test("a start answers only once sing-box is ready, then turns the table on, th
     t.eq(result.result, 0);
     t.eq(world.events, [ "config checked", "sing-box started", "nft applied", "watcher started", "rule-set worker started" ]);
     t.eq(fs.readfile(lifecycle.paths.applied_nft), world.script, "the applied table is recorded");
-    t.eq(world.logs, [ "[info] Starting Forkop", "[info] Forkop started" ]);
+    t.eq(world.logs, [ "[info] Starting LoKi", "[info] LoKi started" ]);
     t.eq(result.stdout, "", "a start prints nothing");
 });
 
@@ -261,21 +261,21 @@ t.test("a restored LoKi configuration is checked before anything else of a start
 t.test("a start on a router with IPv6 off says that only IPv4 is routed", () => {
     reset({ ipv6_off: true });
     t.eq(run(() => lifecycle.start()).result, 0);
-    t.eq(world.logs, [ "[info] Starting Forkop", "[info] IPv6 is off on the router; only IPv4 traffic is routed", "[info] Forkop started" ]);
+    t.eq(world.logs, [ "[info] Starting LoKi", "[info] IPv6 is off on the router; only IPv4 traffic is routed", "[info] LoKi started" ]);
 });
 
 t.test("a start of a running Forkop does nothing", () => {
     running();
     let result = run(() => lifecycle.start());
     t.eq([ result.result, world.events ], [ 0, [] ]);
-    t.contains(world.logs, "[info] Forkop is already running");
+    t.contains(world.logs, "[info] LoKi is already running");
 });
 
 t.test("a start with nothing to run warns once, runs nothing and succeeds", () => {
     reset({ nothing_to_run: true });
     let result = run(() => lifecycle.start());
     t.eq(result.result, 0);
-    t.eq(world.logs, [ "[info] Starting Forkop", NOTHING_TO_RUN ]);
+    t.eq(world.logs, [ "[info] Starting LoKi", NOTHING_TO_RUN ]);
     t.eq(filter(world.events, (e) => e == "config checked" || e == "sing-box started" || e == "nft applied"), []);
     t.eq([ result.stdout, result.stderr ], [ "", "" ]);
 });
@@ -315,7 +315,7 @@ t.test("a start that fails after sing-box came up takes everything down again", 
     reset({ nft_fails: true });
     let result = run(() => lifecycle.start());
     t.eq(result.result, 1);
-    t.eq(world.logs, [ "[info] Starting Forkop", "[error] nft refused the ruleset: Error: broken" ],
+    t.eq(world.logs, [ "[info] Starting LoKi", "[error] nft refused the ruleset: Error: broken" ],
         "the reason, once, and nothing about the cleanup behind it");
     t.contains(world.events, "sing-box stopped");
     t.eq(world.pid, 0);
@@ -337,7 +337,7 @@ t.test("a start refuses to run a second sing-box", () => {
     let result = run(() => lifecycle.start());
     t.eq(result.result, 1);
     t.eq(filter(world.events, (e) => e == "sing-box started"), []);
-    t.contains(result.stderr, "Another sing-box process is running outside Forkop; stop it before starting Forkop");
+    t.contains(result.stderr, "Another sing-box process is running outside LoKi; stop it before starting LoKi");
 });
 
 t.test("each failed step of a start names itself in the log as an error", () => {
@@ -398,7 +398,7 @@ t.test("a reload routes the devices the new configuration binds before the core 
     result = reloaded({ config_changed: true, bound: [ "wwan0" ], bound_rules_fail: true });
     t.eq(result.result, 1);
     t.eq(failures_logged(), [ "[error] Failed to add the IPv4 routing rule of interface wwan0" ]);
-    t.eq(world.logs[length(world.logs) - 1], "[warn] Configuration not applied; Forkop is stopped");
+    t.eq(world.logs[length(world.logs) - 1], "[warn] Configuration not applied; LoKi is stopped");
     t.eq(filter(world.events, (e) => e == "sing-box reloaded"), []);
 });
 
@@ -409,7 +409,7 @@ t.test("a configuration refused while it is generated leaves the running runtime
     t.eq(fs.readfile(lifecycle.paths.applied_nft), "table inet ForkopTable\n", "the table applied last is still the live one");
     t.eq(failures_logged(), [ "[error] Failed to generate sing-box configuration: broken" ]);
     t.eq(result.stderr, "Failed to generate sing-box configuration: broken\n");
-    t.eq(world.logs[length(world.logs) - 1], "[warn] Configuration not applied; Forkop keeps running the previous one");
+    t.eq(world.logs[length(world.logs) - 1], "[warn] Configuration not applied; LoKi keeps running the previous one");
 });
 
 t.test("a table that cannot be built is said in one line and touches nothing", () => {
@@ -442,7 +442,7 @@ t.test("each failed step of a reload after the runtime was touched names itself 
         t.eq(result.result, 1, failure[1]);
         t.eq(failures_logged(), [ failure[1] ], failure[1]);
         t.contains(result.stderr, substr(failure[1], 8));
-        t.eq(world.logs[length(world.logs) - 1], "[warn] Configuration not applied; Forkop is stopped", failure[1]);
+        t.eq(world.logs[length(world.logs) - 1], "[warn] Configuration not applied; LoKi is stopped", failure[1]);
         t.contains(world.events, "sing-box stopped", failure[1]);
         t.eq(index(world.events, "sing-box reloaded") >= 0, failure[2], failure[1] + ": whether sing-box was signalled");
     }
@@ -460,7 +460,7 @@ t.test("a reload of a runtime that is not complete restarts it", () => {
     world.network = false;
     let result = run(() => lifecycle.reload("on_config_change"));
     t.eq(result.result, 0);
-    t.eq(world.logs, [ "[info] Applying configuration", "[info] Forkop is not fully running; restarting it", "[info] Configuration applied" ]);
+    t.eq(world.logs, [ "[info] Applying configuration", "[info] LoKi is not fully running; restarting it", "[info] Configuration applied" ]);
     t.ok(index(world.events, "sing-box stopped") < index(world.events, "sing-box started"));
     t.contains(world.events, "nft applied");
 });
@@ -516,7 +516,7 @@ t.test("a stop whose table cannot be removed fails", () => {
     running({ table_delete_fails: true });
     let result = run(() => lifecycle.stop());
     t.eq(result.result, 1);
-    t.contains(result.stderr, "Failed to remove the Forkop nftables table");
+    t.contains(result.stderr, "Failed to remove the LoKi nftables table");
 });
 
 t.test("a crash cleanup leaves a planned stop and a running runtime alone, and takes a dead one down", () => {
@@ -525,7 +525,7 @@ t.test("a crash cleanup leaves a planned stop and a running runtime alone, and t
     world.ports = false;
     fs.writefile(lifecycle.paths.planned_stop, "1\n");
     let result = run(() => lifecycle.crash_cleanup("137"));
-    t.eq([ result.result, world.events ], [ 0, [] ], "a stop Forkop made itself");
+    t.eq([ result.result, world.events ], [ 0, [] ], "a stop LoKi made itself");
 
     running();
     t.eq([ run(() => lifecycle.crash_cleanup("137")).result, world.events ], [ 0, [] ], "a runtime that recovered");
@@ -534,7 +534,7 @@ t.test("a crash cleanup leaves a planned stop and a running runtime alone, and t
     world.pid = 0;
     world.ports = false;
     t.eq(run(() => lifecycle.crash_cleanup("137")).result, 0);
-    t.contains(world.logs, "[error] sing-box stopped after repeated crashes (exit code 137); Forkop is stopped");
+    t.contains(world.logs, "[error] sing-box stopped after repeated crashes (exit code 137); LoKi is stopped");
     t.contains(world.events, "nft table deleted");
     t.eq(length(filter(world.events, (e) => e == "watcher stopped")), 1, "the watcher runs the cleanup and is stopped once it finished");
 });
@@ -589,7 +589,7 @@ t.test("the crash pause leaves alone what a lifecycle action or a live core owns
     crashed();
     fs.writefile(lifecycle.paths.planned_stop, "1\n");
     run(() => lifecycle.crash_pause());
-    t.eq(world.events, [], "a stop Forkop made itself");
+    t.eq(world.events, [], "a stop LoKi made itself");
 
     crashed();
     fs.mkdir(lifecycle.paths.lock);
@@ -619,7 +619,7 @@ t.test("the routing a network restart took is put back under a running core and 
     running({ routing_lost: true, bound: [ "wwan0" ] });
     let result = run(() => lifecycle.restore_routing());
     t.eq([ result.result, world.events ], [ true, [ "routing restored", "bound to wwan0" ] ]);
-    t.eq(world.logs, [ "[info] The WAN came up without Forkop's routing; restored it" ]);
+    t.eq(world.logs, [ "[info] The WAN came up without LoKi's routing; restored it" ]);
 
     running({ routing_lost: true, routing_fails: true });
     result = run(() => lifecycle.restore_routing());
@@ -630,7 +630,7 @@ t.test("the routing a network restart took is put back under a running core and 
 t.test("restoring the routing leaves alone what a stop, an action or a crash owns, and a routing in place", () => {
     running({ routing_lost: true });
     fs.writefile(lifecycle.paths.planned_stop, "1\n");
-    t.eq([ run(() => lifecycle.restore_routing()).result, world.events ], [ false, [] ], "a stop Forkop made itself");
+    t.eq([ run(() => lifecycle.restore_routing()).result, world.events ], [ false, [] ], "a stop LoKi made itself");
 
     running({ routing_lost: true });
     fs.mkdir(lifecycle.paths.lock);
@@ -691,7 +691,7 @@ t.test("a start whose sing-box exits on the way up points at the core's own reas
 t.test("a stop is reported from its start to its end, and a stop with nothing running says nothing", () => {
     running();
     run(() => lifecycle.stop());
-    t.eq(world.logs, [ "[info] Stopping Forkop", "[info] Forkop stopped" ]);
+    t.eq(world.logs, [ "[info] Stopping LoKi", "[info] LoKi stopped" ]);
 
     reset();
     t.eq(run(() => lifecycle.stop()).result, 0);

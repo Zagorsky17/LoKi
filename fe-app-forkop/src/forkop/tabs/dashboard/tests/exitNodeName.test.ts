@@ -60,4 +60,14 @@ describe('exitNodeName', () => {
     expect(exitNodeName(section, 'main/sub1/🇫🇮 Helsinki')).toBe('🇫🇮 Helsinki');
     expect(exitNodeName(section, 'elsewhere-out')).toBe('elsewhere-out');
   });
+
+  it('preserves a user-provided node name that contains the upstream product name', () => {
+    const custom = {
+      ...section,
+      withTagSelect: false,
+      outbounds: [outbound('remote-out', 'Forkop remote node')],
+    };
+    expect(exitNodeName(custom)).toBe('Forkop remote node');
+    expect(exitNodeName(custom, 'remote-out')).toBe('Forkop remote node');
+  });
 });

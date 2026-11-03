@@ -1,3 +1,4 @@
+// Modified for LoKi on 2026-11-03: product labels in user-facing messages.
 // Modified for LoKi on 2026-11-01: keep browser traffic observations informational.
 import type {
   IDiagnosticsChecksItem,
@@ -66,7 +67,7 @@ export function reportText(
     throw new Error('Unexpected report visibility');
   }
   const { systemInfo, service } = input;
-  const versions = [`Forkop ${systemInfo.forkop_version}`];
+  const versions = [`LoKi ${systemInfo.forkop_version}`];
   if (input.luciVersion && input.luciVersion !== systemInfo.forkop_version) {
     versions.push(`LuCI ${input.luciVersion}`);
   }
@@ -94,11 +95,11 @@ export function reportText(
     attachments.visibility === 'raw'
       ? _('UNMASKED REPORT: contains keys and passwords. Do not share.')
       : _('MASKED REPORT: review before sharing.'),
-    `${_('Forkop diagnostic report')} · ${timestamp(input.generatedAt)}\n`,
+    `${_('LoKi diagnostic report')} · ${timestamp(input.generatedAt)}\n`,
     section(_('System'), system.join('\n')),
     section(_('Checks'), attachments.checks),
     section(_('Log'), attachments.log),
-    section(_('Forkop configuration'), attachments.forkop_config),
+    section(_('LoKi configuration'), attachments.forkop_config),
     section('nftables', attachments.nftables),
     section(_('Routing rules'), attachments.ip_rules),
   ].join('\n');

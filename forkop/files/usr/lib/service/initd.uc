@@ -1,3 +1,4 @@
+// Modified for LoKi on 2026-11-03: product labels in user-facing messages.
 // The init script's hooks; each is tracked as a UI action unless the page opened one for it.
 
 let fs = require("fs");
@@ -78,7 +79,7 @@ function start(reason) {
         lock.consume_request(paths.start_retry);
     else {
         lock.mark_request(paths.start_retry, reason == "triggered" ? "wan_retry_failed" : "start_failed");
-        exec.log("warn", "Forkop did not start" + (fs.stat(paths.autostart) != null ? "; it tries again when the WAN comes up" : ""));
+        exec.log("warn", "LoKi did not start" + (fs.stat(paths.autostart) != null ? "; it tries again when the WAN comes up" : ""));
     }
     finish("start", job, status);
     return status;
@@ -110,8 +111,8 @@ function reload(reason) {
     if (internal_change(reason))
         return skipped;
     if (!registered()) {
-        exec.log("info", "Forkop is not running; reload skipped");
-        warn("Forkop is not running; reload skipped\n");
+        exec.log("info", "LoKi is not running; reload skipped");
+        warn("LoKi is not running; reload skipped\n");
         return skipped;
     }
 

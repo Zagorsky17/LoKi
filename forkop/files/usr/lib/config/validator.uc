@@ -1,3 +1,4 @@
+// Modified for LoKi on 2026-11-03: product labels in user-facing messages.
 // Modified for LoKi on 2026-11-01: warn about known list overlaps after validating references.
 let fs = require("fs");
 let core_common = require("core.common");
@@ -145,7 +146,7 @@ function validate_runtime_display_names(sections, kind, seen) {
         if (index(name, "/") >= 0)
             fail_validation(kind + " display name '" + name + "' contains '/'. Use another character");
         if (reserved[name])
-            fail_validation(kind + " display name '" + name + "' is reserved by Forkop. Choose another name");
+            fail_validation(kind + " display name '" + name + "' is reserved by LoKi. Choose another name");
         if (seen[name])
             fail_validation("Duplicate " + lc(kind) + " display name '" + name + "'. Display names must be unique");
         seen[name] = true;
@@ -898,7 +899,7 @@ function validate_runtime_mark_ranges_context(context) {
     let router_mark = parse_number(context.nft_router_mark);
 
     if (fakeip_mark == null || outbound_mark == null || router_mark == null)
-        fail_validation("Forkop marks contain invalid numeric constants");
+        fail_validation("LoKi marks contain invalid numeric constants");
     if ((fakeip_mark & TAILSCALE_FWMARK_MASK) != 0)
         fail_validation("FakeIP mark overlaps Tailscale fwmark mask 0x00ff0000");
     if ((outbound_mark & TAILSCALE_FWMARK_MASK) != 0)
@@ -1023,7 +1024,7 @@ function check_requirements() {
     if (binary_version == "")
         die("Failed to read the version sing-box reports. Reinstall sing-box-forkop");
     if (packages.forkop_core_version(binary_version) == "")
-        die("sing-box " + binary_version + " is not sing-box-forkop, the core Forkop runs on. Install sing-box-forkop");
+        die("sing-box " + binary_version + " is not sing-box-forkop, the core LoKi runs on. Install sing-box-forkop");
     if (!core_version.version_at_least(binary_version, ctx.sing_box_required_version))
         die("sing-box-forkop " + binary_version + " is older than the required minimum (" + ctx.sing_box_required_version + "). Update sing-box-forkop");
 
@@ -1035,7 +1036,7 @@ function check_requirements() {
         die("Service 'sing-box' is missing. Reinstall sing-box-forkop");
 
     if (dhcp_has_https_dns_proxy_options("/etc/config/dhcp") === true)
-        core_exec.log("warn", "https-dns-proxy is configured in /etc/config/dhcp, and Forkop conflicts with it. Remove https-dns-proxy or its settings in /etc/config/dhcp");
+        core_exec.log("warn", "https-dns-proxy is configured in /etc/config/dhcp, and LoKi conflicts with it. Remove https-dns-proxy or its settings in /etc/config/dhcp");
 
     connections.load();
     if (connection_sections_proxy_nothing())

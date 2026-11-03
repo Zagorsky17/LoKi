@@ -1,3 +1,4 @@
+// Modified for LoKi on 2026-11-03: product labels in user-facing messages.
 import { copyToClipboard } from '../../../helpers/copyToClipboard';
 import { E } from '../../../helpers/element';
 import { showToast } from '../../../helpers/showToast';
@@ -253,7 +254,7 @@ export function initController(): void {
       button(
         'uninstall',
         renderTrashIcon24,
-        _('Remove Forkop'),
+        _('Remove LoKi'),
         ['cbi-button-remove'],
         openRemoveDialog,
       ),
@@ -399,7 +400,7 @@ export function initController(): void {
 
   function openRemoveDialog() {
     ui.showModal(
-      _('Remove Forkop?'),
+      _('Remove LoKi?'),
       renderRemoveDialog(
         removedPackages(store.get().diagnosticsSystemInfo),
         (purge) => void run.start('uninstall', '', purge),

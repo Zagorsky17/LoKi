@@ -1,4 +1,5 @@
 #!/bin/sh
+# Modified for LoKi on 2026-11-03: product labels and reviewed masked diagnostics.
 # Modified for LoKi on 2026-11-02: reject foreign configurations and package takeovers.
 # shellcheck shell=dash
 #
@@ -216,7 +217,7 @@ choose_variant() { # choose_variant [KEEP]: CORE_VARIANT from a menu at the term
 	question_block
 	{
 		if [ -z "$CORE_OLD" ]; then
-			printf '%s\n\n' "$(t 'Forkop runs on its own core, sing-box-forkop' 'Forkop работает на собственном ядре sing-box-forkop')"
+			printf '%s\n\n' "$(t 'LoKi runs on its own core, sing-box-forkop' 'LoKi работает на собственном ядре sing-box-forkop')"
 		elif [ "$CORE_VARIANT" != custom ]; then
 			printf '%s\n\n' "$(t 'Installed: sing-box-forkop %s (%s)' 'Установлен sing-box-forkop %s (%s)' "$CORE_OLD" "$CORE_VARIANT")"
 		fi
@@ -237,10 +238,10 @@ choose_variant() { # choose_variant [KEEP]: CORE_VARIANT from a menu at the term
 	log "build chosen: $CORE_VARIANT"
 }
 
-ask_translation() { # a first install asks whether Forkop's page gets its Russian translation
+ask_translation() { # a first install asks whether LoKi's page gets its Russian translation
 	[ -z "$FORKOP_OLD" ] && may_ask || return 0
 	question_block
-	if ask "$(t 'Install the Russian translation of the Forkop page?' 'Установить русский перевод страницы Forkop?')" "$I18N"; then
+	if ask "$(t 'Install the Russian translation of the LoKi page?' 'Установить русский перевод страницы LoKi?')" "$I18N"; then
 		I18N=1
 	else
 		I18N=0
@@ -463,7 +464,7 @@ dependents() { # the installed packages in $1 and every installed package that n
 		}' "$WORK/db"
 }
 
-needed_by() { # needed_by NAME...: the installed packages other than Forkop's that depend on one of NAMES
+needed_by() { # needed_by NAME...: the installed packages other than LoKi's that depend on one of NAMES
 	awk -F '\t' -v want=" $* " -v ours=" $OUR_PACKAGES " '
 		index(ours, " " $1 " ") { next }
 		{
@@ -707,7 +708,7 @@ identify_system() {
 	RELEASE=$(openwrt_value DISTRIB_RELEASE)
 	ARCH=$(package_arch)
 	[ -n "$ARCH" ] || ARCH=$(openwrt_value DISTRIB_ARCH)
-	printf '%s%s%s · OpenWrt %s · %s\n\n' "$C_STEP" "$(t 'Forkop installer' 'Установщик Forkop')" "$C_OFF" "${RELEASE:-?}" "${ARCH:-?}"
+	printf '%s%s%s · OpenWrt %s · %s\n\n' "$C_STEP" "$(t 'LoKi installer' 'Установщик LoKi')" "$C_OFF" "${RELEASE:-?}" "${ARCH:-?}"
 }
 
 check_system() {
@@ -721,18 +722,18 @@ check_system() {
 	*)
 		if ! is_number "$major" || ! is_number "$minor" || [ "$major" -lt 24 ] ||
 			{ [ "$major" -eq 24 ] && [ "$minor" -lt 10 ]; }; then
-			fail 1 unsupported_openwrt "$(t 'Forkop needs OpenWrt 24.10 or newer' 'Для Forkop нужна OpenWrt 24.10 или новее')"
+			fail 1 unsupported_openwrt "$(t 'LoKi needs OpenWrt 24.10 or newer' 'Для LoKi нужна OpenWrt 24.10 или новее')"
 		fi
 		;;
 	esac
 	reason=$(unbuilt_reason "$ARCH")
-	[ -z "$reason" ] || fail 1 unsupported_arch "$(t 'Forkop does not run on this processor: %s' 'Forkop не работает на этом процессоре: %s' "$reason")"
+	[ -z "$reason" ] || fail 1 unsupported_arch "$(t 'LoKi does not run on this processor: %s' 'LoKi не работает на этом процессоре: %s' "$reason")"
 	grep -q ' /overlay ' /proc/mounts && FLASH_MOUNT=/overlay
 	FLASH_FS=$(awk -v m="$FLASH_MOUNT" '$2 == m { t = $3 } END { print t }' /proc/mounts)
 	ram=$(awk '/^MemTotal:/ { printf "%d", $2 / 1024 }' /proc/meminfo)
 	log "OpenWrt $RELEASE, $ARCH, $PM; flash $(free_kb "$FLASH_MOUNT") KB free ($FLASH_FS); RAM $ram MB, $(mem_available_kb) KB available"
 	if [ "$ram" -lt 100 ] 2>/dev/null; then
-		warn low_memory "$(t 'Forkop needs about 128 MB of RAM, and this router has %s MB' 'Для Forkop нужно около 128 МБ оперативной памяти, а у роутера %s МБ' "$ram")"
+		warn low_memory "$(t 'This router has %s MB of RAM; LoKi has not been validated for this memory size' 'У роутера %s МБ оперативной памяти; требования LoKi для этого объёма не проверены' "$ram")"
 	fi
 
 	year=$(date +%Y)
@@ -761,7 +762,7 @@ check_system() {
 
 # --- what is installed ----------------------------------------------------------------------
 
-forkop_status() { # running or enabled, from the installed Forkop
+forkop_status() { # running or enabled, from the installed LoKi
 	local status
 	[ -x /etc/init.d/forkop ] && /etc/init.d/forkop enabled 2>/dev/null && FORKOP_ENABLED=1
 	[ -x /usr/bin/forkop ] || return 0
@@ -842,7 +843,7 @@ fetch_or_fail() { # fetch_or_fail URL FILE NAME RELEASE: a file of a release, or
 }
 
 fetch_release() { # fetch_release forkop|core: the latest release's manifest, and from the API its files
-	local repo=$FORKOP_REPO name=Forkop package=forkop manifest="$WORK/$1.json" asset=release.json url status=0
+	local repo=$FORKOP_REPO name=LoKi package=forkop manifest="$WORK/$1.json" asset=release.json url status=0
 	[ "$1" = forkop ] || repo=$CORE_REPO name=sing-box-forkop package=sing-box-forkop asset=core-release.json
 	if [ -z "$MIRROR" ]; then
 		download "$API_URL/repos/$repo/releases/latest" "$WORK/$1.release"
@@ -892,7 +893,7 @@ resolve_release() {
 	[ "$ASKED" = 0 ] || printf '\n' >/dev/tty
 }
 
-decide_forkop() { # the Forkop packages to install, NEED_*, and the Forkop that will run
+decide_forkop() { # the LoKi packages to install, NEED_*, and the LoKi that will run
 	if [ -n "$FORKOP_OLD" ]; then
 		[ -z "$I18N_OLD" ] || I18N=1
 	else
@@ -956,7 +957,7 @@ decide_core() { # the build, the core release and whether the core is installed
 	check_compatible
 }
 
-check_compatible() { # the Forkop and the core that will run work together
+check_compatible() { # the LoKi and the core that will run work together
 	# what a core needs of Forkop only its release says
 	if [ "$RESULT_CORE" = "$C_VERSION" ] && [ -n "$C_FORKOP_MIN" ] && older "$RESULT_FORKOP" "$C_FORKOP_MIN"; then
 		fail 1 incompatible "$(t 'sing-box-forkop %s needs forkop %s or newer, and forkop %s would run' 'sing-box-forkop %s требует forkop %s или новее, а будет forkop %s' "$C_VERSION" "$C_FORKOP_MIN" "$RESULT_FORKOP")"
@@ -980,7 +981,7 @@ core_file() { # core_file VARIANT
 }
 
 get_package() { # get_package forkop|core FILE: GOT is FILE of that release, checked against its SHA256SUMS
-	local sums="$WORK/$1.sums" file="$WORK/$2" url name="Forkop $F_VERSION"
+	local sums="$WORK/$1.sums" file="$WORK/$2" url name="LoKi $F_VERSION"
 	[ "$1" = forkop ] || name="sing-box-forkop $C_VERSION"
 	[ -s "$sums" ] || fetch_or_fail "$(asset_url "$1" SHA256SUMS)" "$sums" SHA256SUMS "$name"
 	if [ -z "$(checksum_of "$2" "$sums")" ]; then
@@ -998,7 +999,7 @@ get_package() { # get_package forkop|core FILE: GOT is FILE of that release, che
 	GOT=$file
 }
 
-need_ram_kb() { # what the run puts in RAM while Forkop still runs: the downloads, the core's as the largest
+need_ram_kb() { # what the run puts in RAM while LoKi still runs: the downloads, the core's as the largest
 	# package of its build, and the largest of the checks run beside them
 	local kb=6144
 	[ "$NEED_FORKOP$NEED_APP$NEED_I18N" = 000 ] || kb=$((kb + 1024))
@@ -1020,8 +1021,8 @@ enough_ram() { # enough_ram KB downloads|dependencies: the run stops here unless
 		text=$(t 'Not enough RAM to install the dependencies: %s MB needed, %s MB free' 'Не хватает оперативной памяти для установки зависимостей: нужно %s МБ, свободно %s МБ' "$(mb "$1")" "$(mb "$free")")
 	fi
 	[ "$FORKOP_RUNNING" = 0 ] || fail 1 no_memory "$text" \
-		"$(t 'Stop Forkop: /etc/init.d/forkop stop' 'Остановите Forkop: /etc/init.d/forkop stop')" \
-		"$(t 'Run the installer again, then start Forkop: /etc/init.d/forkop start' 'Запустите установщик снова, затем Forkop: /etc/init.d/forkop start')"
+		"$(t 'Stop LoKi: /etc/init.d/forkop stop' 'Остановите LoKi: /etc/init.d/forkop stop')" \
+		"$(t 'Run the installer again, then start LoKi: /etc/init.d/forkop start' 'Запустите установщик снова, затем LoKi: /etc/init.d/forkop start')"
 	fail 1 no_memory "$text" "$(t 'Free some RAM and run the installer again' 'Освободите память и запустите установщик снова')"
 }
 
@@ -1309,7 +1310,7 @@ stop_cores() {
 
 stop_services() {
 	if [ "$FORKOP_RUNNING" = 1 ]; then
-		step stop "$(t 'Stopping Forkop' 'Остановка Forkop')"
+		step stop "$(t 'Stopping LoKi' 'Остановка LoKi')"
 	elif pidof sing-box sing-box-core >/dev/null 2>&1; then
 		step stop "$(t 'Stopping sing-box' 'Остановка sing-box')"
 	fi
@@ -1490,8 +1491,8 @@ check_installed() { # what the transaction left, against what it was to install
 	[ -z "$OPKG_DB_COPY" ] || db_hint=$(t "opkg's database is damaged; its copy from before is %s" 'База opkg повреждена, её копия до установки — %s' "$OPKG_DB_COPY")
 	if [ -n "$FILE_FORKOP" ] && { opkg_unpacked forkop || { [ "$(pkg_version forkop)" = "$F_VERSION" ] && [ "$1" != 0 ]; }; }; then
 		reason=$(logread -e forkop 2>/dev/null | grep '\[error\]' | tail -n 1 | sed 's/.*\[error\] *//')
-		fail 3 transaction "$(t 'Forkop %s is installed, but its setup failed: %s' 'Forkop %s установлен, но не настроился: %s' "$F_VERSION" "${reason:-$(t 'see logread -e forkop' 'см. logread -e forkop')}")" \
-			"$(t 'Its config is left as it was. Report it in the Forkop chat with the output of logread -e forkop' 'Конфиг оставлен как был. Сообщите об этом в чат Forkop, приложив вывод logread -e forkop')" \
+		fail 3 transaction "$(t 'LoKi %s is installed, but its setup failed: %s' 'LoKi %s установлен, но не настроился: %s' "$F_VERSION" "${reason:-$(t 'see logread -e forkop' 'см. logread -e forkop')}")" \
+			"$(t 'Its config is left as it was. Review forkop report masked before sharing diagnostics' 'Конфиг оставлен как был. Перед передачей диагностики проверьте forkop report masked')" \
 			"$(start_again)" "$db_hint"
 	fi
 	fail 3 transaction "$(t 'The installation did not complete: %s' 'Установка не завершилась: %s' "$(commas "$problems")")" \
@@ -1499,12 +1500,12 @@ check_installed() { # what the transaction left, against what it was to install
 		"$(start_again)" "$db_hint"
 }
 
-start_again() { # after a failed transaction a Forkop that ran before runs again on what is installed now
+start_again() { # after a failed transaction a LoKi that ran before runs again on what is installed now
 	[ "$FORKOP_RUNNING" = 1 ] && [ -x /etc/init.d/forkop ] || return 0
 	if deadline 150 /etc/init.d/forkop start >>"$LOG" 2>&1; then
-		t 'Forkop runs again' 'Forkop снова запущен'
+		t 'LoKi runs again' 'LoKi снова запущен'
 	else
-		t 'Forkop did not start again: logread -e forkop' 'Forkop не запустился снова: logread -e forkop'
+		t 'LoKi did not start again: logread -e forkop' 'LoKi не запустился снова: logread -e forkop'
 	fi
 }
 
@@ -1529,7 +1530,7 @@ clean_up_after() {
 	done
 }
 
-forkop_up() { # start Forkop and wait for it to run: 0 once it does
+forkop_up() { # start LoKi and wait for it to run: 0 once it does
 	local waited=0
 	deadline 150 /etc/init.d/forkop start >>"$LOG" 2>&1
 	while :; do
@@ -1540,25 +1541,25 @@ forkop_up() { # start Forkop and wait for it to run: 0 once it does
 	done
 }
 
-start_forkop() { # a Forkop that ran before runs again, unless its config starts clean and has nothing to run
+start_forkop() { # a LoKi that ran before runs again, unless its config starts clean and has nothing to run
 	local pid exe hint
 	[ -x /etc/init.d/forkop ] || return 0
 	[ "$FORKOP_ENABLED" = 0 ] || run /etc/init.d/forkop enable
 	[ "$FORKOP_RUNNING" = 1 ] || return 0
 	! clean_config || return 0
-	step start "$(t 'Starting Forkop' 'Запуск Forkop')"
+	step start "$(t 'Starting LoKi' 'Запуск LoKi')"
 	hint=$(t 'Details: logread -e forkop' 'Подробности: logread -e forkop')
-	forkop_up || fail 4 service "$(t 'Forkop is installed but did not start: %s' 'Forkop установлен, но не запустился: %s' \
+	forkop_up || fail 4 service "$(t 'LoKi is installed but did not start: %s' 'LoKi установлен, но не запустился: %s' \
 		"$(logread -e forkop 2>/dev/null | grep -i error | tail -n 1 | sed 's/.*\]: //; s/^\[error\] *//')")" "$hint"
 	pid=$(pidof sing-box | awk '{ print $1 }')
 	exe=$(readlink "/proc/$pid/exe" 2>/dev/null)
 	if [ -z "$pid" ] || [ "$exe" != /usr/bin/sing-box ]; then
-		fail 4 service "$(t 'Forkop runs, but sing-box does not' 'Forkop работает, а sing-box — нет')" "$hint"
+		fail 4 service "$(t 'LoKi runs, but sing-box does not' 'LoKi работает, а sing-box — нет')" "$hint"
 	fi
 	STARTED=1
 }
 
-clean_config() { # Forkop's config is the package's own default, which has nothing to run
+clean_config() { # LoKi's config is the package's own default, which has nothing to run
 	cmp -s /etc/config/forkop /usr/share/forkop/default-config
 }
 
@@ -1595,21 +1596,21 @@ summary() {
 	local result runs
 	runs=$(t ' and running' ' и запущен')
 	if [ -z "$FORKOP_OLD" ]; then
-		result=$(t 'Forkop %s is installed' 'Forkop %s установлен' "$RESULT_FORKOP")
+		result=$(t 'LoKi %s is installed' 'LoKi %s установлен' "$RESULT_FORKOP")
 	elif [ "$NEED_FORKOP" = 1 ]; then
-		result=$(t 'Forkop is updated to %s' 'Forkop обновлён до %s' "$RESULT_FORKOP")
+		result=$(t 'LoKi is updated to %s' 'LoKi обновлён до %s' "$RESULT_FORKOP")
 	elif [ "$CORE_ACTION" = install ]; then
 		if [ -n "$CORE_OLD" ] && [ "$CORE_REINSTALL" = 0 ]; then
 			result=$(t 'sing-box-forkop is updated to %s (%s)' 'sing-box-forkop обновлён до %s (%s)' "$RESULT_CORE" "$RESULT_VARIANT")
 		else
 			result=$(t 'sing-box-forkop %s (%s) is installed' 'sing-box-forkop %s (%s) установлен' "$RESULT_CORE" "$RESULT_VARIANT")
 		fi
-		runs=$(t ', Forkop is running' ', Forkop запущен')
+		runs=$(t ', LoKi is running' ', LoKi запущен')
 	else
-		result=$(t 'Forkop %s is installed' 'Forkop %s установлен' "$RESULT_FORKOP")
+		result=$(t 'LoKi %s is installed' 'LoKi %s установлен' "$RESULT_FORKOP")
 	fi
 	[ "$STARTED" = 1 ] || runs=''
-	! starts_over || runs="$runs$(t '. Set it up in LuCI: Services → Forkop' '. Настройте его в LuCI: Службы → Forkop')"
+	! starts_over || runs="$runs$(t '. Set it up in LuCI: Services → LoKi' '. Настройте его в LuCI: Службы → LoKi')"
 	finale "$result$runs"
 	finish 0
 }
@@ -1634,11 +1635,11 @@ uninstall() {
 	done
 	packages=${packages# }
 	if [ -z "$packages" ]; then
-		info "$(t 'Forkop is not installed' 'Forkop не установлен')"
+		info "$(t 'LoKi is not installed' 'LoKi не установлен')"
 		finish 0
 	fi
 	if [ "$PURGE" = 0 ] && may_ask; then
-		ask "$(t 'Delete the settings of Forkop too?' 'Удалить и настройки Forkop?')" && PURGE=1
+		ask "$(t 'Delete the settings of LoKi too?' 'Удалить и настройки LoKi?')" && PURGE=1
 		printf '\n' >/dev/tty
 	fi
 	trap '' INT TERM HUP PIPE
@@ -1674,7 +1675,7 @@ uninstall() {
 			[ ! -e "$file" ] || rm -rf "$file"
 		done
 	fi
-	finale "$(t 'Forkop is removed' 'Forkop удалён')"
+	finale "$(t 'LoKi is removed' 'LoKi удалён')"
 	finish 0
 }
 

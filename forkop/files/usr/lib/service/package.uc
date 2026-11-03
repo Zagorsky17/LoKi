@@ -1,3 +1,4 @@
+// Modified for LoKi on 2026-11-03: product labels in user-facing messages.
 // The package scripts on a live router; they skip an image build themselves.
 
 let fs = require("fs");
@@ -32,7 +33,7 @@ function load_firewall_input_include() {
     if (chain == null || trim(chain) == "" || index(chain, FIREWALL_INPUT_MARKER) >= 0)
         return;
     if (!exec.ok([ paths.firewall_init, "reload" ]))
-        exec.log("warn", "Failed to reload the firewall; reload it by hand so that its input chain accepts Forkop's traffic");
+        exec.log("warn", "Failed to reload the firewall; reload it by hand so that its input chain accepts LoKi's traffic");
 }
 
 // The state service holds the library in memory, so an install restarts it.
@@ -71,7 +72,7 @@ function prerm(action) {
 // The firewall include lets an isolated zone reach the TPROXY inbound, so it loads before the
 // service comes back. The logged version tells which release wrote the lines after it.
 function postinst() {
-    exec.log("info", "Installed Forkop " + constants.FORKOP_VERSION);
+    exec.log("info", "Installed LoKi " + constants.FORKOP_VERSION);
     bytecode.invalidate_validation_stamp();
     restart_state_service();
     load_firewall_input_include();

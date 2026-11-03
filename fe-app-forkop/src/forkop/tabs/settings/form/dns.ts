@@ -1,3 +1,4 @@
+// Modified for LoKi on 2026-11-03: product labels in user-facing messages.
 // Modified for LoKi on 2026-10-31: require explicit global DNS encryption and protocol choices.
 import {
   configureDnsQueryMode,
@@ -170,7 +171,7 @@ export function addDnsOptions(section: CBISection) {
     _('DNS outside the rules'),
     _('Who resolves domains no rule matched'),
   );
-  o.value('forkop', 'Forkop');
+  o.value('forkop', 'LoKi');
   o.value('router', _('Router'));
   o.default = 'forkop';
   o.rmempty = false;

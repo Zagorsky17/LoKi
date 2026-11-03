@@ -7,8 +7,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: FORKOP\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-02 21:10+0300\n"
-"PO-Revision-Date: 2026-11-02 21:10+0300\n"
+"POT-Creation-Date: 2026-11-03 04:52+0300\n"
+"PO-Revision-Date: 2026-11-03 04:52+0300\n"
 "Last-Translator: ushan0v\n"
 "Language-Team: none\n"
 "Language: ru\n"
@@ -77,8 +77,8 @@ msgstr "%s задаётся каскадным подключением"
 msgid "%s of %s free"
 msgstr "свободно %s из %s"
 
-msgid "%s takes DNS queries before Forkop"
-msgstr "%s забирает DNS-запросы раньше Forkop"
+msgid "%s takes DNS queries before LoKi"
+msgstr "%s забирает DNS-запросы раньше LoKi"
 
 msgid "%s, direct %s"
 msgstr "%s, напрямую %s"
@@ -434,8 +434,8 @@ msgstr "Дашборд"
 msgid "Dashboard currently unavailable"
 msgstr "Дашборд сейчас недоступен"
 
-msgid "Delay in milliseconds before reloading Forkop after interface UP"
-msgstr "Задержка в миллисекундах перед перезапуском Forkop после поднятия интерфейса"
+msgid "Delay in milliseconds before reloading LoKi after interface UP"
+msgstr "Задержка в миллисекундах перед перезапуском LoKi после поднятия интерфейса"
 
 msgid "Device"
 msgstr "Устройство"
@@ -692,21 +692,6 @@ msgstr "Постоянные адреса для доменов в формат�
 msgid "For example 30m, 12h or 1d"
 msgstr "Например: 30m, 12h или 1d"
 
-msgid "Forkop configuration"
-msgstr "Конфигурация Forkop"
-
-msgid "Forkop diagnostic report"
-msgstr "Отчёт диагностики Forkop"
-
-msgid "Forkop Error"
-msgstr "Ошибка Forkop"
-
-msgid "Forkop ignores these devices entirely: their traffic is not routed and their DNS is not captured"
-msgstr "Forkop полностью игнорирует эти устройства, их трафик не маршрутизируется, а DNS не перехватывается"
-
-msgid "Forkop system logs"
-msgstr "Системные логи Forkop"
-
 msgid "Format: *, 204, 200-299"
 msgstr "Формат: *, 204, 200-299"
 
@@ -731,11 +716,11 @@ msgstr "Сгенерировать"
 msgid "Get report"
 msgstr "Получить отчёт"
 
-msgid "goes past Forkop"
-msgstr "идёт мимо Forkop"
+msgid "goes past LoKi"
+msgstr "идёт мимо LoKi"
 
-msgid "goes through Forkop"
-msgstr "идёт через Forkop"
+msgid "goes through LoKi"
+msgstr "идёт через LoKi"
 
 msgid "going to the LuCI home page"
 msgstr "переход на главную LuCI"
@@ -958,6 +943,21 @@ msgstr "Уровень логов"
 
 msgid "Logs"
 msgstr "Логи"
+
+msgid "LoKi configuration"
+msgstr "Конфигурация LoKi"
+
+msgid "LoKi diagnostic report"
+msgstr "Отчёт диагностики LoKi"
+
+msgid "LoKi Error"
+msgstr "Ошибка LoKi"
+
+msgid "LoKi ignores these devices entirely: their traffic is not routed and their DNS is not captured"
+msgstr "LoKi полностью игнорирует эти устройства, их трафик не маршрутизируется, а DNS не перехватывается"
+
+msgid "LoKi system logs"
+msgstr "Системные логи LoKi"
 
 msgid "Main DNS"
 msgstr "Основной DNS"
@@ -1184,11 +1184,11 @@ msgstr "Сброс"
 msgid "Remove"
 msgstr "Удалить"
 
-msgid "Remove Forkop"
-msgstr "Удалить Forkop"
+msgid "Remove LoKi"
+msgstr "Удалить LoKi"
 
-msgid "Remove Forkop?"
-msgstr "Удалить Forkop?"
+msgid "Remove LoKi?"
+msgstr "Удалить LoKi?"
 
 msgid "Remove servers from the selection above"
 msgstr "Убрать серверы из выборки выше"
@@ -1220,8 +1220,8 @@ msgstr "Разрешение имён основных DNS-серверов и �
 msgid "Resolves domains that match the section conditions. Several servers give automatic failover. The protocol is set by a prefix: %s"
 msgstr "Резолвит домены, совпавшие с условиями секции. Несколько серверов дают автоматическое переключение при сбоях. Протокол задаётся префиксом: %s"
 
-msgid "resolves past Forkop"
-msgstr "резолвит мимо Forkop"
+msgid "resolves past LoKi"
+msgstr "резолвит мимо LoKi"
 
 msgid "Restart"
 msgstr "Перезапустить"
@@ -1418,8 +1418,8 @@ msgstr "sing-box-forkop %s устарел: нужен %s или новее"
 msgid "sing-box-forkop is not installed"
 msgstr "sing-box-forkop не установлен"
 
-msgid "Skipped: Forkop is not running"
-msgstr "Пропущено: Forkop не запущен"
+msgid "Skipped: LoKi is not running"
+msgstr "Пропущено: LoKi не запущен"
 
 msgid "Sort by latency"
 msgstr "Сортировать по задержке"

@@ -1,3 +1,4 @@
+// Modified for LoKi on 2026-11-03: product labels in user-facing messages.
 // What the installed sing-box was built with, from the Tags line of `sing-box version`. Every
 // Forkop function that needs a build tag is listed here, and nothing else in Forkop names a tag.
 // Read from the binary, never the package, and kept while the file stays the same.
@@ -114,7 +115,7 @@ function core_problem(present) {
     if (present == null)
         return "Failed to read the tags sing-box was built with from 'sing-box version'. Reinstall sing-box-forkop";
     if (!available(REQUIRED, present))
-        return "sing-box was built without with_clash_api. Forkop runs its dashboard, groups, latency tests and subnet sync through the Clash API and cannot start without it. Install a sing-box-forkop package or a core built with with_clash_api";
+        return "sing-box was built without with_clash_api. LoKi runs its dashboard, groups, latency tests and subnet sync through the Clash API and cannot start without it. Install a sing-box-forkop package or a core built with with_clash_api";
     return "";
 }
 

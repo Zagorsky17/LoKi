@@ -1,3 +1,4 @@
+// Modified for LoKi on 2026-11-03: product labels in user-facing messages.
 import { TabServiceInstance } from './tab.service';
 import { store } from './store.service';
 import { logger } from './logger.service';
@@ -25,7 +26,7 @@ const SYSTEM_INFO_PREFETCH_DELAY_MS = 2000;
 
 function showLogNotification(notification: ForkopLogNotification) {
   return ui.addNotification(
-    _('Forkop Error'),
+    _('LoKi Error'),
     E('div', {}, notification.message),
     'error',
     'fkp-log-error-notification',

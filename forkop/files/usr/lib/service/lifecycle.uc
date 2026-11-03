@@ -1,3 +1,4 @@
+// Modified for LoKi on 2026-11-03: product labels in user-facing messages.
 // Every action holds the lifecycle lock. A reload changes only what would come out different:
 // the nft script against the one applied last, the sing-box config against the service's file.
 
@@ -33,8 +34,8 @@ const READY_HOLD = 2;
 const EXEC_GRACE = 3;
 const MAX_READY_WAIT = 300;
 const STOP_TIMEOUT = 15;
-const NOT_CAPTURING = "Forkop was not fully running after the nftables rules were applied";
-const NOTHING_TO_RUN = "Forkop has nothing to run: no section with connections is enabled. Set up a section, then start Forkop";
+const NOT_CAPTURING = "LoKi was not fully running after the nftables rules were applied";
+const NOTHING_TO_RUN = "LoKi has nothing to run: no section with connections is enabled. Set up a section, then start LoKi";
 
 let paths = {
     config: "/etc/config/forkop",
@@ -63,7 +64,7 @@ function config_fingerprint() {
 function queue_reload_if_changed(fingerprint, context) {
     if (fingerprint == "" || config_fingerprint() == "" || config_fingerprint() == fingerprint)
         return;
-    let during = context == "reload" ? "while it was being applied" : "while Forkop was starting";
+    let during = context == "reload" ? "while it was being applied" : "while LoKi was starting";
     if (lock.mark_request(paths.pending_reload, context == "reload" ? "config_changed_during_reload" : "config_changed_during_start"))
         log("info", "The configuration changed " + during + "; applying it next");
     else
@@ -176,19 +177,19 @@ function cleanup_network() {
     let mark = FAKEIP_MARK + "/" + FAKEIP_MARK;
     let router_mark = ROUTER_MARK + "/" + ROUTER_MARK;
     let steps = [
-        [ () => nft_state.table_present(NFT_TABLE), [ "nft", "delete", "table", "inet", NFT_TABLE ], "Failed to remove the Forkop nftables table" ],
+        [ () => nft_state.table_present(NFT_TABLE), [ "nft", "delete", "table", "inet", NFT_TABLE ], "Failed to remove the LoKi nftables table" ],
         [ () => nft_state.tproxy_marking_rule4_present(RT_TABLE, FAKEIP_MARK), [ ip, "-4", "rule", "del", "fwmark", mark, "table", RT_TABLE, "priority", "105" ],
-            "Failed to remove the Forkop IPv4 routing rule" ],
+            "Failed to remove the LoKi IPv4 routing rule" ],
         [ () => nft_state.tproxy_marking_rule6_present(RT_TABLE, FAKEIP_MARK), [ ip, "-6", "rule", "del", "fwmark", mark, "table", RT_TABLE, "priority", "105" ],
-            "Failed to remove the Forkop IPv6 routing rule" ],
+            "Failed to remove the LoKi IPv6 routing rule" ],
         [ () => nft_state.tproxy_marking_rule4_present(RT_TABLE, ROUTER_MARK), [ ip, "-4", "rule", "del", "fwmark", router_mark, "table", RT_TABLE, "priority", "105" ],
-            "Failed to remove the Forkop IPv4 routing rule of the router's own traffic" ],
+            "Failed to remove the LoKi IPv4 routing rule of the router's own traffic" ],
         [ () => nft_state.tproxy_marking_rule6_present(RT_TABLE, ROUTER_MARK), [ ip, "-6", "rule", "del", "fwmark", router_mark, "table", RT_TABLE, "priority", "105" ],
-            "Failed to remove the Forkop IPv6 routing rule of the router's own traffic" ],
+            "Failed to remove the LoKi IPv6 routing rule of the router's own traffic" ],
         [ () => nft_state.source_check_rule4_present(FAKEIP_MARK), [ ip, "-4", "rule", "del", "iif", "lo", "fwmark", mark, "lookup", "main",
-            "priority", nft_state.SOURCE_CHECK_PRIORITY ], "Failed to remove the Forkop IPv4 routing rule for the source check" ],
-        [ () => nft_state.tproxy_route4_present(RT_TABLE), [ ip, "route", "flush", "table", RT_TABLE ], "Failed to flush the Forkop IPv4 routing table" ],
-        [ () => nft_state.tproxy_route6_present(RT_TABLE), [ ip, "-6", "route", "flush", "table", RT_TABLE ], "Failed to flush the Forkop IPv6 routing table" ]
+            "priority", nft_state.SOURCE_CHECK_PRIORITY ], "Failed to remove the LoKi IPv4 routing rule for the source check" ],
+        [ () => nft_state.tproxy_route4_present(RT_TABLE), [ ip, "route", "flush", "table", RT_TABLE ], "Failed to flush the LoKi IPv4 routing table" ],
+        [ () => nft_state.tproxy_route6_present(RT_TABLE), [ ip, "-6", "route", "flush", "table", RT_TABLE ], "Failed to flush the LoKi IPv6 routing table" ]
     ];
     for (let step in steps)
         if (step[0]() && (!exec.ok(step[1]) || step[0]())) {
@@ -245,7 +246,7 @@ let start_fingerprint = "";
 // Every step that gives up logs one error line, which the page raises as an alert.
 function start_runtime() {
     if (runtime.process_running()) {
-        log("error", "Another sing-box process is running outside Forkop; stop it before starting Forkop");
+        log("error", "Another sing-box process is running outside LoKi; stop it before starting LoKi");
         return false;
     }
 
@@ -315,7 +316,7 @@ function start_runtime() {
 function locked(action) {
     let owner = common.own_pid();
     if (!lock.acquire_wait(paths.lock, owner, LOCK_TIMEOUT)) {
-        log("error", "Timed out waiting for another Forkop action to finish");
+        log("error", "Timed out waiting for another LoKi action to finish");
         return 1;
     }
     let status = action();
@@ -329,15 +330,15 @@ function forkop_running() {
 
 function start() {
     if (forkop_running()) {
-        log("info", "Forkop is already running");
+        log("info", "LoKi is already running");
         return 0;
     }
     return locked(function() {
         if (forkop_running()) {
-            log("info", "Forkop is already running");
+            log("info", "LoKi is already running");
             return 0;
         }
-        log("info", "Starting Forkop");
+        log("info", "Starting LoKi");
         if (!migrate_restored_config()) {
             cleanup_failed_runtime();
             return 1;
@@ -352,7 +353,7 @@ function start() {
             cleanup_failed_runtime();
             return 1;
         }
-        log("info", "Forkop started");
+        log("info", "LoKi started");
         queue_reload_if_changed(start_fingerprint, "start");
         return 0;
     });
@@ -362,14 +363,14 @@ function stop() {
     return locked(function() {
         let active = health.sing_box_service_running() || nft_state.table_present(NFT_TABLE);
         if (active)
-            log("info", "Stopping Forkop");
+            log("info", "Stopping LoKi");
         if (!common.write_file_atomic(paths.planned_stop, common.own_pid() + "\n"))
             log("warn", "Failed to mark the stop as planned");
         watch.stop_worker();
         if (!stop_runtime(true))
             return 1;
         if (active)
-            log("info", "Forkop stopped");
+            log("info", "LoKi stopped");
         return 0;
     });
 }
@@ -380,14 +381,14 @@ function crash_cleanup(exit_code) {
         if (fs.stat(paths.planned_stop) != null || forkop_running())
             return 0;
         let suffix = match(common.as_string(exit_code), /^[0-9]+$/) ? " (exit code " + exit_code + ")" : "";
-        log("error", "sing-box stopped after repeated crashes" + suffix + "; Forkop is stopped");
+        log("error", "sing-box stopped after repeated crashes" + suffix + "; LoKi is stopped");
         return cleanup_failed_runtime(true) && watch.stop_worker() ? 0 : 1;
     });
 }
 
 // What a failed reload left: the runtime it never touched, or none at all.
 function reload_failed(runtime_touched) {
-    log("warn", runtime_touched ? "Configuration not applied; Forkop is stopped" : "Configuration not applied; Forkop keeps running the previous one");
+    log("warn", runtime_touched ? "Configuration not applied; LoKi is stopped" : "Configuration not applied; LoKi keeps running the previous one");
     return 1;
 }
 
@@ -399,7 +400,7 @@ function abort_reload(reason, runtime_touched) {
 }
 
 function restart_runtime() {
-    log("info", "Forkop is not fully running; restarting it");
+    log("info", "LoKi is not fully running; restarting it");
     if (!stop_runtime())
         return false;
     if (start_runtime())
@@ -474,7 +475,7 @@ function restore_routing() {
         try {
             nft.ensure_tproxy_routing();
             nft.route_bound_devices(runtime.bound_devices());
-            log("info", "The WAN came up without Forkop's routing; restored it");
+            log("info", "The WAN came up without LoKi's routing; restored it");
         }
         catch (e) {
             log("error", e.message);
@@ -608,7 +609,7 @@ function remove_package(name) {
 function uninstall() {
     let init = constants.FORKOP_SERVICE_INIT;
     let domain = constants.FORKOP_LUCI_I18N_DOMAIN;
-    log("info", "Uninstalling Forkop");
+    log("info", "Uninstalling LoKi");
     if (fs.stat(init) != null) {
         exec.ok([ init, "stop" ]);
         exec.ok([ init, "disable" ]);

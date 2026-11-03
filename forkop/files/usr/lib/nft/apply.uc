@@ -1,3 +1,4 @@
+// Modified for LoKi on 2026-11-03: product labels in user-facing messages.
 let fs = require("fs");
 let common = require("core.common");
 let exec = require("core.exec");
@@ -411,7 +412,7 @@ function ensure_tproxy_routing() {
     // The kernel refuses a route through lo while lo has IPv6 disabled.
     if (index(ipv6, "lo") < 0)
         die("IPv6 is disabled on the loopback interface lo but enabled on " + join(", ", ipv6) +
-            ", so Forkop cannot route that IPv6 traffic. Disable IPv6 on every interface or enable it on lo");
+            ", so LoKi cannot route that IPv6 traffic. Disable IPv6 on every interface or enable it on lo");
     ensure_route(() => nft_state.tproxy_route6_present(RT_TABLE), [ ip, "-6", "route", "add", "local", "::/0", "dev", "lo", "table", RT_TABLE ],
         "Failed to add the IPv6 TProxy route");
     ensure_route(() => nft_state.tproxy_marking_rule6_present(RT_TABLE, FAKEIP_MARK), [ ip, "-6", "rule", "add", "fwmark", mark, "table", RT_TABLE, "priority", "105" ],

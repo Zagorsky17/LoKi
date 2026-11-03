@@ -122,7 +122,7 @@ t.test("static records answer from a hosts server after the sections and before 
         ]
     });
     let hosts = q.dns_server_tag(records, "hosts-server");
-    t.eq([ hosts.type, hosts.path ], [ "hosts", null ], "only the records Forkop was given, from no file");
+    t.eq([ hosts.type, hosts.path ], [ "hosts", null ], "only the records LoKi was given, from no file");
     t.eq(hosts.predefined["ntc.party"], [ "130.255.77.28", "2a03:4000::1" ], "a repeated domain collects every address");
     t.eq(hosts.predefined["www.ntc.party"], [ "130.255.77.28" ]);
     t.ok(hosts.predefined["example.com"] != null, "a trailing comment keeps its record");
@@ -253,7 +253,7 @@ t.test("unmatched client DNS goes to Forkop, with the local zone left to whoever
     let forkop_at = q.dns_rule_index(moved, (r) => r.server == "dns-server" && q.has(r.inbound, "source-dns-in") && r.domain_regex == null);
     for (let i, rule in moved.dns.rules)
         if (rule.server == "dnsmasq-server" && q.has(rule.inbound, "source-dns-in"))
-            t.ok(i < forkop_at, "the local zone is answered before the Forkop fallback");
+            t.ok(i < forkop_at, "the local zone is answered before the LoKi fallback");
 
     let disabled = build({ settings: DNS, dhcp_dnsmasq: { port: "0" }, section: BYPASS });
     t.eq(q.dns_server_tag(disabled, "dnsmasq-server").server_port, 53, "a disabled dnsmasq port changes nothing either");

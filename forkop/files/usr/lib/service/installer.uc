@@ -1,3 +1,4 @@
+// Modified for LoKi on 2026-11-03: product labels in user-facing messages.
 // The Components tab's run of install.sh. A process of its own gives install.sh a
 // pseudo-terminal, so the run shows the colors and asks the questions it does over SSH, and
 // outlives the page, rpcd and every package the run replaces. The page follows the run through
@@ -63,9 +64,9 @@ const TEXTS = {
     unresolved: [ "The router cannot resolve %s: check its DNS and internet connection",
         "Роутер не может определить адрес %s: проверьте DNS и подключение к интернету" ],
     unreachable: [ "Check that %s opens from the router", "Проверьте, открывается ли %s с роутера" ],
-    command_only: [ "Forkop %s installs only with this command in a console:",
-        "Forkop %s устанавливается только этой командой в консоли:" ],
-    no_script: [ "The latest Forkop release has no install.sh", "В последнем релизе Forkop нет install.sh" ],
+    command_only: [ "LoKi %s installs only with this command in a console:",
+        "LoKi %s устанавливается только этой командой в консоли:" ],
+    no_script: [ "The latest LoKi release has no install.sh", "В последнем релизе LoKi нет install.sh" ],
     rate_limited: [ "GitHub refuses more requests from this address for now: it allows 60 an hour without an account",
         "GitHub пока не принимает запросы с этого адреса: без входа он даёт 60 запросов в час" ],
     try_later: [ "Run it again later: the limit is reset within the hour", "Запустите снова позже: лимит сбрасывается в течение часа" ],

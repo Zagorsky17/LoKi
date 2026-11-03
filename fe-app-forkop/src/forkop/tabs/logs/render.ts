@@ -1,3 +1,4 @@
+// Modified for LoKi on 2026-11-03: product labels in user-facing messages.
 import { E } from '../../../helpers/element';
 
 function renderActionButton(id: string, label: string) {
@@ -49,7 +50,7 @@ export function render() {
         class: 'fkp_logs-page__output fkp_logs-page__output--empty',
         tabIndex: 0,
         role: 'log',
-        'aria-label': _('Forkop system logs'),
+        'aria-label': _('LoKi system logs'),
         'aria-busy': 'true',
       },
       _('Loading logs...'),

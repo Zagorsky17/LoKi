@@ -82,16 +82,16 @@ function write_config(config) {
 
 t.test("the reason Forkop is down is the first error of the last action, not what its cleanup ran into", () => {
     let line = (level, message) => "Mon Oct 19 16:51:18 2026 user." + level + " forkop: [" + level + "] " + message;
-    t.eq(checks.last_error(join("\n", [ line("info", "Starting Forkop"), line("error", "Another sing-box process is running outside Forkop"),
-        line("error", "sing-box is still running after it was stopped"), line("warn", "Forkop did not start") ])),
-        "Another sing-box process is running outside Forkop");
-    t.eq(checks.last_error(join("\n", [ line("error", "An old failure"), line("info", "Forkop started"), line("info", "Stopping Forkop"),
-        line("info", "Forkop stopped") ])), "", "a stop the user asked for left no error");
-    t.eq(checks.last_error(join("\n", [ line("info", "Starting Forkop"), line("error", "first try"), line("info", "Starting Forkop"),
+    t.eq(checks.last_error(join("\n", [ line("info", "Starting LoKi"), line("error", "Another sing-box process is running outside LoKi"),
+        line("error", "sing-box is still running after it was stopped"), line("warn", "LoKi did not start") ])),
+        "Another sing-box process is running outside LoKi");
+    t.eq(checks.last_error(join("\n", [ line("error", "An old failure"), line("info", "LoKi started"), line("info", "Stopping LoKi"),
+        line("info", "LoKi stopped") ])), "", "a stop the user asked for left no error");
+    t.eq(checks.last_error(join("\n", [ line("info", "Starting LoKi"), line("error", "first try"), line("info", "Starting LoKi"),
         line("error", "second try") ])), "second try", "the last attempt, not an earlier one");
-    t.eq(checks.last_error("Mon Oct 19 16:51:18 2026 daemon.err sing-box[1]: FATAL[0000] start service"), "", "the core's own lines are not Forkop's");
-    t.eq(checks.last_error(join("\n", [ line("info", "Starting Forkop"), line("error", "an earlier failure"), line("info", "Starting Forkop"),
-        line("warn", "Forkop has nothing to run") ])), "Forkop has nothing to run", "an action that did not fail, by its last warning");
+    t.eq(checks.last_error("Mon Oct 19 16:51:18 2026 daemon.err sing-box[1]: FATAL[0000] start service"), "", "the core's own lines are not LoKi's");
+    t.eq(checks.last_error(join("\n", [ line("info", "Starting LoKi"), line("error", "an earlier failure"), line("info", "Starting LoKi"),
+        line("warn", "LoKi has nothing to run") ])), "LoKi has nothing to run", "an action that did not fail, by its last warning");
 });
 
 t.test("list overlap facts include only enabled sections and fixed list identifiers", () => {
@@ -121,7 +121,7 @@ t.test("the service check finds running cores other than Forkop's, and nothing F
     health.pid_is_sing_box = (pid) => index([ "100", "200", "300" ], "" + pid) >= 0;
     health.process_age_seconds = () => 42;
     stub.commands([
-        [ /'logread'/, { stdout: "Mon Oct 19 16:51:18 2026 user.info forkop: [info] Starting Forkop\nMon Oct 19 16:51:18 2026 user.err forkop: [error] Clash API address 192.168.1.1:9090 is already in use by another process\n" } ],
+        [ /'logread'/, { stdout: "Mon Oct 19 16:51:18 2026 user.info forkop: [info] Starting LoKi\nMon Oct 19 16:51:18 2026 user.err forkop: [error] Clash API address 192.168.1.1:9090 is already in use by another process\n" } ],
         [ /'nft' '-t' 'list' 'ruleset'/, { stdout: "table inet other {\n\tchain c {\n\t\ttype filter hook prerouting priority mangle; policy accept;\n\t\tmeta l4proto tcp tproxy ip to :7893\n\t}\n}\n" } ]
     ]);
     let packages = require("core.packages");
@@ -175,7 +175,7 @@ CGO: disabled
     let foreign = core_of("1.12.22", tags);
     t.eq([ foreign.binary, foreign.version, foreign.variant, foreign.outdated ], [ "1.12.22", "", "", false ], "not sing-box-forkop");
     let old = core_of("1.13.18-extended-2.6.5-f165", tags);
-    t.eq([ old.version, old.outdated ], [ "1.13.18-extended-2.6.5-f165", true ], "sing-box-forkop older than Forkop needs");
+    t.eq([ old.version, old.outdated ], [ "1.13.18-extended-2.6.5-f165", true ], "sing-box-forkop older than LoKi needs");
 
     t.contains(core_of("1.14.4-r1", "with_utls,with_quic").problem, "sing-box was built without with_clash_api");
     t.eq(core_of("1.14.4-r1", "with_clash_api,with_wireguard,with_openvpn").problem, "");

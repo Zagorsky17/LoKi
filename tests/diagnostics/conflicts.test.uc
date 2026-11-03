@@ -76,7 +76,7 @@ t.test("a DNS redirect counts when it can run before Forkop's", () => {
     t.eq(conflicts.find(redirect("prerouting", "dstnat - 5", "udp dport { 53, 853 } dnat to 10.0.0.1")), [ { table: "ip other", kind: "dns" } ], "a port set");
     t.eq(conflicts.find(redirect("prerouting", "dstnat - 5", "udp dport 50-60 redirect to :5353")), [ { table: "ip other", kind: "dns" } ], "a port range");
     t.eq(conflicts.find(redirect("prerouting", "dstnat - 1", "udp dport 53 redirect to :5353")), [ { table: "ip other", kind: "dns" } ],
-        "the same priority runs first once its table is loaded after Forkop's");
+        "the same priority runs first once its table is loaded after LoKi's");
     t.eq(conflicts.find(redirect("prerouting", "dstnat", "udp dport 53 redirect to :5353")), [], "a later priority");
     t.eq(conflicts.find(redirect("prerouting", "dstnat - 5", "udp dport 5353 redirect to :53")), [], "another port");
     t.eq(conflicts.find(redirect("output", "-150", "udp dport 53 redirect to :5353")), [ { table: "ip other", kind: "dns" } ], "the router's own queries");

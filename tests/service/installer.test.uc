@@ -453,7 +453,7 @@ t.test("install.sh that cannot be downloaded is tried three times and said as in
         uloop.__fire("timer");
     }, "api");
     t.eq([ length(uloop.__processes()), state().exit ], [ 1, 1 ], "nothing is fetched for a file the listing has not got");
-    t.eq(fs.readfile(installer.paths.output), "\u001b[1;31m[x]\u001b[0m В последнем релизе Forkop нет install.sh\r\n",
+    t.eq(fs.readfile(installer.paths.output), "\u001b[1;31m[x]\u001b[0m В последнем релизе LoKi нет install.sh\r\n",
         "a release that predates install.sh, as 1.0.5 does");
 
     run_with({}, () => {
@@ -474,7 +474,7 @@ t.test("install.sh that cannot be downloaded is tried three times and said as in
         uloop.__exit(1, 0);
         uloop.__fire("timer");
     }, "api");
-    t.eq(fs.readfile(installer.paths.output), "\u001b[1;31m[x]\u001b[0m В последнем релизе Forkop нет install.sh\r\n",
+    t.eq(fs.readfile(installer.paths.output), "\u001b[1;31m[x]\u001b[0m В последнем релизе LoKi нет install.sh\r\n",
         "an HTTP error with requests left is a missing release");
 
     run_with({}, () => {
@@ -482,7 +482,7 @@ t.test("install.sh that cannot be downloaded is tried three times and said as in
         uloop.__fire("timer");
     });
     t.eq([ length(uloop.__processes()), fs.readfile(installer.paths.output) ],
-        [ 1, "\u001b[1;31m[x]\u001b[0m В последнем релизе Forkop нет install.sh\r\n" ], "a mirror's HTTP error is a missing file");
+        [ 1, "\u001b[1;31m[x]\u001b[0m В последнем релизе LoKi нет install.sh\r\n" ], "a mirror's HTTP error is a missing file");
 });
 
 t.test("through GitHub's API the run reads the release's listing, then its files at their addresses there", () => {
@@ -527,7 +527,7 @@ t.test("a release that installs only from a console is shown, not installed", ()
         uloop.__fire("timer");
     });
     t.eq(fs.readfile(installer.paths.output),
-        "\u001b[1;33m[!]\u001b[0m Forkop 3.0.0 устанавливается только этой командой в консоли:\r\nsh <(wget -O - https://x/install.sh)\r\n");
+        "\u001b[1;33m[!]\u001b[0m LoKi 3.0.0 устанавливается только этой командой в консоли:\r\nsh <(wget -O - https://x/install.sh)\r\n");
     t.eq([ state().exit, length(uloop.__processes()) ], [ 1, 2 ]);
 });
 
