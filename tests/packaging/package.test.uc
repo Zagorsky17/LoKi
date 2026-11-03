@@ -216,4 +216,68 @@ t.test("LoKi menu labels retain the technical route and permission identifiers",
     t.eq(acl["luci-app-forkop"].read.file["/usr/bin/loki"], null);
 });
 
+// Evaluate the real initializers only: package/network actions lie after this boundary.
+function sdk_initializers(overrides) {
+    let exec = require("core.exec");
+    let boundary = index(BUILD_SH, "\nBACKEND_DESCRIPTION=");
+    t.ok(boundary > 0, "the initializer boundary exists before any package action");
+    let dir = trim(exec.output([ "mktemp", "-d" ]) ?? "");
+    t.ok(dir != "", "a private test directory was created");
+    let script = dir + "/settings.sh";
+    let prefix = substr(BUILD_SH, 0, boundary);
+    fs.writefile(script, prefix + "\nprintf '%s\\n' \"$IPK_SDK_URL\" \"$APK_SDK_URL\" \"$SDK_CACHE_DIR\" \"$SDK_DIR\" \"$BUILD_DIR\"\n");
+    let argv = [ "env", "-u", "IPK_SDK_URL", "-u", "APK_SDK_URL", "-u", "SDK_CACHE_DIR", "-u", "SDK_DIR", "-u", "BUILD_DIR", "XDG_CACHE_HOME=" + dir + "/cache" ];
+    for (let name in keys(overrides))
+        push(argv, name + "=" + overrides[name]);
+    push(argv, "bash", script, "2.0.0", dir + "/unused-output");
+    let result = exec.capture(argv);
+    let output_created = fs.stat(dir + "/unused-output") != null;
+    fs.unlink(script);
+    fs.rmdir(dir);
+    t.eq(result.status, 0, "initializer evaluation succeeded");
+    t.eq(output_created, false, "no build directory or packages were created");
+    let values = split(trim(result.stdout), "\n");
+    t.eq(length(values), 5);
+    return { ipk: values[0], apk: values[1], cache: values[2], sdk: values[3], build: values[4] };
+}
+
+function official_sdk(url, version, gcc) {
+    let found = match(url, /^https:\/\/downloads\.openwrt\.org\/releases\/([^/]+)\/targets\/x86\/64\/openwrt-sdk-([^_]+)_gcc-([^_]+)_musl\.Linux-x86_64\.tar\.zst$/);
+    t.ok(found != null, "an official Linux x86_64 SDK for target x86/64 is selected");
+    t.eq(found[1], version, "release directory");
+    t.eq(found[2], version + "-x86-64", "archive version and target agree");
+    t.eq(found[3], gcc, "the pinned toolchain is retained");
+}
+
+t.test("SDK defaults select current releases with matching archives and target toolchains", () => {
+    let defaults = sdk_initializers({});
+    official_sdk(defaults.ipk, "24.10.8", "13.3.0");
+    official_sdk(defaults.apk, "25.12.6", "14.3.0");
+    t.eq(defaults.sdk, defaults.cache + "/extracted", "the cache and extracted directory remain coupled by default");
+    t.contains(defaults.cache, "/cache/forkop/openwrt-sdk");
+    t.contains(defaults.build, "/cache/forkop/build");
+    let empty = sdk_initializers({ IPK_SDK_URL: "", APK_SDK_URL: "" });
+    t.eq(empty.ipk, defaults.ipk, "an empty override retains the default");
+    t.eq(empty.apk, defaults.apk);
+});
+
+t.test("SDK URL overrides are independent literal values and retain isolated build paths", () => {
+    let defaults = sdk_initializers({});
+    let custom_ipk = "https://example.invalid/ipk $(printf literal); 'quoted'.tar.zst";
+    let custom_apk = "https://example.invalid/apk?part=one&part=two";
+    let ipk_only = sdk_initializers({ IPK_SDK_URL: custom_ipk });
+    t.eq(ipk_only.ipk, custom_ipk, "shell punctuation is data, without re-evaluation");
+    t.eq(ipk_only.apk, defaults.apk, "the other package format keeps its default");
+    let apk_only = sdk_initializers({ APK_SDK_URL: custom_apk });
+    t.eq(apk_only.ipk, defaults.ipk);
+    t.eq(apk_only.apk, custom_apk);
+    let isolated = sdk_initializers({ IPK_SDK_URL: custom_ipk, APK_SDK_URL: custom_apk,
+        SDK_CACHE_DIR: "/tmp/sdk cache fixture", SDK_DIR: "/tmp/sdk extracted fixture", BUILD_DIR: "/tmp/sdk build fixture" });
+    t.eq(isolated.ipk, custom_ipk);
+    t.eq(isolated.apk, custom_apk);
+    t.eq(isolated.cache, "/tmp/sdk cache fixture");
+    t.eq(isolated.sdk, "/tmp/sdk extracted fixture");
+    t.eq(isolated.build, "/tmp/sdk build fixture");
+});
+
 t.done();
