@@ -80,7 +80,7 @@ t.test("list update settings reach remote rule sets, and ports constrain the who
     t.ok(q.dns_rule(defaults, (r) => r.server == "dns-server" && has(r.inbound, "source-dns-in") &&
         r.source_ip_cidr == null && r.domain == null && r.domain_suffix == null && r.domain_regex == null &&
         r.rule_set == null && r.query_type == null) != null,
-        "unmatched interface DNS resolves through the Forkop DNS by default");
+        "unmatched interface DNS resolves through the LoKi DNS by default");
     t.ok(q.dns_rule(defaults, (r) => r.server == "dnsmasq-server" && has(r.inbound, "source-dns-in") &&
         r.domain_regex == "^[^.]+$") != null, "the local resolver keeps the zone it is authoritative for");
 });

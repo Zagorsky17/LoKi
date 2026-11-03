@@ -76,12 +76,12 @@ t.test("postinst starts again only what the upgrade stopped", () => {
     fs.writefile(pkg.paths.was_running, "1\n");
     let result = run(() => pkg.postinst(), [ [ "nft list chain", { status: 1 } ] ]);
     t.eq(result.status, 0);
-    t.eq(result.commands, [ "logger -t forkop -p user.info [info] Installed Forkop " + constants.FORKOP_VERSION, state_init + " enable", state_init + " restart",
+    t.eq(result.commands, [ "logger -t forkop -p user.info [info] Installed LoKi " + constants.FORKOP_VERSION, state_init + " enable", state_init + " restart",
         "nft list chain inet fw4 input", init + " start" ]);
     t.eq(fs.stat(pkg.paths.was_running), null);
 
     t.eq(run(() => pkg.postinst(), [ [ "nft list chain", { status: 1 } ] ]).commands,
-        [ "logger -t forkop -p user.info [info] Installed Forkop " + constants.FORKOP_VERSION, state_init + " enable", state_init + " restart", "nft list chain inet fw4 input" ]);
+        [ "logger -t forkop -p user.info [info] Installed LoKi " + constants.FORKOP_VERSION, state_init + " enable", state_init + " restart", "nft list chain inet fw4 input" ]);
 
     fs.writefile(pkg.paths.was_running, "1\n");
     t.eq(run(() => pkg.postinst(), [ [ "nft list chain", { status: 1 } ], [ init + " start", { status: 1 } ] ]).status, 1);
@@ -101,7 +101,7 @@ t.test("postinst loads the firewall include into a running firewall that lacks i
     t.eq(reloads({ stdout: chain_with }), [], "a firewall already carrying the accept is left alone");
     t.eq(reloads({ status: 1 }), [], "a firewall the user keeps stopped is not started");
     t.eq(reloads({ stdout: chain_without }, 1), [ firewall_init + " reload",
-        "logger -t forkop -p user.warning [warn] Failed to reload the firewall; reload it by hand so that its input chain accepts Forkop's traffic" ]);
+        "logger -t forkop -p user.warning [warn] Failed to reload the firewall; reload it by hand so that its input chain accepts LoKi's traffic" ]);
 
     fs.unlink(include);
     t.eq(reloads({ stdout: chain_without }), [], "without the shipped include there is nothing to load");

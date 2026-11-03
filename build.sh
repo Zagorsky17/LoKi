@@ -722,7 +722,7 @@ main() {
   mkdir -p "$BUILD_DIR" "$SDK_CACHE_DIR"
   exec 9>"$SDK_CACHE_DIR/.build.lock"
   if ! flock -n 9; then
-    echo "Another Forkop package build is already running" >&2
+    echo "Another LoKi package build is already running" >&2
     exit 1
   fi
   output_dir="$OUTPUT_DIR"

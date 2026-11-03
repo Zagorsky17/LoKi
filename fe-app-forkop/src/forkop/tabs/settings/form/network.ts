@@ -1,3 +1,4 @@
+// Modified for LoKi on 2026-11-03: product labels in user-facing messages.
 import { validateSubnet } from '../../../../validators/validateSubnet';
 import { required } from '../../../cbi/required';
 import { wholeNumberField } from '../../../../validators/fields';
@@ -12,7 +13,7 @@ export function addNetworkOptions(section: CBISection) {
     'routing_excluded_ips',
     _('Exclude devices from routing'),
     _(
-      'Forkop ignores these devices entirely: their traffic is not routed and their DNS is not captured',
+      'LoKi ignores these devices entirely: their traffic is not routed and their DNS is not captured',
     ),
   );
   excludedDevicesOption.placeholder = _('Device or IP');
@@ -158,7 +159,7 @@ export function addNetworkOptions(section: CBISection) {
     form.Value,
     'badwan_reload_delay',
     _('Interface Monitoring Delay'),
-    _('Delay in milliseconds before reloading Forkop after interface UP'),
+    _('Delay in milliseconds before reloading LoKi after interface UP'),
   );
   o.depends('enable_badwan_interface_monitoring', '1');
   o.retain = true;

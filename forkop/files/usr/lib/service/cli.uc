@@ -1,3 +1,4 @@
+// Modified for LoKi on 2026-11-03: product labels in user-facing messages.
 let exec = require("core.exec");
 let constants = require("core.constants");
 let library = require("core.library");
@@ -112,29 +113,29 @@ function installer_log() {
 }
 
 const COMMANDS = {
-    start: { help: "Start Forkop service", run: init_script("start") },
-    stop: { help: "Stop Forkop service", run: init_script("stop") },
-    reload: { args: 1, help: "Reload Forkop configuration", run: init_script("reload") },
-    restart: { help: "Restart Forkop service", run: init_script("restart") },
-    enable: { help: "Enable Forkop autostart", run: reply(() => autostart(true)) },
-    disable: { help: "Disable Forkop autostart", run: reply(() => autostart(false)) },
-    uninstall: { help: "Remove Forkop files installed outside opkg/apk", run: () => lifecycle().uninstall() },
+    start: { help: "Start LoKi service", run: init_script("start") },
+    stop: { help: "Stop LoKi service", run: init_script("stop") },
+    reload: { args: 1, help: "Reload LoKi configuration", run: init_script("reload") },
+    restart: { help: "Restart LoKi service", run: init_script("restart") },
+    enable: { help: "Enable LoKi autostart", run: reply(() => autostart(true)) },
+    disable: { help: "Disable LoKi autostart", run: reply(() => autostart(false)) },
+    uninstall: { help: "Remove LoKi files installed outside opkg/apk", run: () => lifecycle().uninstall() },
     check_service: { help: "Check the service, memory, clock and conflicting interceptors in JSON format", run: json(() => checks().service()) },
     check_dns: { help: "Check the DNS servers sing-box resolves with in JSON format", run: json(() => checks().dns()) },
-    check_traffic: { help: "Check that the router's own traffic goes through Forkop in JSON format", run: json(() => checks().traffic()) },
-    check_logs: { help: "Show Forkop logs from system journal", run: () => {
+    check_traffic: { help: "Check that the router's own traffic goes through LoKi in JSON format", run: json(() => checks().traffic()) },
+    check_logs: { help: "Show LoKi logs from system journal", run: () => {
         print(diagnostics().logs());
         return 0;
     } },
     report: { args: 2, usage: "[masked|raw] [checks]", help: "Collect the log and configurations of a diagnostic report in JSON format", run: json((visibility, checks) => require("diagnostics.report").report(visibility || "masked", checks)) },
     clash_api: { args: 3, usage: "<method> <path> [body]", help: "Allowlisted Clash API transport fallback", run: clash((api, method, path, body) => api.request(method, path, body)) },
     clash_summary: { help: "Summarize the Clash API state in JSON format", run: clash((api) => api.summary()) },
-    show_config: { args: 1, help: "Display current Forkop configuration", run: text((visibility) => diagnostics().show_config(visibility || "masked")) },
-    show_version: { help: "Show Forkop version", run: () => { print(constants.FORKOP_VERSION, "\n"); return 0; } },
+    show_config: { args: 1, help: "Display current LoKi configuration", run: text((visibility) => diagnostics().show_config(visibility || "masked")) },
+    show_version: { help: "Show LoKi version", run: () => { print(constants.FORKOP_VERSION, "\n"); return 0; } },
     show_sing_box_config: { args: 1, help: "Show sing-box configuration", run: text((visibility) => diagnostics().show_sing_box_config(visibility || "masked")) },
     import_config_check: { args: 1, usage: "<path>", help: "Tell in JSON format what loading a LoKi backup file on the page would change", run: config_import("check") },
     import_config: { args: 1, usage: "<path>", help: "Stage a LoKi backup file as unsaved changes of the LuCI session in FORKOP_RPC_SESSION", run: config_import("stage") },
-    get_status: { help: "Get Forkop service status", run: json(() => diagnostics().status()) },
+    get_status: { help: "Get LoKi service status", run: json(() => diagnostics().status()) },
     get_system_info: { help: "Get system information in JSON format", run: json(() => diagnostics().system_info()) },
     get_subscription_default_headers: { help: "Get default subscription request headers in JSON format", run: json(() => ui().default_headers()) },
     get_ui_state: { help: "Get lightweight UI service/action state in JSON format", run: json(() => ui().current_state()) },

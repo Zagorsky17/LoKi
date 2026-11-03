@@ -12,7 +12,7 @@ const checks: IDiagnosticsChecksStoreItem[] = [
     description: 'Checks passed',
     state: 'success',
     items: [
-      { state: 'success', key: 'Router', value: 'goes through Forkop' },
+      { state: 'success', key: 'Router', value: 'goes through LoKi' },
       {
         state: 'info',
         key: 'This device',
@@ -27,13 +27,13 @@ const checks: IDiagnosticsChecksStoreItem[] = [
     title: 'Service',
     description: 'Checks passed',
     state: 'success',
-    items: [{ state: 'success', key: 'Forkop', value: 'running for 2 h' }],
+    items: [{ state: 'success', key: 'LoKi', value: 'running for 2 h' }],
   },
   {
     order: 3,
     code: 'SECTIONS',
     title: 'Sections',
-    description: 'Skipped: Forkop is not running',
+    description: 'Skipped: LoKi is not running',
     state: 'skipped',
     items: [],
   },
@@ -98,11 +98,11 @@ describe('the diagnostic report', () => {
     expect(checksText(checks)).toBe(
       [
         '✓ Service — Checks passed',
-        '    ✓ Forkop: running for 2 h',
+        '    ✓ LoKi: running for 2 h',
         '✓ Traffic — Checks passed',
-        '    ✓ Router: goes through Forkop',
+        '    ✓ Router: goes through LoKi',
         '    ℹ This device: Browser check did not confirm FakeIP; router results are shown separately',
-        '– Sections — Skipped: Forkop is not running',
+        '– Sections — Skipped: LoKi is not running',
         '',
       ].join('\n'),
     );
@@ -146,7 +146,7 @@ describe('the diagnostic report', () => {
         visibility: 'masked',
         notice: 'MASKED REPORT: review before sharing.',
         checks: '✓ Service — OK\n',
-        log: 'forkop: [info] Forkop started\n',
+        log: 'forkop: [info] LoKi started\n',
         forkop_config: "config settings 'settings'\n",
         nftables: '',
         ip_rules: '105: from all fwmark 0x4000000/0x4000000 lookup forkop\n',
@@ -155,22 +155,47 @@ describe('the diagnostic report', () => {
 
     expect(text.split('\n').slice(0, 7)).toEqual([
       'MASKED REPORT: review before sharing.',
-      'Forkop diagnostic report · 2026-10-19 17:05',
+      'LoKi diagnostic report · 2026-10-19 17:05',
       '',
       '== System ==',
-      'Forkop 1.0.6 · sing-box-forkop 1.14.4-r1 (base)',
+      'LoKi 1.0.6 · sing-box-forkop 1.14.4-r1 (base)',
       'OpenWrt 25.12.5 r33051-f5dae5ece4 · Xiaomi Mi Router AX3000T',
       'Router up for 22 d · Memory: 44 MB of 234 MB free',
     ]);
     for (const heading of [
       '== Checks ==\n✓ Service — OK\n',
-      '== Log ==\nforkop: [info] Forkop started\n',
-      '== Forkop configuration ==',
+      '== Log ==\nforkop: [info] LoKi started\n',
+      '== LoKi configuration ==',
       '== nftables ==\nempty\n',
       '== Routing rules ==',
     ]) {
       expect(text).toContain(heading);
     }
     expect(text).not.toContain('sing-box configuration');
+  });
+
+  it('brands headings without rewriting user content or historical log messages', () => {
+    const text = reportText(
+      {
+        visibility: 'masked',
+        generatedAt: new Date(2026, 10, 3),
+        systemInfo: {} as StoreType['diagnosticsSystemInfo'],
+        luciVersion: '',
+      },
+      {
+        visibility: 'masked',
+        notice: 'MASKED REPORT: review before sharing.',
+        checks: 'node: Forkop remote node',
+        log: 'historical: Starting Forkop',
+        forkop_config: 'option label "Forkop remote node"',
+        nftables: '',
+        ip_rules: '',
+      },
+    );
+    expect(text).toContain('LoKi diagnostic report');
+    expect(text).toContain('LoKi configuration');
+    expect(text).toContain('node: Forkop remote node');
+    expect(text).toContain('historical: Starting Forkop');
+    expect(text).toContain('option label "Forkop remote node"');
   });
 });

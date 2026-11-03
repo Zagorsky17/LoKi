@@ -84,4 +84,22 @@ t.test("legacy state is not deleted and an own backup copies rather than moves t
     t.excludes(SOURCE, "LEGACY_FILES=");
 });
 
+
+t.test("setup failures name LoKi and require review of a masked report before sharing", () => {
+    for (let language in [ "en", "ru" ]) {
+        let result = isolated("RU=" + (language == "ru" ? "1" : "0") + "; F_VERSION=2.0.0; FILE_CORE=; FILE_APP=; FILE_I18N=; FILE_IP=; REMOVE_PKGS=; " +
+            "restore_core() { :; }; repair_opkg_db() { :; }; opkg_unpacked() { return 0; }; " +
+            "logread() { :; }; start_again() { :; }; fail() { printf '%s\\n' \"$@\"; exit \"$1\"; }; check_installed 1");
+        t.eq(result.status, 3, result.output);
+        t.contains(result.output, "LoKi 2.0.0");
+        t.contains(result.output, "forkop report masked");
+        t.excludes(result.output, "Forkop");
+        t.excludes(result.output, "chat");
+        t.excludes(result.output, "чат");
+        t.excludes(result.output, "synthetic-secret");
+        t.eq(result.config, "original synthetic-secret");
+        t.eq(result.foreign, "foreign data");
+    }
+});
+
 t.done();

@@ -6,7 +6,7 @@ import { LogNotificationDeduper } from '../logNotificationDeduper.service';
 const REFUSED =
   "Mon Oct 19 16:03:10 2026 user.err forkop: [error] Section 'proxy' holds WARP tunnel 'Tunnel #1'";
 const NOT_APPLIED =
-  'Mon Oct 19 16:03:10 2026 user.warn forkop: [warn] Configuration not applied; Forkop keeps running the previous one';
+  'Mon Oct 19 16:03:10 2026 user.warn forkop: [warn] Configuration not applied; LoKi keeps running the previous one';
 const APPLYING =
   'Mon Oct 19 16:04:47 2026 user.info forkop: [info] Applying configuration';
 const APPLIED =
@@ -61,8 +61,8 @@ describe('the alerts the log raises', () => {
 
   it('close at the opening of every Forkop action, and at nothing else', () => {
     const openings = [
-      'user.info forkop: [info] Starting Forkop',
-      'user.info forkop: [info] Stopping Forkop',
+      'user.info forkop: [info] Starting LoKi',
+      'user.info forkop: [info] Stopping LoKi',
       'user.info forkop[42]: [info] Applying configuration',
       "user.info forkop: [info] Reapplying configuration: interface 'wan' came up",
     ];
@@ -75,9 +75,9 @@ describe('the alerts the log raises', () => {
 
     const others = [
       APPLIED,
-      'user.info forkop: [info] Forkop is already running',
+      'user.info forkop: [info] LoKi is already running',
       'user.warn forkop: [warn] Applying configuration',
-      'daemon.info sing-box[7]: [info] Starting Forkop',
+      'daemon.info sing-box[7]: [info] Starting LoKi',
     ];
     for (const other of others) {
       const { alerts } = openPage();

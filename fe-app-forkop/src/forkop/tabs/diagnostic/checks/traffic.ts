@@ -1,3 +1,4 @@
+// Modified for LoKi on 2026-11-03: product labels in user-facing messages.
 // Modified for LoKi on 2026-11-01: keep browser traffic observations informational.
 import { ForkopShellMethods, RemoteFakeIPMethods } from '../../../methods';
 import type { IDiagnosticsChecksItem } from '../../../services';
@@ -14,13 +15,13 @@ function routerItem(router: Forkop.TrafficCheckResult['router']) {
     return finding('success', key, _('excluded from routing'));
   }
   if (router.fakeip) {
-    return finding('success', key, _('goes through Forkop'));
+    return finding('success', key, _('goes through LoKi'));
   }
   if (!router.dns_fakeip) {
-    return finding('warning', key, _('resolves past Forkop'));
+    return finding('warning', key, _('resolves past LoKi'));
   }
   if (router.answered) {
-    return finding('error', key, _('goes past Forkop'));
+    return finding('error', key, _('goes past LoKi'));
   }
   return finding(
     'warning',
@@ -51,7 +52,7 @@ function deviceItem(browser: BrowserCheck) {
   const key = _('This device');
 
   if (browser?.fakeip) {
-    return finding('success', key, _('goes through Forkop'));
+    return finding('success', key, _('goes through LoKi'));
   }
   return browser
     ? finding(

@@ -1,3 +1,4 @@
+// Modified for LoKi on 2026-11-03: product labels in user-facing messages.
 // Modified for LoKi on 2026-11-01: preserve LAN reverse zones while routing external PTR by DNS policy.
 let fs = require("fs");
 let common = require("core.common");
@@ -31,15 +32,15 @@ function configure_service() {
     if (length(changed) > 0) {
         if (!uci.commit("sing-box"))
             die("Failed to save the sing-box service settings in /etc/config/sing-box");
-        exec.log("info", "Set up the sing-box service for Forkop: " + join(", ", changed));
+        exec.log("info", "Set up the sing-box service for LoKi: " + join(", ", changed));
     }
 
     if (fs.stat("/etc/rc.d/S99sing-box") == null)
         return;
     if (exec.ok([ "/etc/init.d/sing-box", "disable" ]))
-        exec.log("info", "Disabled the sing-box autostart; Forkop starts sing-box itself");
+        exec.log("info", "Disabled the sing-box autostart; LoKi starts sing-box itself");
     else
-        exec.log("warn", "Failed to disable the sing-box autostart; at boot sing-box may start without Forkop");
+        exec.log("warn", "Failed to disable the sing-box autostart; at boot sing-box may start without LoKi");
 }
 
 function interface_ipv4_address(name) {

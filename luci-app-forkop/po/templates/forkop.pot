@@ -7,8 +7,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: FORKOP\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-02 21:10+0300\n"
-"PO-Revision-Date: 2026-11-02 21:10+0300\n"
+"POT-Creation-Date: 2026-11-03 04:52+0300\n"
+"PO-Revision-Date: 2026-11-03 04:52+0300\n"
 "Last-Translator: ushan0v <ushanov2204@gmail.com>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
 "Language: \n"
@@ -70,7 +70,7 @@ msgstr ""
 msgid "%s does not answer"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts:98
+#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts:99
 msgid "%s error messages found in the last 60 seconds"
 msgstr ""
 
@@ -82,7 +82,7 @@ msgstr ""
 msgid "%s holds a configuration of LoKi %s."
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts:107
+#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts:108
 msgid "%s intercepts traffic"
 msgstr ""
 
@@ -98,19 +98,19 @@ msgstr ""
 msgid "%s is set by the cascade connection"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts:152
+#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts:153
 msgid "%s of %s free"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts:111
-msgid "%s takes DNS queries before Forkop"
+#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts:112
+msgid "%s takes DNS queries before LoKi"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/traffic.ts:46
+#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/traffic.ts:47
 msgid "%s, direct %s"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/traffic.ts:41
+#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/traffic.ts:42
 msgid "%s, the same as direct"
 msgstr ""
 
@@ -228,7 +228,7 @@ msgstr ""
 msgid "All except selected"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:54
+#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:55
 msgid "All main DNS servers use the selected protocol. Enter https://host/path for DoH, tls://host for DoT, or an IP address for UDP."
 msgstr ""
 
@@ -254,7 +254,7 @@ msgstr ""
 msgid "An OpenWrt network interface"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts:120
+#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts:121
 msgid "another sing-box is running (PID %s)"
 msgstr ""
 
@@ -271,7 +271,7 @@ msgstr ""
 msgid "Applying..."
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts:89
+#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts:90
 msgid "At least %s error messages in the last 60 seconds; log data incomplete"
 msgstr ""
 
@@ -279,7 +279,7 @@ msgstr ""
 msgid "At most %d KB, this is %d KB"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/logs/render.ts:37
+#: fe-app-forkop/src/forkop/tabs/logs/render.ts:38
 #: fe-app-forkop/src/forkop/tabs/monitoring/render.ts:49
 msgid "Auto refresh"
 msgstr ""
@@ -288,7 +288,7 @@ msgstr ""
 msgid "Availability check for every server"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/components/initController.ts:242
+#: fe-app-forkop/src/forkop/tabs/components/initController.ts:243
 #: fe-app-forkop/src/forkop/tabs/diagnostic/partials/renderAvailableActions.ts:49
 msgid "Available actions"
 msgstr ""
@@ -305,19 +305,19 @@ msgstr ""
 msgid "Bootstrap DNS"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:104
+#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:105
 msgid "Bootstrap DNS must use UDP"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:110
+#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:111
 msgid "Bootstrap DNS Query Mode"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:91
+#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:92
 msgid "Bootstrap DNS Servers"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/traffic.ts:60
+#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/traffic.ts:61
 msgid "Browser check did not confirm FakeIP; router results are shown separately"
 msgstr ""
 
@@ -329,7 +329,7 @@ msgstr ""
 msgid "By default only the domain conditions of a rule set are applied. This option adds its IP addresses and subnets to nftables. Large lists can load the router heavily. Enable it only if you know the set holds the subnets you need"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/settings/form/network.ts:75
+#: fe-app-forkop/src/forkop/tabs/settings/form/network.ts:76
 msgid "By default the router's routes choose it"
 msgstr ""
 
@@ -338,7 +338,7 @@ msgid "Cache File Path"
 msgstr ""
 
 #: fe-app-forkop/src/forkop/tabs/components/configFile.ts:208
-#: fe-app-forkop/src/forkop/tabs/components/removeDialog.ts:83
+#: fe-app-forkop/src/forkop/tabs/components/removeDialog.ts:84
 msgid "Cancel"
 msgstr ""
 
@@ -350,7 +350,7 @@ msgstr ""
 msgid "Cascade connection"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/components/initController.ts:250
+#: fe-app-forkop/src/forkop/tabs/components/initController.ts:251
 msgid "Change the build"
 msgstr ""
 
@@ -395,11 +395,11 @@ msgstr ""
 msgid "Checked from top to bottom until the first working server"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/diagnostic/initController.ts:598
+#: fe-app-forkop/src/forkop/tabs/diagnostic/initController.ts:599
 msgid "Checking, please wait"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/diagnostic/report.ts:99
+#: fe-app-forkop/src/forkop/tabs/diagnostic/report.ts:100
 msgid "Checks"
 msgstr ""
 
@@ -411,24 +411,24 @@ msgstr ""
 msgid "Checks passed"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:39
+#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:40
 msgid "Choose a protocol"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:47
-#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:72
+#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:48
+#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:73
 msgid "Choose DoH or DoT"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:31
+#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:32
 msgid "Choose enabled or disabled"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:25
+#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:26
 msgid "Choose encryption mode"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:21
+#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:22
 msgid "Choose explicitly. Server addresses must match the selected protocol; changing the mode does not rewrite them."
 msgstr ""
 
@@ -499,11 +499,11 @@ msgstr ""
 msgid "Config File Path"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/components/initController.ts:308
+#: fe-app-forkop/src/forkop/tabs/components/initController.ts:309
 msgid "Configuration"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts:104
+#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts:105
 msgid "Conflicts"
 msgstr ""
 
@@ -550,7 +550,7 @@ msgid "Copied"
 msgstr ""
 
 #: fe-app-forkop/src/forkop/tabs/logs/initController.ts:57
-#: fe-app-forkop/src/forkop/tabs/logs/render.ts:41
+#: fe-app-forkop/src/forkop/tabs/logs/render.ts:42
 #: fe-app-forkop/src/partials/modal/renderModal.ts:43
 msgid "Copy"
 msgstr ""
@@ -569,25 +569,25 @@ msgstr ""
 msgid "Copy proxy link"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/components/initController.ts:109
 #: fe-app-forkop/src/forkop/tabs/components/initController.ts:110
+#: fe-app-forkop/src/forkop/tabs/components/initController.ts:111
 msgid "Copy the output"
 msgstr ""
 
 #: fe-app-forkop/src/forkop/tabs/dashboard/initController.ts:1853
-#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts:40
+#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts:41
 msgid "Core"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts:80
+#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts:81
 msgid "Core log"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/diagnostic/initController.ts:370
+#: fe-app-forkop/src/forkop/tabs/diagnostic/initController.ts:371
 msgid "Could not disable autostart"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/diagnostic/initController.ts:362
+#: fe-app-forkop/src/forkop/tabs/diagnostic/initController.ts:363
 msgid "Could not enable autostart"
 msgstr ""
 
@@ -615,20 +615,20 @@ msgstr ""
 msgid "Dashboard currently unavailable"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/settings/form/network.ts:161
-msgid "Delay in milliseconds before reloading Forkop after interface UP"
+#: fe-app-forkop/src/forkop/tabs/settings/form/network.ts:162
+msgid "Delay in milliseconds before reloading LoKi after interface UP"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/diagnostic/initController.ts:485
+#: fe-app-forkop/src/forkop/tabs/diagnostic/initController.ts:486
 msgid "Device"
 msgstr ""
 
 #: fe-app-forkop/src/forkop/tabs/sections/conditions.ts:234
-#: fe-app-forkop/src/forkop/tabs/settings/form/network.ts:18
+#: fe-app-forkop/src/forkop/tabs/settings/form/network.ts:19
 msgid "Device or IP"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/diagnostic/initController.ts:406
+#: fe-app-forkop/src/forkop/tabs/diagnostic/initController.ts:407
 msgid "Diagnostic report"
 msgstr ""
 
@@ -645,7 +645,7 @@ msgstr ""
 msgid "Disable QUIC"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:26
+#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:27
 msgid "Disabled (UDP)"
 msgstr ""
 
@@ -653,11 +653,11 @@ msgstr ""
 msgid "Disables QUIC for compatibility and to fix video streaming"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:20
+#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:21
 msgid "DNS encryption"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:170
+#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:171
 msgid "DNS outside the rules"
 msgstr ""
 
@@ -668,31 +668,31 @@ msgstr ""
 
 #: fe-app-forkop/src/forkop/tabs/sections/form.ts:221
 #: fe-app-forkop/src/forkop/tabs/sections/interfaces.ts:222
-#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:150
+#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:151
 msgid "DNS requests through"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:120
+#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:121
 msgid "DNS Rewrite TTL"
 msgstr ""
 
 #: fe-app-forkop/src/forkop/tabs/sections/form.ts:181
 #: fe-app-forkop/src/forkop/tabs/sections/interfaces.ts:183
-#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:53
+#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:54
 msgid "DNS Server"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:129
+#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:130
 msgid "DNS Strategy"
 msgstr ""
 
 #: fe-app-forkop/src/forkop/tabs/sections/form.ts:209
 #: fe-app-forkop/src/forkop/tabs/sections/interfaces.ts:210
-#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:142
+#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:143
 msgid "DNS through section"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:160
+#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:161
 msgid "DNS timeout"
 msgstr ""
 
@@ -700,7 +700,7 @@ msgstr ""
 msgid "dnsmasq does not answer"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:40
+#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:41
 msgid "DoH (HTTPS)"
 msgstr ""
 
@@ -720,11 +720,11 @@ msgstr ""
 msgid "Domains only"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/components/initController.ts:77
+#: fe-app-forkop/src/forkop/tabs/components/initController.ts:78
 msgid "done"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:41
+#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:42
 msgid "DoT (TLS)"
 msgstr ""
 
@@ -733,9 +733,9 @@ msgstr ""
 msgid "Downlink"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/components/initController.ts:312
+#: fe-app-forkop/src/forkop/tabs/components/initController.ts:313
 #: fe-app-forkop/src/forkop/tabs/logs/initController.ts:62
-#: fe-app-forkop/src/forkop/tabs/logs/render.ts:42
+#: fe-app-forkop/src/forkop/tabs/logs/render.ts:43
 #: fe-app-forkop/src/partials/modal/renderModal.ts:36
 msgid "Download"
 msgstr ""
@@ -782,7 +782,7 @@ msgstr ""
 msgid "Edit rule action"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/diagnostic/report.ts:49
+#: fe-app-forkop/src/forkop/tabs/diagnostic/report.ts:50
 msgid "empty"
 msgstr ""
 
@@ -798,7 +798,7 @@ msgstr ""
 msgid "Enable built-in DNS resolver for domains handled by this section"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/settings/form/network.ts:74
+#: fe-app-forkop/src/forkop/tabs/settings/form/network.ts:75
 msgid "Enable Output Network Interface"
 msgstr ""
 
@@ -810,11 +810,11 @@ msgstr ""
 msgid "Enable YACD WAN Access"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:27
+#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:28
 msgid "Enabled"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:37
+#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:38
 msgid "Encrypted DNS protocol"
 msgstr ""
 
@@ -823,7 +823,7 @@ msgstr ""
 msgid "Exclude by pattern"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/settings/form/network.ts:13
+#: fe-app-forkop/src/forkop/tabs/settings/form/network.ts:14
 msgid "Exclude devices from routing"
 msgstr ""
 
@@ -837,7 +837,7 @@ msgstr ""
 msgid "Exclude types"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/traffic.ts:14
+#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/traffic.ts:15
 msgid "excluded from routing"
 msgstr ""
 
@@ -849,7 +849,7 @@ msgstr ""
 msgid "Exit through"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/traffic.ts:34
+#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/traffic.ts:35
 msgid "Exit via \"%s\""
 msgstr ""
 
@@ -867,15 +867,15 @@ msgstr ""
 msgid "Expires"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts:142
+#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts:143
 msgid "External list %s may overlap %s; compare domains and subnets before removing a list"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts:139
+#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts:140
 msgid "External list %s uses the same source as %s; review the section lists"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/components/initController.ts:82
+#: fe-app-forkop/src/forkop/tabs/components/initController.ts:83
 msgid "failed"
 msgstr ""
 
@@ -907,7 +907,7 @@ msgstr ""
 msgid "Failed to load default subscription headers"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/diagnostic/initController.ts:414
+#: fe-app-forkop/src/forkop/tabs/diagnostic/initController.ts:415
 #: fe-app-forkop/src/partials/modal/renderModal.ts:93
 msgid "Failed to load diagnostics"
 msgstr ""
@@ -994,26 +994,6 @@ msgstr ""
 msgid "For example 30m, 12h or 1d"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/diagnostic/report.ts:101
-msgid "Forkop configuration"
-msgstr ""
-
-#: fe-app-forkop/src/forkop/tabs/diagnostic/report.ts:97
-msgid "Forkop diagnostic report"
-msgstr ""
-
-#: fe-app-forkop/src/forkop/services/core.service.ts:28
-msgid "Forkop Error"
-msgstr ""
-
-#: fe-app-forkop/src/forkop/tabs/settings/form/network.ts:14
-msgid "Forkop ignores these devices entirely: their traffic is not routed and their DNS is not captured"
-msgstr ""
-
-#: fe-app-forkop/src/forkop/tabs/logs/render.ts:52
-msgid "Forkop system logs"
-msgstr ""
-
 #: fe-app-forkop/src/forkop/tabs/sections/healthCheck.ts:35
 msgid "Format: *, 204, 200-299"
 msgstr ""
@@ -1046,16 +1026,16 @@ msgstr ""
 msgid "Get report"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/traffic.ts:23
-msgid "goes past Forkop"
+#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/traffic.ts:24
+msgid "goes past LoKi"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/traffic.ts:17
-#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/traffic.ts:54
-msgid "goes through Forkop"
+#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/traffic.ts:18
+#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/traffic.ts:55
+msgid "goes through LoKi"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/components/initController.ts:88
+#: fe-app-forkop/src/forkop/tabs/components/initController.ts:89
 msgid "going to the LuCI home page"
 msgstr ""
 
@@ -1091,7 +1071,7 @@ msgstr ""
 msgid "Host"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:121
+#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:122
 msgid "How long DNS records are cached, in seconds"
 msgstr ""
 
@@ -1126,7 +1106,7 @@ msgstr ""
 msgid "Idle timeout"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/components/initController.ts:68
+#: fe-app-forkop/src/forkop/tabs/components/initController.ts:69
 msgid "in progress"
 msgstr ""
 
@@ -1146,17 +1126,17 @@ msgstr ""
 msgid "Includes connection setup and the TLS handshake"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/components/render.ts:27
+#: fe-app-forkop/src/forkop/tabs/components/render.ts:28
 msgid "Installed versions"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/components/initController.ts:132
 #: fe-app-forkop/src/forkop/tabs/components/initController.ts:133
-#: fe-app-forkop/src/forkop/tabs/components/initController.ts:201
+#: fe-app-forkop/src/forkop/tabs/components/initController.ts:134
+#: fe-app-forkop/src/forkop/tabs/components/initController.ts:202
 msgid "Installer log"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/components/initController.ts:99
+#: fe-app-forkop/src/forkop/tabs/components/initController.ts:100
 msgid "Installer output"
 msgstr ""
 
@@ -1168,15 +1148,15 @@ msgstr ""
 msgid "interface is up, no internet through it"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/settings/form/network.ts:130
+#: fe-app-forkop/src/forkop/tabs/settings/form/network.ts:131
 msgid "Interface Monitoring"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/settings/form/network.ts:160
+#: fe-app-forkop/src/forkop/tabs/settings/form/network.ts:161
 msgid "Interface Monitoring Delay"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/settings/form/network.ts:131
+#: fe-app-forkop/src/forkop/tabs/settings/form/network.ts:132
 msgid "Interface monitoring for Bad WAN"
 msgstr ""
 
@@ -1190,12 +1170,12 @@ msgstr ""
 msgid "Interrupt connections"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/components/initController.ts:121
 #: fe-app-forkop/src/forkop/tabs/components/initController.ts:122
+#: fe-app-forkop/src/forkop/tabs/components/initController.ts:123
 msgid "Interrupt the installer"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/components/initController.ts:82
+#: fe-app-forkop/src/forkop/tabs/components/initController.ts:83
 msgid "interrupted"
 msgstr ""
 
@@ -1268,11 +1248,11 @@ msgstr ""
 msgid "IP address only"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:133
+#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:134
 msgid "IPv4 only"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:135
+#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:136
 msgid "IPv6 only"
 msgstr ""
 
@@ -1295,7 +1275,7 @@ msgstr ""
 msgid "JSON outbound: %s"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/components/removeDialog.ts:72
+#: fe-app-forkop/src/forkop/tabs/components/removeDialog.ts:73
 msgid "Keep settings"
 msgstr ""
 
@@ -1327,7 +1307,7 @@ msgstr ""
 msgid "List update interval"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts:137
+#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts:138
 msgid "Lists in %s"
 msgstr ""
 
@@ -1344,7 +1324,7 @@ msgstr ""
 msgid "Loading connections..."
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/logs/render.ts:55
+#: fe-app-forkop/src/forkop/tabs/logs/render.ts:56
 msgid "Loading logs..."
 msgstr ""
 
@@ -1352,11 +1332,11 @@ msgstr ""
 msgid "Local DNS"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/diagnostic/report.ts:100
+#: fe-app-forkop/src/forkop/tabs/diagnostic/report.ts:101
 msgid "Log"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts:83
+#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts:84
 msgid "Log data unavailable"
 msgstr ""
 
@@ -1368,15 +1348,35 @@ msgstr ""
 msgid "Logs"
 msgstr ""
 
+#: fe-app-forkop/src/forkop/tabs/diagnostic/report.ts:102
+msgid "LoKi configuration"
+msgstr ""
+
+#: fe-app-forkop/src/forkop/tabs/diagnostic/report.ts:98
+msgid "LoKi diagnostic report"
+msgstr ""
+
+#: fe-app-forkop/src/forkop/services/core.service.ts:29
+msgid "LoKi Error"
+msgstr ""
+
+#: fe-app-forkop/src/forkop/tabs/settings/form/network.ts:15
+msgid "LoKi ignores these devices entirely: their traffic is not routed and their DNS is not captured"
+msgstr ""
+
+#: fe-app-forkop/src/forkop/tabs/logs/render.ts:53
+msgid "LoKi system logs"
+msgstr ""
+
 #: fe-app-forkop/src/forkop/tabs/diagnostic/checks/dns.ts:13
 msgid "Main DNS"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:81
+#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:82
 msgid "Main DNS Query Mode"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/diagnostic/report.ts:96
+#: fe-app-forkop/src/forkop/tabs/diagnostic/report.ts:97
 msgid "MASKED REPORT: review before sharing."
 msgstr ""
 
@@ -1388,20 +1388,20 @@ msgstr ""
 msgid "Match the domains of DNS queries"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:161
+#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:162
 msgid "Maximum time to wait for a DNS response"
 msgstr ""
 
 #: fe-app-forkop/src/forkop/tabs/dashboard/initController.ts:1829
-#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts:151
+#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts:152
 msgid "Memory"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/diagnostic/report.ts:84
+#: fe-app-forkop/src/forkop/tabs/diagnostic/report.ts:85
 msgid "Memory: %s of %s free"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/settings/form/network.ts:139
+#: fe-app-forkop/src/forkop/tabs/settings/form/network.ts:140
 msgid "Monitored Interfaces"
 msgstr ""
 
@@ -1461,11 +1461,11 @@ msgid "No active connections"
 msgstr ""
 
 #: fe-app-forkop/src/forkop/tabs/dashboard/partials/renderExitPanel.ts:103
-#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/traffic.ts:38
+#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/traffic.ts:39
 msgid "no answer"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/components/initController.ts:70
+#: fe-app-forkop/src/forkop/tabs/components/initController.ts:71
 msgid "no answer from the router"
 msgstr ""
 
@@ -1485,7 +1485,7 @@ msgstr ""
 msgid "No domain"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts:99
+#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts:100
 msgid "No error messages found in the last 60 seconds"
 msgstr ""
 
@@ -1519,15 +1519,15 @@ msgstr ""
 msgid "Nodes"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts:127
+#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts:128
 msgid "none found"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/traffic.ts:64
+#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/traffic.ts:65
 msgid "not checked: no answer"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/traffic.ts:28
+#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/traffic.ts:29
 msgid "not checked: the check service did not answer"
 msgstr ""
 
@@ -1547,16 +1547,16 @@ msgstr ""
 msgid "Not installed"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts:34
+#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts:35
 msgid "not running"
 msgstr ""
 
 #: fe-app-forkop/src/forkop/tabs/diagnostic/diagnostic.store.ts:92
-#: fe-app-forkop/src/forkop/tabs/diagnostic/initController.ts:95
+#: fe-app-forkop/src/forkop/tabs/diagnostic/initController.ts:96
 msgid "Not running"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts:33
+#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts:34
 msgid "not running: %s"
 msgstr ""
 
@@ -1564,7 +1564,7 @@ msgstr ""
 msgid "Nothing after %s"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/components/initController.ts:381
+#: fe-app-forkop/src/forkop/tabs/components/initController.ts:382
 msgid "Nothing to upload: the file holds the current configuration"
 msgstr ""
 
@@ -1598,11 +1598,11 @@ msgstr ""
 msgid "Operation timed out"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/diagnostic/initController.ts:482
+#: fe-app-forkop/src/forkop/tabs/diagnostic/initController.ts:483
 msgid "OS"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/settings/form/network.ts:83
+#: fe-app-forkop/src/forkop/tabs/settings/form/network.ts:84
 msgid "Output Network Interface"
 msgstr ""
 
@@ -1612,8 +1612,8 @@ msgstr ""
 
 #: fe-app-forkop/src/forkop/tabs/sections/form.ts:196
 #: fe-app-forkop/src/forkop/tabs/sections/interfaces.ts:199
-#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:82
-#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:111
+#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:83
+#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:112
 msgid "Parallel asks every server at once and is faster. Sequential asks them in turn until the first answer"
 msgstr ""
 
@@ -1634,15 +1634,15 @@ msgstr ""
 msgid "Ports"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:132
+#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:133
 msgid "Prefer IPv4"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:134
+#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:135
 msgid "Prefer IPv6"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:130
+#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:131
 msgid "Preferred IP address type for domains"
 msgstr ""
 
@@ -1678,17 +1678,17 @@ msgstr ""
 msgid "Refill"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/components/removeDialog.ts:53
-#: fe-app-forkop/src/forkop/tabs/components/removeDialog.ts:57
+#: fe-app-forkop/src/forkop/tabs/components/removeDialog.ts:54
+#: fe-app-forkop/src/forkop/tabs/components/removeDialog.ts:58
 msgid "Remove"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/components/initController.ts:256
-msgid "Remove Forkop"
+#: fe-app-forkop/src/forkop/tabs/components/initController.ts:257
+msgid "Remove LoKi"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/components/initController.ts:402
-msgid "Remove Forkop?"
+#: fe-app-forkop/src/forkop/tabs/components/initController.ts:403
+msgid "Remove LoKi?"
 msgstr ""
 
 #: fe-app-forkop/src/forkop/tabs/sections/serverFilters.ts:82
@@ -1699,7 +1699,7 @@ msgstr ""
 msgid "Remove servers whose names match the regular expression"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/components/removeDialog.ts:57
+#: fe-app-forkop/src/forkop/tabs/components/removeDialog.ts:58
 msgid "Remove with settings"
 msgstr ""
 
@@ -1723,7 +1723,7 @@ msgstr ""
 msgid "Reserved name"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:92
+#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:93
 msgid "Resolve the addresses of the main DNS servers and proxies over UDP. IP addresses only."
 msgstr ""
 
@@ -1731,8 +1731,8 @@ msgstr ""
 msgid "Resolves domains that match the section conditions. Several servers give automatic failover. The protocol is set by a prefix: %s"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/traffic.ts:20
-msgid "resolves past Forkop"
+#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/traffic.ts:21
+msgid "resolves past LoKi"
 msgstr ""
 
 #: fe-app-forkop/src/forkop/tabs/diagnostic/partials/renderAvailableActions.ts:27
@@ -1756,7 +1756,7 @@ msgstr ""
 msgid "Route DNS requests through a section"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:143
+#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:144
 msgid "Route main DNS requests through a section"
 msgstr ""
 
@@ -1764,16 +1764,16 @@ msgstr ""
 msgid "Route the resolver's DNS requests through a section instead of this network interface"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/traffic.ts:11
-#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:174
+#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/traffic.ts:12
+#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:175
 msgid "Router"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/diagnostic/report.ts:84
+#: fe-app-forkop/src/forkop/tabs/diagnostic/report.ts:85
 msgid "Router up for %s"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/diagnostic/report.ts:103
+#: fe-app-forkop/src/forkop/tabs/diagnostic/report.ts:104
 msgid "Routing rules"
 msgstr ""
 
@@ -1802,16 +1802,16 @@ msgstr ""
 msgid "Run Diagnostic"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/components/initController.ts:246
+#: fe-app-forkop/src/forkop/tabs/components/initController.ts:247
 msgid "Run the installer"
 msgstr ""
 
 #: fe-app-forkop/src/forkop/helpers/serviceStatusDisplay.ts:32
-#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts:25
+#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts:26
 msgid "running"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts:24
+#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts:25
 msgid "running for %s"
 msgstr ""
 
@@ -1820,7 +1820,7 @@ msgstr ""
 msgid "Save"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/logs/render.ts:26
+#: fe-app-forkop/src/forkop/tabs/logs/render.ts:27
 #: fe-app-forkop/src/forkop/tabs/monitoring/render.ts:36
 msgid "Search"
 msgstr ""
@@ -1842,7 +1842,7 @@ msgstr ""
 msgid "Sections"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:66
+#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:67
 msgid "Select a DNS encryption mode"
 msgstr ""
 
@@ -1854,11 +1854,11 @@ msgstr ""
 msgid "Select an interface"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/settings/form/network.ts:84
+#: fe-app-forkop/src/forkop/tabs/settings/form/network.ts:85
 msgid "Select the network interface to which the traffic will originate"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/settings/form/network.ts:140
+#: fe-app-forkop/src/forkop/tabs/settings/form/network.ts:141
 msgid "Select the WAN interfaces to be monitored"
 msgstr ""
 
@@ -1981,7 +1981,7 @@ msgstr ""
 msgid "Show the metadata block on the dashboard"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts:54
+#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts:55
 msgid "sing-box %s, not sing-box-forkop"
 msgstr ""
 
@@ -1993,24 +1993,24 @@ msgstr ""
 msgid "sing-box log level"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts:75
+#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts:76
 msgid "sing-box-forkop %s"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts:74
+#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts:75
 msgid "sing-box-forkop %s (%s)"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts:61
+#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts:62
 msgid "sing-box-forkop %s is outdated: %s or newer is needed"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts:45
+#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts:46
 msgid "sing-box-forkop is not installed"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/diagnostic/initController.ts:558
-msgid "Skipped: Forkop is not running"
+#: fe-app-forkop/src/forkop/tabs/diagnostic/initController.ts:559
+msgid "Skipped: LoKi is not running"
 msgstr ""
 
 #: fe-app-forkop/src/forkop/tabs/dashboard/partials/renderSections.ts:502
@@ -2022,7 +2022,7 @@ msgstr ""
 msgid "Source"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/settings/form/network.ts:40
+#: fe-app-forkop/src/forkop/tabs/settings/form/network.ts:41
 msgid "Source Network Interface"
 msgstr ""
 
@@ -2057,7 +2057,7 @@ msgid "stopped"
 msgstr ""
 
 #: fe-app-forkop/src/forkop/helpers/serviceStatusDisplay.ts:12
-#: fe-app-forkop/src/forkop/tabs/components/initController.ts:72
+#: fe-app-forkop/src/forkop/tabs/components/initController.ts:73
 msgid "stopping..."
 msgstr ""
 
@@ -2114,7 +2114,7 @@ msgid "Switching threshold in ms at which to move to a faster server"
 msgstr ""
 
 #: fe-app-forkop/src/forkop/cbi/localDevices.ts:194
-#: fe-app-forkop/src/forkop/tabs/diagnostic/report.ts:98
+#: fe-app-forkop/src/forkop/tabs/diagnostic/report.ts:99
 #: fe-app-forkop/src/forkop/tabs/monitoring/source.ts:73
 msgid "System"
 msgstr ""
@@ -2123,7 +2123,7 @@ msgstr ""
 msgid "System information"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/components/initController.ts:148
+#: fe-app-forkop/src/forkop/tabs/components/initController.ts:149
 msgid "Terminal"
 msgstr ""
 
@@ -2158,7 +2158,7 @@ msgstr ""
 msgid "The configuration of LoKi %s cannot be brought to %s: %s"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:75
+#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:76
 msgid "The DNS server must use %s"
 msgstr ""
 
@@ -2182,7 +2182,7 @@ msgstr ""
 msgid "The file is not a UCI configuration"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/components/initController.ts:368
+#: fe-app-forkop/src/forkop/tabs/components/initController.ts:369
 msgid "The file is over 1 MB, far larger than a LoKi configuration"
 msgstr ""
 
@@ -2194,11 +2194,11 @@ msgstr ""
 msgid "the installed sing-box lacks %s"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/settings/form/network.ts:41
+#: fe-app-forkop/src/forkop/tabs/settings/form/network.ts:42
 msgid "The interface the traffic comes from"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/components/initController.ts:87
+#: fe-app-forkop/src/forkop/tabs/components/initController.ts:88
 msgid "the page reloads"
 msgstr ""
 
@@ -2230,7 +2230,7 @@ msgstr ""
 msgid "The servers that end up in the group"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/traffic.ts:51
+#: fe-app-forkop/src/forkop/tabs/diagnostic/checks/traffic.ts:52
 msgid "This device"
 msgstr ""
 
@@ -2276,7 +2276,7 @@ msgstr ""
 msgid "Unknown error"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/diagnostic/report.ts:95
+#: fe-app-forkop/src/forkop/tabs/diagnostic/report.ts:96
 msgid "UNMASKED REPORT: contains keys and passwords. Do not share."
 msgstr ""
 
@@ -2318,11 +2318,11 @@ msgid "Uplink"
 msgstr ""
 
 #: fe-app-forkop/src/forkop/tabs/components/configFile.ts:217
-#: fe-app-forkop/src/forkop/tabs/components/initController.ts:318
+#: fe-app-forkop/src/forkop/tabs/components/initController.ts:319
 msgid "Upload"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/components/initController.ts:386
+#: fe-app-forkop/src/forkop/tabs/components/initController.ts:387
 msgid "Upload the configuration?"
 msgstr ""
 
@@ -2386,7 +2386,7 @@ msgstr ""
 msgid "Which servers to import"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:171
+#: fe-app-forkop/src/forkop/tabs/settings/form/dns.ts:172
 msgid "Who resolves domains no rule matched"
 msgstr ""
 

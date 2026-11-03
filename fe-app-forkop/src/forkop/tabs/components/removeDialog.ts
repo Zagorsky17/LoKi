@@ -1,3 +1,4 @@
+// Modified for LoKi on 2026-11-03: product labels in user-facing messages.
 import { E } from '../../../helpers/element';
 import type { StoreType } from '../../services/store.service';
 
@@ -10,10 +11,10 @@ type SystemInfo = Pick<
 // "not installed" and one it could not ask as "unknown".
 export function removedPackages(info: SystemInfo): string[] {
   if (!info.loaded) {
-    return ['Forkop', 'sing-box-forkop'];
+    return ['LoKi', 'sing-box-forkop'];
   }
   const packages = [
-    info.forkop_version ? `Forkop ${info.forkop_version}` : 'Forkop',
+    info.forkop_version ? `LoKi ${info.forkop_version}` : 'LoKi',
   ];
   const version = info.sing_box_version;
   if (version === 'not installed') {

@@ -168,7 +168,7 @@ t.test("a failed start says whether the WAN coming up tries it again", () => {
     fs.writefile(initd.paths.autostart, "");
     stub.capture(() => initd.start(""));
     stub.restore();
-    t.eq(logs, [ "[warn] Forkop did not start", "[warn] Forkop did not start; it tries again when the WAN comes up" ]);
+    t.eq(logs, [ "[warn] LoKi did not start", "[warn] LoKi did not start; it tries again when the WAN comes up" ]);
 });
 
 t.test("a WAN coming up restarts only a failed start of an enabled service", () => {
@@ -234,7 +234,7 @@ t.test("a WAN coming up after a network restart puts back the routing under a ta
     commands = [];
     table = false;
     initd.wan_up();
-    t.eq(calls, [], "a stopped Forkop has no table and no routing to restore");
+    t.eq(calls, [], "a stopped LoKi has no table and no routing to restore");
     stub.restore();
 });
 

@@ -1,3 +1,4 @@
+// Modified for LoKi on 2026-11-03: product labels in user-facing messages.
 import { E } from '../../../helpers/element';
 
 // The controller starts with the form, before LuCI puts the node into the document.
@@ -25,7 +26,7 @@ export function render() {
           },
           [
             E('b', {}, _('Installed versions')),
-            versionRow('Forkop', 'components-forkop-version'),
+            versionRow('LoKi', 'components-forkop-version'),
             versionRow('sing-box-forkop', 'components-core-version'),
           ],
         ),

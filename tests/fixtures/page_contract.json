@@ -116,8 +116,8 @@
   },
   "state_wait_ms": 15000,
   "action_openings": [
-    "Starting Forkop",
-    "Stopping Forkop",
+    "Starting LoKi",
+    "Stopping LoKi",
     "Applying configuration",
     "Reapplying configuration"
   ],

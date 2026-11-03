@@ -14,7 +14,7 @@ const status = { tag: 'small' } as unknown as HTMLElement;
 describe('the page title', () => {
   it('names the product and the version of the page, then the service state', () => {
     expect(pageTitle('1.0.6', status)).toEqual([
-      'Forkop ',
+      'LoKi ',
       { tag: 'small', textContent: '1.0.6' },
       ' ',
       status,
@@ -23,7 +23,7 @@ describe('the page title', () => {
 
   it('shows no version a development build does not have', () => {
     expect(pageTitle('__COMPILED_VERSION_VARIABLE__', status)).toEqual([
-      'Forkop ',
+      'LoKi ',
       status,
     ]);
   });

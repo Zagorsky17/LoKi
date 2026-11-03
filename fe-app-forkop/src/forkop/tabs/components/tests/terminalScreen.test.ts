@@ -16,11 +16,9 @@ function styleAt(screen: TerminalScreen, row: number, col: number) {
 describe('terminal screen', () => {
   it('keeps install.sh lines as the tty driver ends them', () => {
     const screen = screenAfter(
-      'Установщик Forkop\r\n\r\n[*] Поиск последней версии\r\n',
+      'Установщик LoKi\r\n\r\n[*] Поиск последней версии\r\n',
     );
-    expect(screen.text()).toBe(
-      'Установщик Forkop\n\n[*] Поиск последней версии',
-    );
+    expect(screen.text()).toBe('Установщик LoKi\n\n[*] Поиск последней версии');
     expect([screen.row, screen.col]).toEqual([3, 0]);
   });
 

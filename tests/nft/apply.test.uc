@@ -311,7 +311,7 @@ t.test("IPv6 left on some interfaces but off on lo is refused, since that traffi
     let e = t.throws(() => nft.apply(nft.build()));
     let calls = stub.calls();
     stub.restore();
-    t.eq(e.message, "IPv6 is disabled on the loopback interface lo but enabled on br-lan, wan, so Forkop cannot route that IPv6 traffic. " +
+    t.eq(e.message, "IPv6 is disabled on the loopback interface lo but enabled on br-lan, wan, so LoKi cannot route that IPv6 traffic. " +
         "Disable IPv6 on every interface or enable it on lo");
     t.eq(filter(calls, (c) => c.argv[0] == "nft" && c.argv[1] == "-f"), [], "the table is not applied");
 });

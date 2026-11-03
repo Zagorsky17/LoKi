@@ -1,3 +1,4 @@
+// Modified for LoKi on 2026-11-03: product labels in user-facing messages.
 import { getSessionStorage } from './browserStorage.service';
 const LOG_NOTIFICATION_STORAGE_KEY = 'forkop:shown-log-error-notifications:v1';
 const MAX_STORED_LOG_NOTIFICATIONS = 500;
@@ -9,8 +10,8 @@ const FORKOP_INFO_LINE_PATTERN = /\bforkop(?:\[\d+\])?:\s+\[info\]\s+(.*)$/i;
 // The first line of each Forkop action: a start, a stop, an apply and a reapply.
 // A restart is a stop and a start.
 export const FORKOP_ACTION_OPENINGS = [
-  'Starting Forkop',
-  'Stopping Forkop',
+  'Starting LoKi',
+  'Stopping LoKi',
   'Applying configuration',
   'Reapplying configuration',
 ];

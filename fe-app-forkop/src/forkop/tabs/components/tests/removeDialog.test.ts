@@ -67,7 +67,7 @@ const info = (overrides: Record<string, unknown> = {}) => ({
 describe('what a removal names', () => {
   it('names Forkop and the core by version, the core with its build', () => {
     expect(removedPackages(info())).toEqual([
-      'Forkop 2.0.0',
+      'LoKi 2.0.0',
       'sing-box-forkop 1.14.4-r1 (base)',
     ]);
   });
@@ -75,14 +75,14 @@ describe('what a removal names', () => {
   it('leaves out a core that is not there and versions not known', () => {
     expect(
       removedPackages(info({ sing_box_version: 'not installed' })),
-    ).toEqual(['Forkop 2.0.0']);
+    ).toEqual(['LoKi 2.0.0']);
     expect(
       removedPackages(
         info({ sing_box_version: 'unknown', sing_box_variant: '' }),
       ),
-    ).toEqual(['Forkop 2.0.0', 'sing-box-forkop']);
+    ).toEqual(['LoKi 2.0.0', 'sing-box-forkop']);
     expect(removedPackages(info({ loaded: false }))).toEqual([
-      'Forkop',
+      'LoKi',
       'sing-box-forkop',
     ]);
   });
@@ -98,7 +98,7 @@ describe('the removal dialog', () => {
     ui.hideModal = vi.fn();
     onRemove = vi.fn();
     nodes = renderRemoveDialog(
-      ['Forkop 2.0.0', 'sing-box-forkop 1.14.4-r1 (base)'],
+      ['LoKi 2.0.0', 'sing-box-forkop 1.14.4-r1 (base)'],
       onRemove,
     ) as unknown as Array<FakeNode | string>;
   });
@@ -106,7 +106,7 @@ describe('the removal dialog', () => {
   it('lists what goes', () => {
     const list = find(nodes, (node) => node.type === 'ul');
     expect(list.children.map(textOf)).toEqual([
-      'Forkop 2.0.0',
+      'LoKi 2.0.0',
       'sing-box-forkop 1.14.4-r1 (base)',
     ]);
   });

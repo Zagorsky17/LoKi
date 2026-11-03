@@ -1,3 +1,4 @@
+// Modified for LoKi on 2026-11-03: product labels in user-facing messages.
 import { normalizeCompiledVersion } from '../../helpers/normalizeCompiledVersion';
 
 // The build writes the version into the bundle; a development build has none. LuCI rebuilds the
@@ -6,10 +7,10 @@ import { normalizeCompiledVersion } from '../../helpers/normalizeCompiledVersion
 export function pageTitle(compiledVersion: string, status: HTMLElement) {
   const version = normalizeCompiledVersion(compiledVersion);
   if (version === 'dev') {
-    return ['Forkop ', status];
+    return ['LoKi ', status];
   }
 
   const small = document.createElement('small');
   small.textContent = version;
-  return ['Forkop ', small, ' ', status];
+  return ['LoKi ', small, ' ', status];
 }

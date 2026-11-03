@@ -144,7 +144,7 @@ t.test("the service runs the generated file as root, committed only when somethi
     core_uci.reset();
     t.eq([ core_uci.get("sing-box.main.enabled"), core_uci.get("sing-box.main.user"), core_uci.get("sing-box.main.conffile") ],
         [ "1", "root", dir + "/etc/sing-box/config.json" ]);
-    t.eq(logs, [ "[info] Set up the sing-box service for Forkop: enabled=1, user=root, conffile=" + dir + "/etc/sing-box/config.json" ]);
+    t.eq(logs, [ "[info] Set up the sing-box service for LoKi: enabled=1, user=root, conffile=" + dir + "/etc/sing-box/config.json" ]);
     let commits = length(uci.__commits());
     runtime.configure_service();
     t.eq(length(uci.__commits()), commits, "a configured service is not committed again");

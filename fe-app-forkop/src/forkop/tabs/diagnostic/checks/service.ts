@@ -1,3 +1,4 @@
+// Modified for LoKi on 2026-11-03: product labels in user-facing messages.
 // Modified for LoKi on 2026-11-01: report known list overlaps without changing routing.
 import { DOMAIN_LIST_OPTIONS } from '../../../../constants';
 import { ForkopShellMethods } from '../../../methods';
@@ -19,7 +20,7 @@ function forkopItem(data: Forkop.ServiceCheckResult) {
   if (data.running) {
     return finding(
       'success',
-      'Forkop',
+      'LoKi',
       data.uptime >= 0
         ? _('running for %s').format(formatDuration(data.uptime))
         : _('running'),
@@ -28,7 +29,7 @@ function forkopItem(data: Forkop.ServiceCheckResult) {
 
   return finding(
     'error',
-    'Forkop',
+    'LoKi',
     data.last_error
       ? _('not running: %s').format(data.last_error)
       : _('not running'),
@@ -108,7 +109,7 @@ function conflictItems(data: Forkop.ServiceCheckResult) {
       : finding(
           'error',
           key,
-          _('%s takes DNS queries before Forkop').format(conflict.table),
+          _('%s takes DNS queries before LoKi').format(conflict.table),
         ),
   );
 

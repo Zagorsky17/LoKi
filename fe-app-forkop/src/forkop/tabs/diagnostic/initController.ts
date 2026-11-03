@@ -1,3 +1,4 @@
+// Modified for LoKi on 2026-11-03: product labels in user-facing messages.
 // Modified for LoKi on 2026-11-01: carry the requested privacy mode into report formatting.
 import { onMount } from '../../../helpers/onMount';
 import { preserveScrollForPage } from '../../../helpers/preserveScrollForPage';
@@ -469,7 +470,7 @@ function renderDiagnosticSystemInfoWidget() {
   const luciVersion = normalizeCompiledVersion(FORKOP_LUCI_APP_VERSION);
   // The page's own version shows only when it differs from the backend's.
   const items = [
-    { key: 'Forkop', value: forkopVersion },
+    { key: 'LoKi', value: forkopVersion },
     ...(diagnosticsSystemInfo.loaded && luciVersion !== forkopVersion
       ? [{ key: 'LuCI', value: luciVersion }]
       : []),
@@ -555,7 +556,7 @@ function getDiagnosticRunners(
     run: () =>
       code === DIAGNOSTICS_CHECKS.SERVICE || forkopRunningInRun
         ? runners[code]()
-        : Promise.resolve(skipped(_('Skipped: Forkop is not running'))),
+        : Promise.resolve(skipped(_('Skipped: LoKi is not running'))),
   }));
 }
 
