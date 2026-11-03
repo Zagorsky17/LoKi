@@ -438,17 +438,13 @@ export async function getClashApiConnectionsSummary(): Promise<
 }
 
 export function closeClashApiConnection(connectionId: string) {
-  return requestClashApi<undefined>(
+  return fetchClashApiThroughCli<undefined>(
+    'DELETE',
     `/connections/${encodeURIComponent(connectionId)}`,
-    { method: 'DELETE' },
-    CLASH_API_MUTATION_TIMEOUT_MS,
+    '',
   );
 }
 
 export function closeAllClashApiConnections() {
-  return requestClashApi<undefined>(
-    '/connections',
-    { method: 'DELETE' },
-    CLASH_API_MUTATION_TIMEOUT_MS,
-  );
+  return fetchClashApiThroughCli<undefined>('DELETE', '/connections', '');
 }

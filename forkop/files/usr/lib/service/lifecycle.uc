@@ -619,7 +619,7 @@ function uninstall() {
 
     common.remove_tree("/usr/lib/forkop");
     common.remove_tree(constants.FORKOP_LUCI_VIEW_DIR);
-    for (let path in [ init, constants.FORKOP_BIN, "/usr/share/luci/menu.d/luci-app-forkop.json",
+    for (let path in [ init, constants.FORKOP_BIN, "/usr/share/forkop/install.sh", "/usr/share/luci/menu.d/luci-app-forkop.json",
         "/usr/share/rpcd/acl.d/luci-app-forkop.json", "/etc/uci-defaults/50_luci-forkop",
         "/usr/lib/lua/luci/i18n/" + domain + ".ru.lua", "/usr/lib/lua/luci/i18n/" + domain + ".en.lua",
         ...fs.glob("/usr/lib/lua/luci/i18n/" + domain + ".*.lmo"), ...fs.glob("/var/luci-indexcache*"), ...fs.glob("/tmp/luci-indexcache*") ])

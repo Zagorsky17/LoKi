@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   disconnect: vi.fn(),
   resetAll: vi.fn(),
   readCoreUsage: vi.fn(),
+  getClashApiConnectionsSummary: vi.fn(),
 }));
 
 vi.mock('../../../services/socket.service', () => ({
@@ -18,7 +19,7 @@ vi.mock('../../../../helpers/onMount', () => ({ onMount: async () => ({}) }));
 vi.mock('../../../methods', () => ({
   CustomForkopMethods: {
     getDashboardSections: async () => ({ success: false, data: [] }),
-    getClashApiConnectionsSummary: async () => ({ success: false }),
+    getClashApiConnectionsSummary: mocks.getClashApiConnectionsSummary,
   },
 }));
 vi.mock('../../../methods/custom/getClashApiSecret', () => ({
@@ -39,6 +40,13 @@ beforeEach(() => {
   mocks.disconnect.mockReset();
   mocks.resetAll.mockReset();
   mocks.readCoreUsage.mockReset();
+  mocks.getClashApiConnectionsSummary
+    .mockReset()
+    .mockResolvedValue({
+      success: true,
+      data: { downloadTotal: 10, uploadTotal: 5, connections: 2 },
+    });
+  vi.stubGlobal('L', { hasViewPermission: () => true });
   mocks.readCoreUsage.mockResolvedValue({
     success: false,
     message: '',
@@ -103,6 +111,16 @@ function subscribedPaths() {
 }
 
 describe('the dashboard sockets', () => {
+  it('keeps reader summary polling live without opening bearer sockets', async () => {
+    vi.stubGlobal('L', { hasViewPermission: () => false });
+    await openDashboard();
+    await vi.advanceTimersByTimeAsync(6000);
+    expect(mocks.subscribe).not.toHaveBeenCalled();
+    expect(
+      mocks.getClashApiConnectionsSummary.mock.calls.length,
+    ).toBeGreaterThan(1);
+  });
+
   it('ask for the connection list every five seconds', async () => {
     await openDashboard();
 

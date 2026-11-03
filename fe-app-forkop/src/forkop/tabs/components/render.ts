@@ -31,6 +31,10 @@ export function render() {
           ],
         ),
         E('div', {
+          id: 'components-update-check',
+          class: 'fkp_components-page__block',
+        }),
+        E('div', {
           id: 'components-actions',
           class: 'fkp_components-page__block',
         }),

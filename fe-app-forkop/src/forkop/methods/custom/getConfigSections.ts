@@ -1,5 +1,4 @@
 import { Forkop } from '../../types';
-import { FORKOP_UCI_PACKAGE } from '../../../constants';
 import { callUbus } from '../../../helpers/callUbus';
 import {
   FORKOP_CALL_TIMEOUT_MS,
@@ -12,18 +11,15 @@ import {
 export async function getConfigSections(): Promise<Forkop.ConfigSection[]> {
   const applied = await callUbus<{ sections: Forkop.ConfigSection[] }>({
     object: FORKOP_SERVICE_OBJECT,
-    method: 'config',
+    method:
+      typeof L !== 'undefined' && L.hasViewPermission?.() === true
+        ? 'config_private'
+        : 'config',
     timeoutMs: FORKOP_CALL_TIMEOUT_MS,
     retryUnavailable: false,
   });
   if (applied.success) {
     return applied.data.sections;
   }
-  if (!applied.unavailable) {
-    throw new Error(applied.message);
-  }
-
-  // Without the state service, the session's view, which differs only while changes are unsaved.
-  await uci.load(FORKOP_UCI_PACKAGE);
-  return uci.sections(FORKOP_UCI_PACKAGE) as Forkop.ConfigSection[];
+  throw new Error(applied.message);
 }

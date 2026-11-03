@@ -2,7 +2,8 @@ import { Forkop } from '../../types';
 
 // Closing all connections at once also resets the core's network, so a filter's connections are
 // closed one by one, a few requests at a time.
-const PARALLEL_CLOSES = 4;
+// Leave one of the session's three RPC slots for the Monitoring or Logs read.
+const PARALLEL_CLOSES = 2;
 
 export async function closeConnections(
   ids: string[],

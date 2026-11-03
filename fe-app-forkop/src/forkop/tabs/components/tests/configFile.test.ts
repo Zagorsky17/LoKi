@@ -2,6 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const downloads = vi.hoisted(() => ({ downloadFile: vi.fn() }));
 vi.mock('../../../../helpers/downloadFile', () => downloads);
+const backend = vi.hoisted(() => ({ execute: vi.fn() }));
+vi.mock('../../../../helpers/executeShellCommand', () => ({
+  executeShellCommand: backend.execute,
+}));
 
 import {
   configImportApi,
@@ -53,6 +57,7 @@ beforeEach(() => {
     get_first: vi.fn(() => 'Home Router'),
   };
   fs.exec.mockReset();
+  backend.execute.mockReset();
   fs.remove.mockReset().mockResolvedValue(undefined);
   fetchMock.mockReset().mockResolvedValue({ ok: true, status: 200 });
   rpcCall.mockReset();
@@ -73,15 +78,17 @@ describe('the downloaded file', () => {
   });
 
   it('holds the configuration as the router keeps it', async () => {
-    fs.exec.mockResolvedValue({
+    backend.execute.mockResolvedValue({
       stdout: "config settings 'settings'\n",
       code: 0,
     });
     await downloadConfig();
-    expect(fs.exec).toHaveBeenCalledWith('/usr/bin/forkop', [
-      'show_config',
-      'raw',
-    ]);
+    expect(backend.execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        command: '/usr/bin/forkop',
+        args: ['show_config', 'raw'],
+      }),
+    );
     expect(downloads.downloadFile).toHaveBeenCalledWith(
       "config settings 'settings'\n",
       expect.stringMatching(/^forkop-Home_Router-\d{4}-\d{2}-\d{2}\.conf$/),
@@ -89,7 +96,7 @@ describe('the downloaded file', () => {
   });
 
   it('is not offered when the router cannot read the configuration', async () => {
-    fs.exec.mockResolvedValue({
+    backend.execute.mockResolvedValue({
       stdout: '',
       stderr: 'Configuration file not found\n',
       code: 1,

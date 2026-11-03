@@ -43,7 +43,7 @@ function segments(path, prefix) {
 
 // Only what the dashboard and monitoring drive, so the transport is no general control-plane client.
 function allowed(method, path, body) {
-    if (path == "" || length(path) > 4096 || match(path, /[\r\n ]/))
+    if (path == "" || length(path) > 4096 || index(path, chr(0)) >= 0 || match(path, /[[:cntrl:] ]/))
         return false;
 
     if (method == "GET") {
@@ -202,4 +202,4 @@ function summary() {
     };
 }
 
-return { controller, exchange, budget, request, summary };
+return { controller, allowed, exchange, budget, request, summary };

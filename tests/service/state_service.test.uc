@@ -309,6 +309,35 @@ t.test("the page reads the committed configuration, again as soon as it changes"
     t.eq(seen, [ [ "proxy" ], [ "renamed", "games" ] ]);
 });
 
+t.test("a diagnostic RPC child leaves state_wait responsive and cannot inject its environment", () => {
+    let rpc = require("service.rpc");
+    let temporary = rpc.paths.temporary;
+    let fsync = rpc.paths.fsync;
+    let rpc_parent = stub.tmpdir();
+    fs.chmod(rpc_parent, 0700);
+    rpc.paths.temporary = rpc_parent + "/journal";
+    rpc.paths.fsync = [ "/usr/bin/sync" ];
+    let result = {};
+    started((service) => {
+        stub.restore();
+        let args = { argv: [ "check_dns" ], ubus_rpc_session: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" };
+        let prepared = ubus.__invoke("forkop", "rpc_read_prepare", args).replied;
+        let request = ubus.__invoke("forkop", "rpc_read", { ...args, request_id: prepared.id });
+        result.child = request.deferred;
+        result.immediate = request.replied?.pending;
+        result.waiting = wait({ revision: revision() }).deferred;
+        result.state = ubus.__invoke("forkop", "state", {}).replied.service.forkop.running;
+        let rejected = ubus.__invoke("forkop", "rpc_read", {
+            argv: [ "show_version" ], ubus_rpc_session: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", env: { LD_PRELOAD: "/tmp/attack" }
+        });
+        result.rejected = rejected.replied.code;
+        stub.commands([ [ "/bin/kill", { status: 0 } ], [ "/usr/bin/sync", { status: 0 } ] ]);
+    });
+    rpc.paths.temporary = temporary;
+    rpc.paths.fsync = fsync;
+    t.eq(result, { child: true, immediate: true, waiting: true, state: 1, rejected: 1 });
+});
+
 t.test("the installed versions are read again as soon as the package database changes", () => {
     let db = stub.tmpdir() + "/installed";
     fs.writefile(db, "one");

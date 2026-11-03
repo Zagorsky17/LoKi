@@ -13,7 +13,7 @@ let lock = require("service.lock");
 
 const OBJECT_NAME = "forkop.installer";
 const SCHEMA = 1;
-const ACTIONS = [ "update", "variant", "uninstall" ];
+const ACTIONS = [ "check", "update", "variant", "uninstall" ];
 const VARIANTS = [ "base", "full", "tiny" ];
 const LANGUAGES = [ "ru", "en" ];
 // A finished run keeps answering this long, so a page watching it reads the end even when the
@@ -47,9 +47,12 @@ let paths = {
     state: "/var/run/forkop-installer/state.json",
     output: "/var/run/forkop-installer/output",
     script: "/var/run/forkop-installer/install.sh",
+    local_script: "/usr/share/forkop/install.sh",
     manifest: "/var/run/forkop-installer/release.json",
+    sums: "/var/run/forkop-installer/SHA256SUMS",
     listing: "/var/run/forkop-installer/listing.json",
     start_lock: "/var/run/forkop-installer/start.lock",
+    install_lock: "/var/lock/forkop-install.lock",
     cli: "/usr/bin/forkop",
     install_log: "/tmp/forkop-install.log",
     proc: "/proc",
@@ -71,7 +74,11 @@ const TEXTS = {
         "GitHub пока не принимает запросы с этого адреса: без входа он даёт 60 запросов в час" ],
     try_later: [ "Run it again later: the limit is reset within the hour", "Запустите снова позже: лимит сбрасывается в течение часа" ],
     no_terminal: [ "Cannot open a terminal for the installer", "Не удалось открыть терминал для установщика" ],
-    interrupted: [ "Interrupted: nothing was changed", "Прервано, ничего не изменено" ]
+    interrupted: [ "Interrupted: nothing was changed", "Прервано, ничего не изменено" ],
+    invalid_release: [ "The release metadata is missing or invalid", "Сведения о релизе отсутствуют или повреждены" ],
+    checksum_failed: [ "The installer or its manifest failed SHA256 verification", "Установщик или его manifest не прошёл проверку SHA256" ],
+    invalid_checker: [ "The installed update checker is missing or has unsafe ownership or permissions", "Установленная проверка обновлений отсутствует или имеет небезопасного владельца или права" ],
+    invalid_source: [ "The release source must use a valid HTTPS URL", "Источник релиза должен использовать допустимый HTTPS URL" ]
 };
 
 const MARKS = { error: "\u001b[1;31m[x]\u001b[0m", warn: "\u001b[1;33m[!]\u001b[0m" };
@@ -156,7 +163,7 @@ function current() {
 }
 
 function active() {
-    return running(current());
+    return running(current()) || lock.held(paths.install_lock);
 }
 
 // The longest prefix of data that ends on a whole UTF-8 character, so a character a read cut in
@@ -220,7 +227,8 @@ function snapshot(state, offset) {
         log: has_log(state),
         offset,
         next: offset + length(data),
-        data
+        data,
+        check_result: state.check_result ?? null
     };
 }
 
@@ -237,6 +245,8 @@ function install_arguments(action, variant, purge, lang) {
         if (purge)
             push(argv, "--purge");
     }
+    else if (action == "check")
+        push(argv, "--check");
     else if (action == "variant") {
         push(argv, "--variant");
         if (variant != "")
@@ -260,12 +270,80 @@ function listing_url() {
     return API_URL + "/repos/" + constants.FORKOP_RELEASE_REPO + "/releases/latest";
 }
 
+function safe_version(value, core) {
+    return type(value) == "string" && length(value) <= 96 && index(value, chr(0)) < 0 &&
+        match(value, core ? /^[0-9]{1,9}\.[0-9]{1,9}\.[0-9]{1,9}(-r[0-9]{1,9})?$/ : /^[0-9]{1,9}\.[0-9]{1,9}\.[0-9]{1,9}$/) != null;
+}
+
+function valid_manifest(content) {
+    let value = common.parse_json(content);
+    return type(value) == "object" && value.schema === 1 && value.name == "forkop" && safe_version(value.version, false) &&
+        safe_version(value.requires?.["sing-box-forkop"], true) &&
+        (value.tag == null || (type(value.tag) == "string" && index(value.tag, chr(0)) < 0 &&
+            match(value.tag, /^v?[0-9]{1,9}\.[0-9]{1,9}\.[0-9]{1,9}(-r[0-9]{1,9})?$/) != null));
+}
+
+function valid_asset_url(url) {
+    return type(url) == "string" && index(url, chr(0)) < 0 &&
+        match(url, /^https:\/\/api\.github\.com\/repos\/Zagorsky17\/LoKi\/releases\/assets\/[0-9]+$/) != null;
+}
+
+function valid_mirror(url) {
+    return type(url) == "string" && index(url, chr(0)) < 0 && !match(url, /[[:cntrl:] ]/) &&
+        match(url, /^https:\/\/([a-zA-Z0-9.-]+|\[[a-fA-F0-9:]+\])(:[0-9]{1,5})?(\/[a-zA-Z0-9._~\/-]*)?$/) != null &&
+        index("/" + join("/", slice(split(url, "/"), 3)) + "/", "/../") < 0;
+}
+
+// Read-role checks only execute the installed package's root-owned resolver.
+function protected_checker(file, directory) {
+    return file?.type == "file" && file.uid === 0 && (file.mode & 0022) == 0 && file.size > 0 && file.size <= 524288 &&
+        directory?.type == "directory" && directory.uid === 0 && (directory.mode & 0022) == 0;
+}
+
+function verified_file(path, name, sums) {
+    let stat = fs.lstat(path);
+    if (stat?.type != "file" || stat.size <= 0 || stat.size > 524288 || type(sums) != "string" || length(sums) > 1048576)
+        return false;
+    let expected = null;
+    for (let line in split(sums, "\n")) {
+        let fields = match(trim(line), /^([a-fA-F0-9]{64}) [ *]([^ ]+)$/);
+        if (fields?.[2] == name) {
+            if (expected != null)
+                return false;
+            expected = lc(fields[1]);
+        }
+    }
+    if (expected == null)
+        return false;
+    let actual = exec.capture([ "sha256sum", path ]);
+    return actual.status == 0 && split(actual.stdout, " ")[0] == expected;
+}
+
+function parse_update_result(output) {
+    let result = null;
+    let records = 0;
+    for (let line in split(output, "\n")) {
+        let value = common.parse_json(trim(line));
+        if (type(value) != "object" || value.schema !== 1)
+            continue;
+        records++;
+        if (value.success === false && type(value.reason) == "string" && match(value.reason, /^[a-z_]{1,64}$/))
+            result = { schema: 1, success: false, reason: value.reason };
+        else if (value.success === true && type(value.available) == "bool" && safe_version(value.latest?.app, false) && safe_version(value.latest?.core, true) &&
+            type(value.installed?.app) == "string" && type(value.installed?.core) == "string" &&
+            match(value.installed.app, /^[A-Za-z0-9.+~_-]{0,96}$/) && match(value.installed.core, /^[A-Za-z0-9.+~_-]{0,96}$/) &&
+            index(value.installed.app, chr(0)) < 0 && index(value.installed.core, chr(0)) < 0 &&
+            index([ "", "base", "full", "tiny", "custom" ], value.installed?.variant) >= 0)
+            result = { schema: 1, success: true, available: value.available, installed: { app: value.installed.app, core: value.installed.core, variant: value.installed.variant },
+                latest: { app: value.latest.app, core: value.latest.core } };
+    }
+    return records == 1 ? result : null;
+}
+
 function asset_url(listing, file) {
     let value = common.parse_json(listing);
-    for (let asset in (type(value?.assets) == "array" ? value.assets : []))
-        if (asset?.name == file && type(asset.url) == "string")
-            return asset.url;
-    return null;
+    let found = filter(type(value?.assets) == "array" ? value.assets : [], (asset) => asset?.name == file);
+    return length(found) == 1 && valid_asset_url(found[0].url) ? found[0].url : null;
 }
 
 // GitHub's /rate_limit answer, which costs no request: whether the API refuses this address now.
@@ -412,6 +490,8 @@ function start(action, variant, purge, lang) {
     lang = common.as_string(lang);
     if (!valid_run(action, variant, lang))
         die("Invalid installer run: " + join(" ", [ action, variant, lang ]));
+    if (action != "check")
+        die("Package changes are disabled until the own-component preflight and recovery engine is ready");
 
     let owner = common.own_pid();
     if (!common.ensure_dir(common.parent_dir(paths.state)) || !lock.acquire(paths.start_lock, owner, 5))
@@ -422,10 +502,21 @@ function start(action, variant, purge, lang) {
         lock.release(paths.start_lock, owner);
         return { id: state.id, started: false };
     }
+    let ui = require("service.ui");
+    if (!lock.acquire(ui.paths.service_action_lock, owner, 5)) {
+        lock.release(paths.start_lock, owner);
+        die("Another service action is starting");
+    }
+    ui.refresh();
+    if (lock.held(paths.install_lock) || lock.held(ui.paths.reload_lock) || ui.active_action() != "") {
+        lock.release(ui.paths.service_action_lock, owner);
+        lock.release(paths.start_lock, owner);
+        die("Another service action or installer is running");
+    }
     retire(state);
 
     let id = new_id();
-    for (let path in [ paths.output, paths.script, paths.manifest ])
+    for (let path in [ paths.output, paths.script, paths.manifest, paths.sums ])
         fs.unlink(path);
     common.write_file(paths.output, "");
     let written = write_state({
@@ -435,7 +526,7 @@ function start(action, variant, purge, lang) {
         variant: action == "variant" ? variant : null,
         purge: action == "uninstall" && (purge === true || purge == "1"),
         lang,
-        interactive: action != "uninstall",
+        interactive: action != "uninstall" && action != "check",
         starter_pid: owner,
         runner_pid: null,
         child_pid: null,
@@ -445,6 +536,8 @@ function start(action, variant, purge, lang) {
         changed: false,
         interrupted: false
     });
+    // Publish the run while the same lock excludes new UI service jobs.
+    lock.release(ui.paths.service_action_lock, owner);
     if (written)
         spawn_runner(id);
 
@@ -467,6 +560,10 @@ function run(id) {
     let state = read_state();
     if (state?.id != id || state.finished_at != null)
         return 1;
+    if (state.action != "check") {
+        warn("Package changes are disabled until the own-component preflight and recovery engine is ready\n");
+        return 1;
+    }
     state = { ...state, runner_pid: common.own_pid() };
     write_state(state);
 
@@ -481,6 +578,8 @@ function run(id) {
     let size_watch = null;
     // a download of the run's own, or the look-up of the server's name after one failed
     let download = null;
+    let download_deadline = null;
+    let download_size = null;
     let retry = null;
     let finished = false;
 
@@ -489,6 +588,10 @@ function run(id) {
             return;
         finished = true;
         // ucode's ?. stops a member access on null, never the call after it
+        if (download_deadline != null)
+            download_deadline.cancel();
+        if (download_size != null)
+            download_size.cancel();
         if (leftover != null)
             leftover.cancel();
         if (size_watch != null)
@@ -498,8 +601,20 @@ function run(id) {
         terminal = null;
         fs.unlink(paths.script);
         fs.unlink(paths.manifest);
+        fs.unlink(paths.sums);
         fs.unlink(paths.listing);
-        state = { ...state, exit: exit_code, finished_at: common.now_seconds(), changed: package_signature() != packages_before };
+        let check_result = state.action == "check" ? parse_update_result(fs.readfile(paths.output) ?? "") : null;
+        if (state.action == "check" && check_result == null) {
+            check_result = { schema: 1, success: false, reason: "incomplete" };
+            if (exit_code == 0)
+                exit_code = 1;
+        }
+        if (state.action == "check" && check_result?.success === true && exit_code != 0)
+            check_result = { schema: 1, success: false, reason: "process_failed" };
+        if (state.action == "check" && check_result?.success !== true && exit_code == 0)
+            exit_code = 1;
+        state = { ...state, check_result, exit: exit_code, finished_at: common.now_seconds(),
+            changed: state.action != "check" && package_signature() != packages_before };
         write_state(state);
         uloop.timer(LINGER_MS, () => uloop.end());
     }
@@ -608,12 +723,6 @@ function run(id) {
         write_state(state);
     }
 
-    function check_release(code) {
-        let found = code == 0 ? install_command(fs.readfile(paths.manifest)) : null;
-        if (found == null)
-            return start_install();
-        fail_with([ mark_line("warn", text(state.lang, "command_only", found.version)), plain_line(found.command) ]);
-    }
 
     function fetch_url(url, path, accept, done) {
         let tries = 0;
@@ -622,8 +731,19 @@ function run(id) {
         attempt = () => {
             tries++;
             fs.unlink(path);
+            let limited = false;
+            function limit_download() {
+                if (download == null || limited)
+                    return;
+                limited = true;
+                exec.ok([ "kill", common.as_string(download.pid()) ]);
+            }
             download = uloop.process("uclient-fetch", args, env, (code) => {
+                download_deadline.cancel();
+                download_size.cancel();
                 download = null;
+                if (limited || (fs.stat(path)?.size ?? 0) > 1048576)
+                    code = 4;
                 if (state.stop_requested === true)
                     return stopped();
                 if (code == 0 || code == FETCH_HTTP_ERROR || tries >= DOWNLOAD_TRIES)
@@ -632,6 +752,11 @@ function run(id) {
                     retry = null;
                     attempt();
                 });
+            });
+            download_deadline = uloop.timer(35000, limit_download);
+            download_size = uloop.interval(200, () => {
+                if ((fs.stat(path)?.size ?? 0) > 1048576)
+                    limit_download();
             });
         };
         attempt();
@@ -645,6 +770,21 @@ function run(id) {
         if (url == null)
             return done(FILE_MISSING);
         fetch_url(url, path, "application/octet-stream", done);
+    }
+
+    function check_release(code) {
+        let manifest = code == 0 ? fs.readfile(paths.manifest) : null;
+        if (!valid_manifest(manifest))
+            return fail_with([ mark_line("error", text(state.lang, "invalid_release")) ]);
+        let found = state.action != "uninstall" ? install_command(manifest) : null;
+        if (found != null)
+            return fail_with([ mark_line("warn", text(state.lang, "command_only", found.version)), plain_line(found.command) ]);
+        fetch("SHA256SUMS", paths.sums, (status) => {
+            let sums = status == 0 ? fs.readfile(paths.sums) : null;
+            if (!verified_file(paths.script, "install.sh", sums) || !verified_file(paths.manifest, "release.json", sums))
+                return fail_with([ mark_line("error", text(state.lang, "checksum_failed")) ]);
+            start_install();
+        });
     }
 
     // As install.sh says it: a release without the file, GitHub's rate limit, a name the router
@@ -676,9 +816,6 @@ function run(id) {
     function on_script(code) {
         if (code != 0)
             return download_failed(code);
-        if (state.action == "uninstall")
-            return start_install();
-        // install.sh reports a release it cannot fetch itself, so a missing release.json only skips this
         fetch("release.json", paths.manifest, check_release);
     }
 
@@ -729,7 +866,17 @@ function run(id) {
     if (object == null)
         exec.log("warn", "The installer could not publish the ubus object " + OBJECT_NAME + "; the page cannot type into its terminal");
 
-    if (mirror_url())
+    if (mirror_url() && !valid_mirror(mirror_url()))
+        fail_with([ mark_line("error", text(state.lang, "invalid_source")) ]);
+    else if (state.action == "check") {
+        let trusted = protected_checker(fs.lstat(paths.local_script), fs.lstat(common.parent_dir(paths.local_script)));
+        let source = trusted ? fs.readfile(paths.local_script) : null;
+        if (source == null || !common.write_file(paths.script, source))
+            fail_with([ mark_line("error", text(state.lang, "invalid_checker")) ]);
+        else
+            start_install();
+    }
+    else if (mirror_url())
         fetch("install.sh", paths.script, on_script);
     else
         fetch_url(listing_url(), paths.listing, null, (code) => code == 0 ? fetch("install.sh", paths.script, on_script) : download_failed(code));
@@ -767,5 +914,11 @@ return {
     install_command,
     unsigned,
     start,
-    run
+    run,
+    valid_manifest,
+    valid_asset_url,
+    valid_mirror,
+    verified_file,
+    protected_checker,
+    parse_update_result
 };

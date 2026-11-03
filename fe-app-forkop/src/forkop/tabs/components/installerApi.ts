@@ -5,6 +5,7 @@ import { Forkop } from '../../types';
 // The object the run's own process publishes for its lifetime; service/installer.uc names it.
 export const INSTALLER_OBJECT = 'forkop.installer';
 export const INSTALLER_ACTIONS: readonly Forkop.InstallerAction[] = [
+  'check',
   'update',
   'variant',
   'uninstall',

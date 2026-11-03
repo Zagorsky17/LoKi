@@ -172,3 +172,19 @@ describe('the shipped page', () => {
     expect(harness.form.Map.declaredSectionTypes).toEqual(EXPECTED_TABS);
   });
 });
+
+it('renders the viewer monitoring tabs without reading the credential-bearing UCI package', async () => {
+  const viewer = createHarness('forkop', { writable: false });
+  viewer.uci.load = () => {
+    throw new Error('raw UCI must not be loaded');
+  };
+  expect(await viewer.bundle.ForkopView.render()).toBeTruthy();
+  expect(viewer.form.Map.declaredSectionTypes).toEqual([
+    'diagnostic',
+    'dashboard',
+    'monitoring',
+    'logs',
+    'components',
+  ]);
+  expect(viewer.operations).toEqual([]);
+});

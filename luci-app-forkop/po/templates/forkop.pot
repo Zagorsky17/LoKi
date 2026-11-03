@@ -7,8 +7,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: FORKOP\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-03 04:52+0300\n"
-"PO-Revision-Date: 2026-11-03 04:52+0300\n"
+"POT-Creation-Date: 2026-11-03 15:13+0300\n"
+"PO-Revision-Date: 2026-11-03 15:13+0300\n"
 "Last-Translator: ushan0v <ushanov2204@gmail.com>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
 "Language: \n"
@@ -185,11 +185,11 @@ msgstr ""
 msgid "Add a domain, built-in list, rule set or device"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/entry/view.ts:63
+#: fe-app-forkop/src/forkop/entry/view.ts:66
 msgid "Add a section"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/entry/view.ts:70
+#: fe-app-forkop/src/forkop/entry/view.ts:73
 msgid "Add a section to configure routing"
 msgstr ""
 
@@ -288,7 +288,7 @@ msgstr ""
 msgid "Availability check for every server"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/components/initController.ts:243
+#: fe-app-forkop/src/forkop/tabs/components/initController.ts:246
 #: fe-app-forkop/src/forkop/tabs/diagnostic/partials/renderAvailableActions.ts:49
 msgid "Available actions"
 msgstr ""
@@ -339,6 +339,7 @@ msgstr ""
 
 #: fe-app-forkop/src/forkop/tabs/components/configFile.ts:208
 #: fe-app-forkop/src/forkop/tabs/components/removeDialog.ts:84
+#: fe-app-forkop/src/forkop/tabs/components/updateCheck.ts:60
 msgid "Cancel"
 msgstr ""
 
@@ -350,7 +351,7 @@ msgstr ""
 msgid "Cascade connection"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/components/initController.ts:251
+#: fe-app-forkop/src/forkop/tabs/components/initController.ts:278
 msgid "Change the build"
 msgstr ""
 
@@ -365,6 +366,14 @@ msgstr ""
 #: fe-app-forkop/src/forkop/tabs/dashboard/partials/renderExitPanel.ts:234
 #: fe-app-forkop/src/forkop/tabs/dashboard/partials/renderExitPanel.ts:235
 msgid "Check again"
+msgstr ""
+
+#: fe-app-forkop/src/forkop/tabs/components/initController.ts:257
+msgid "Check for updates"
+msgstr ""
+
+#: fe-app-forkop/src/forkop/tabs/components/updateCheck.ts:10
+msgid "Check for updates to see the available versions"
 msgstr ""
 
 #: fe-app-forkop/src/forkop/tabs/dashboard/initController.ts:1058
@@ -487,7 +496,7 @@ msgstr ""
 msgid "Collapse section"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/entry/view.ts:93
+#: fe-app-forkop/src/forkop/entry/view.ts:97
 msgid "Components"
 msgstr ""
 
@@ -499,7 +508,7 @@ msgstr ""
 msgid "Config File Path"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/components/initController.ts:309
+#: fe-app-forkop/src/forkop/tabs/components/initController.ts:336
 msgid "Configuration"
 msgstr ""
 
@@ -569,8 +578,8 @@ msgstr ""
 msgid "Copy proxy link"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/components/initController.ts:110
 #: fe-app-forkop/src/forkop/tabs/components/initController.ts:111
+#: fe-app-forkop/src/forkop/tabs/components/initController.ts:112
 msgid "Copy the output"
 msgstr ""
 
@@ -607,7 +616,7 @@ msgstr ""
 msgid "Currently unavailable"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/entry/view.ts:90
+#: fe-app-forkop/src/forkop/entry/view.ts:94
 msgid "Dashboard"
 msgstr ""
 
@@ -720,7 +729,7 @@ msgstr ""
 msgid "Domains only"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/components/initController.ts:78
+#: fe-app-forkop/src/forkop/tabs/components/initController.ts:79
 msgid "done"
 msgstr ""
 
@@ -733,7 +742,7 @@ msgstr ""
 msgid "Downlink"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/components/initController.ts:313
+#: fe-app-forkop/src/forkop/tabs/components/initController.ts:340
 #: fe-app-forkop/src/forkop/tabs/logs/initController.ts:62
 #: fe-app-forkop/src/forkop/tabs/logs/render.ts:43
 #: fe-app-forkop/src/partials/modal/renderModal.ts:36
@@ -875,7 +884,7 @@ msgstr ""
 msgid "External list %s uses the same source as %s; review the section lists"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/components/initController.ts:83
+#: fe-app-forkop/src/forkop/tabs/components/initController.ts:84
 msgid "failed"
 msgstr ""
 
@@ -896,9 +905,9 @@ msgstr ""
 
 #: fe-app-forkop/src/forkop/methods/shell/index.ts:93
 #: fe-app-forkop/src/forkop/tabs/components/configFile.ts:60
-#: fe-app-forkop/src/forkop/tabs/components/installerApi.ts:57
-#: fe-app-forkop/src/forkop/tabs/components/installerApi.ts:77
-#: fe-app-forkop/src/forkop/tabs/components/installerApi.ts:89
+#: fe-app-forkop/src/forkop/tabs/components/installerApi.ts:58
+#: fe-app-forkop/src/forkop/tabs/components/installerApi.ts:78
+#: fe-app-forkop/src/forkop/tabs/components/installerApi.ts:90
 msgid "Failed to execute"
 msgstr ""
 
@@ -1035,7 +1044,7 @@ msgstr ""
 msgid "goes through LoKi"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/components/initController.ts:89
+#: fe-app-forkop/src/forkop/tabs/components/initController.ts:90
 msgid "going to the LuCI home page"
 msgstr ""
 
@@ -1106,7 +1115,7 @@ msgstr ""
 msgid "Idle timeout"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/components/initController.ts:69
+#: fe-app-forkop/src/forkop/tabs/components/initController.ts:70
 msgid "in progress"
 msgstr ""
 
@@ -1130,13 +1139,13 @@ msgstr ""
 msgid "Installed versions"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/components/initController.ts:133
 #: fe-app-forkop/src/forkop/tabs/components/initController.ts:134
-#: fe-app-forkop/src/forkop/tabs/components/initController.ts:202
+#: fe-app-forkop/src/forkop/tabs/components/initController.ts:135
+#: fe-app-forkop/src/forkop/tabs/components/initController.ts:203
 msgid "Installer log"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/components/initController.ts:100
+#: fe-app-forkop/src/forkop/tabs/components/initController.ts:101
 msgid "Installer output"
 msgstr ""
 
@@ -1170,12 +1179,12 @@ msgstr ""
 msgid "Interrupt connections"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/components/initController.ts:122
 #: fe-app-forkop/src/forkop/tabs/components/initController.ts:123
+#: fe-app-forkop/src/forkop/tabs/components/initController.ts:124
 msgid "Interrupt the installer"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/components/initController.ts:83
+#: fe-app-forkop/src/forkop/tabs/components/initController.ts:84
 msgid "interrupted"
 msgstr ""
 
@@ -1344,7 +1353,7 @@ msgstr ""
 msgid "Log Level"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/entry/view.ts:92
+#: fe-app-forkop/src/forkop/entry/view.ts:96
 msgid "Logs"
 msgstr ""
 
@@ -1405,7 +1414,7 @@ msgstr ""
 msgid "Monitored Interfaces"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/entry/view.ts:91
+#: fe-app-forkop/src/forkop/entry/view.ts:95
 msgid "Monitoring"
 msgstr ""
 
@@ -1465,7 +1474,7 @@ msgstr ""
 msgid "no answer"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/components/initController.ts:71
+#: fe-app-forkop/src/forkop/tabs/components/initController.ts:72
 msgid "no answer from the router"
 msgstr ""
 
@@ -1507,6 +1516,10 @@ msgstr ""
 
 #: fe-app-forkop/src/validators/messages.ts:31
 msgid "No tag field"
+msgstr ""
+
+#: fe-app-forkop/src/forkop/tabs/components/updateCheck.ts:26
+msgid "No updates available"
 msgstr ""
 
 #: fe-app-forkop/src/forkop/tabs/dashboard/initController.ts:1143
@@ -1564,7 +1577,7 @@ msgstr ""
 msgid "Nothing after %s"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/components/initController.ts:382
+#: fe-app-forkop/src/forkop/tabs/components/initController.ts:409
 msgid "Nothing to upload: the file holds the current configuration"
 msgstr ""
 
@@ -1604,6 +1617,10 @@ msgstr ""
 
 #: fe-app-forkop/src/forkop/tabs/settings/form/network.ts:84
 msgid "Output Network Interface"
+msgstr ""
+
+#: fe-app-forkop/src/forkop/tabs/components/initController.ts:250
+msgid "Package changes are disabled in this development build until preflight and recovery are implemented."
 msgstr ""
 
 #: fe-app-forkop/src/forkop/cbi/dnsServers.ts:88
@@ -1683,11 +1700,11 @@ msgstr ""
 msgid "Remove"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/components/initController.ts:257
+#: fe-app-forkop/src/forkop/tabs/components/initController.ts:284
 msgid "Remove LoKi"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/components/initController.ts:403
+#: fe-app-forkop/src/forkop/tabs/components/initController.ts:430
 msgid "Remove LoKi?"
 msgstr ""
 
@@ -1777,7 +1794,7 @@ msgstr ""
 msgid "Routing rules"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/entry/view.ts:57
+#: fe-app-forkop/src/forkop/entry/view.ts:60
 msgid "Routing rules are checked from top to bottom"
 msgstr ""
 
@@ -1802,10 +1819,6 @@ msgstr ""
 msgid "Run Diagnostic"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/components/initController.ts:247
-msgid "Run the installer"
-msgstr ""
-
 #: fe-app-forkop/src/forkop/helpers/serviceStatusDisplay.ts:32
 #: fe-app-forkop/src/forkop/tabs/diagnostic/checks/service.ts:26
 msgid "running"
@@ -1825,7 +1838,7 @@ msgstr ""
 msgid "Search"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/entry/view.ts:62
+#: fe-app-forkop/src/forkop/entry/view.ts:65
 msgid "Section"
 msgstr ""
 
@@ -1837,7 +1850,7 @@ msgstr ""
 msgid "Section unavailable"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/entry/view.ts:56
+#: fe-app-forkop/src/forkop/entry/view.ts:59
 #: fe-app-forkop/src/forkop/tabs/diagnostic/checks/groups.ts:25
 msgid "Sections"
 msgstr ""
@@ -1949,7 +1962,7 @@ msgstr ""
 
 #: fe-app-forkop/src/forkop/cbi/dynamicList.ts:196
 #: fe-app-forkop/src/forkop/cbi/dynamicList.ts:197
-#: fe-app-forkop/src/forkop/entry/view.ts:80
+#: fe-app-forkop/src/forkop/entry/view.ts:83
 msgid "Settings"
 msgstr ""
 
@@ -2044,7 +2057,7 @@ msgstr ""
 msgid "Static DNS records"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/entry/view.ts:89
+#: fe-app-forkop/src/forkop/entry/view.ts:93
 msgid "Status"
 msgstr ""
 
@@ -2057,7 +2070,7 @@ msgid "stopped"
 msgstr ""
 
 #: fe-app-forkop/src/forkop/helpers/serviceStatusDisplay.ts:12
-#: fe-app-forkop/src/forkop/tabs/components/initController.ts:73
+#: fe-app-forkop/src/forkop/tabs/components/initController.ts:74
 msgid "stopping..."
 msgstr ""
 
@@ -2123,7 +2136,7 @@ msgstr ""
 msgid "System information"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/components/initController.ts:149
+#: fe-app-forkop/src/forkop/tabs/components/initController.ts:150
 msgid "Terminal"
 msgstr ""
 
@@ -2182,7 +2195,7 @@ msgstr ""
 msgid "The file is not a UCI configuration"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/components/initController.ts:369
+#: fe-app-forkop/src/forkop/tabs/components/initController.ts:396
 msgid "The file is over 1 MB, far larger than a LoKi configuration"
 msgstr ""
 
@@ -2194,11 +2207,15 @@ msgstr ""
 msgid "the installed sing-box lacks %s"
 msgstr ""
 
+#: fe-app-forkop/src/forkop/tabs/components/updateCheck.ts:50
+msgid "The installer checks the release again before changing packages."
+msgstr ""
+
 #: fe-app-forkop/src/forkop/tabs/settings/form/network.ts:42
 msgid "The interface the traffic comes from"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/components/initController.ts:88
+#: fe-app-forkop/src/forkop/tabs/components/initController.ts:89
 msgid "the page reloads"
 msgstr ""
 
@@ -2288,12 +2305,25 @@ msgstr ""
 msgid "Unsupported link"
 msgstr ""
 
+#: fe-app-forkop/src/forkop/tabs/components/updateCheck.ts:18
+msgid "Update check failed. See the installer output for the reason."
+msgstr ""
+
 #: fe-app-forkop/src/forkop/tabs/sections/subscriptions/options.ts:104
 msgid "Update interval"
 msgstr ""
 
 #: fe-app-forkop/src/forkop/tabs/dashboard/partials/renderToolbar.ts:48
 msgid "Update lists"
+msgstr ""
+
+#: fe-app-forkop/src/forkop/tabs/components/initController.ts:263
+#: fe-app-forkop/src/forkop/tabs/components/updateCheck.ts:72
+msgid "Update LoKi"
+msgstr ""
+
+#: fe-app-forkop/src/forkop/tabs/components/initController.ts:269
+msgid "Update LoKi?"
 msgstr ""
 
 #: fe-app-forkop/src/forkop/tabs/settings/form/updates.ts:18
@@ -2312,17 +2342,21 @@ msgstr ""
 msgid "Updated %s"
 msgstr ""
 
+#: fe-app-forkop/src/forkop/tabs/components/updateCheck.ts:26
+msgid "Updates are available"
+msgstr ""
+
 #: fe-app-forkop/src/forkop/tabs/dashboard/initController.ts:1758
 #: fe-app-forkop/src/forkop/tabs/dashboard/initController.ts:1793
 msgid "Uplink"
 msgstr ""
 
 #: fe-app-forkop/src/forkop/tabs/components/configFile.ts:217
-#: fe-app-forkop/src/forkop/tabs/components/initController.ts:319
+#: fe-app-forkop/src/forkop/tabs/components/initController.ts:346
 msgid "Upload"
 msgstr ""
 
-#: fe-app-forkop/src/forkop/tabs/components/initController.ts:387
+#: fe-app-forkop/src/forkop/tabs/components/initController.ts:414
 msgid "Upload the configuration?"
 msgstr ""
 

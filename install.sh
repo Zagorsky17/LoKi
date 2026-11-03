@@ -1,13 +1,14 @@
 #!/bin/sh
 # Modified for LoKi on 2026-11-03: product labels and reviewed masked diagnostics.
 # Modified for LoKi on 2026-11-02: reject foreign configurations and package takeovers.
+# Modified for LoKi on 2026-11-03: separate update checks from package changes.
 # shellcheck shell=dash
 #
 # Installs, updates and removes Forkop and its core, sing-box-forkop, on OpenWrt 24.10 and newer.
 # Its options and exit codes are the interface Forkop's page runs it through, so they change only
 # in ways an older page understands.
 #
-# Options: --variant base|full|tiny, the core's build (the installed one, or base, by default),
+# Options: --check reports available versions without installing; --variant base|full|tiny, the core's build (the installed one, or base, by default),
 # with no value asked for at the terminal; --uninstall [--purge], with --purge the settings too;
 # --quiet, the package manager's output in the log alone, as the page has it; --lang ru|en, by
 # default LuCI's language, Russian while that is auto, since a console has no browser to follow.
@@ -49,10 +50,8 @@ TINY_HAS='VLESS, Trojan, Shadowsocks, Hysteria, Hysteria2, TUIC, SOCKS, HTTP'
 BASE_ADDS='WireGuard, AmneziaWG, WARP, OpenVPN, TrustTunnel, VMess, AnyTLS'
 # apk offline still opens every feed's index and warns for each one no apk update fetched since boot.
 APK_OFFLINE="--no-network --repositories-file /dev/null"
-# The defaults a package manager leaves beside a config it keeps.
-CONFFILE_COPIES="/etc/config/forkop-opkg /etc/config/forkop.apk-new /etc/config/sing-box-opkg /etc/config/sing-box.apk-new /etc/sing-box/config.json-opkg /etc/sing-box/config.json.apk-new"
 
-MODE=install VARIANT='' ASK_VARIANT=0 PURGE=0 QUIET=0 LANG_OPT='' BAD_ARG=''
+MODE=install VARIANT='' ASK_VARIANT=0 PURGE=0 QUIET=0 LANG_OPT='' BAD_ARG='' HELP=0
 RU=0 INTERACTIVE=0 ASKED=0 PROMPTING=0 ANSWER='' C_STEP='' C_OK='' C_WARN='' C_ERR='' C_BOLD='' C_OFF=''
 WORK='' LOCKED=0
 PM='' PM_DB='' EXT='' ARCH='' RELEASE='' FLASH_MOUNT=/ FLASH_FS=''
@@ -66,6 +65,7 @@ FILE_FORKOP='' FILE_APP='' FILE_I18N='' FILE_CORE='' FILE_IP='' GOT=''
 CONFIG_PLAN=none CONFIG_FROM='' CONFIG_REASON=''
 REMOVE_PKGS='' REMOVE_FILES='' DEPS_MISSING='' DEPS_KB=0 LISTS_FAILED=0 PREDELETE_CORE=0 OPKG_FLAGS='' OPKG_DB_COPY=''
 RESULT_FORKOP='' RESULT_CORE='' RESULT_VARIANT='' BACKUP=''
+CHECK_AVAILABLE=false
 
 # --- output ---------------------------------------------------------------------------------
 
@@ -125,6 +125,7 @@ fail() { # fail EXIT CODE TEXT [HINT]...
 }
 
 finish() { # finish EXIT [CODE]
+	[ "$MODE" != check ] || check_result "$1" "${2:-}"
 	if [ "$1" = 3 ] || [ "$1" = 4 ] ||
 		{ [ "$1" = 1 ] && contains "${2:-}" "network release checksum migration check package_manager no_memory"; }; then
 		[ -z "$BACKUP" ] || detail "$(t 'The old config is kept as %s' 'Прежний конфиг сохранён как %s' "$BACKUP")" >&2
@@ -150,6 +151,7 @@ on_signal() { # before any change: apply and uninstall ignore these signals whil
 usage_error() {
 	local message
 	case "$BAD_ARG" in
+	check) message=$(t 'The option --check cannot install, remove or change a build' 'Параметр --check нельзя совмещать с установкой, удалением или сменой сборки') ;;
 	variant) message=$(t 'The option --variant takes base, full or tiny' 'Параметр --variant принимает base, full или tiny') ;;
 	lang) message=$(t 'The option --lang takes ru or en' 'Параметр --lang принимает ru или en') ;;
 	purge) message=$(t 'The option --purge goes with --uninstall' 'Параметр --purge работает только с --uninstall') ;;
@@ -159,8 +161,13 @@ usage_error() {
 	*) message=$(t 'Unknown option: %s' 'Неизвестный параметр: %s' "${BAD_ARG#unknown:}") ;;
 	esac
 	say '[x]' "$C_ERR" "$message" >&2
-	detail "$(t 'Options: --variant [base|full|tiny], --uninstall [--purge], --quiet, --lang ru|en' 'Параметры: --variant [base|full|tiny], --uninstall [--purge], --quiet, --lang ru|en')" >&2
+	usage >&2
 	exit 2
+}
+
+usage() {
+	printf '%s\n' "$(t 'Options: --check, --help, --lang ru|en' 'Параметры: --check, --help, --lang ru|en')"
+	printf '%s\n' "$(t 'Installation, updates, build changes and removal are disabled until the own-component preflight and recovery engine is ready.' 'Установка, обновление, смена сборки и удаление отключены до готовности проверки среды и восстановления собственных компонентов.')"
 }
 
 prompt() { # prompt TEXT CHOICES: TEXT and [CHOICES], what Enter gives, on the terminal; ANSWER from it
@@ -554,7 +561,11 @@ dep_names() { # the package names a Depends field lists
 
 fetch() { # fetch URL FILE [ACCEPT]: 0; 2 when the server answered with an HTTP error, 3 when that was GitHub's rate limit; 1 when it was not reached
 	local status
-	wget -T 30 ${3:+"--header=Accept: $3"} -O "$2" "$1" 2>"$WORK/fetch.log"
+	case "$2" in *.json | *.release | *.sums)
+		# Metadata is small; a peer cannot fill tmpfs or keep the check alive indefinitely.
+		( ulimit -f 2048; deadline 35 wget -T 30 ${3:+"--header=Accept: $3"} -O "$2" "$1" ) 2>"$WORK/fetch.log" ;;
+	*) wget -T 30 ${3:+"--header=Accept: $3"} -O "$2" "$1" 2>"$WORK/fetch.log" ;;
+	esac
 	status=$?
 	cat "$WORK/fetch.log" >>"$LOG"
 	# uclient-fetch exits 8 when the server answers with an error, which it names unless -q, 4 when it
@@ -594,11 +605,26 @@ release_url() { # release_url REPO TAG FILE: FILE at the mirror, TAG empty for t
 	fi
 }
 
-asset_url() { # asset_url forkop|core FILE: where FILE of the release is, empty when the release has none
+valid_mirror() {
+	case "$1" in *[!a-zA-Z0-9:./_~\[\]-]* | */../* | */./*) return 1 ;; esac
+	printf '%s' "$1" | grep -Eq '^https://([a-zA-Z0-9.-]+|\[[a-fA-F0-9:]+\])(:[0-9]{1,5})?(/[a-zA-Z0-9._~/-]*)?$'
+}
+
+valid_asset_url() {
+	local asset=${1#https://api.github.com/repos/Zagorsky17/LoKi/releases/assets/}
+	[ "$asset" != "$1" ] || return 1
+	case "$asset" in '' | *[!0-9]*) return 1 ;; esac
+}
+
+asset_url() { # only the chosen HTTPS release namespace may supply assets
+	local url
 	if [ -n "$MIRROR" ]; then
+		valid_mirror "$MIRROR" || return 1
 		if [ "$1" = core ]; then release_url "$CORE_REPO" "$C_TAG" "$2"; else release_url "$FORKOP_REPO" "$F_TAG" "$2"; fi
 	else
-		jsonfilter -i "$WORK/$1.release" -e "@.assets[@.name=\"$2\"].url" 2>/dev/null
+		url=$(jsonfilter -i "$WORK/$1.release" -e "@.assets[@.name=\"$2\"].url" 2>/dev/null) || return 1
+		valid_asset_url "$url" || return 1
+		printf '%s' "$url"
 	fi
 }
 
@@ -607,16 +633,18 @@ rate_limited() {
 		"$(t 'Run the installer again later: the limit is reset within the hour' 'Запустите установщик снова позже: лимит сбрасывается в течение часа')"
 }
 
-checksum_of() { # checksum_of NAME SUMS
-	awk -v n="$1" '$2 == n || $2 == "*" n { print $1; exit }' "$2"
+checksum_of() { # exactly one canonical SHA256 entry for this asset
+	awk -v n="$1" '$2 == n || $2 == "*" n { count++; digest=$1; fields=NF } END { if (count == 1 && fields == 2 && length(digest) == 64 && digest !~ /[^a-fA-F0-9]/) print tolower(digest) }' "$2"
 }
 
-verify() { # verify FILE SUMS: 0 matches, 1 differs, 2 SUMS has no line for it
+verify_named() {
 	local expected
-	expected=$(checksum_of "${1##*/}" "$2")
+	expected=$(checksum_of "$2" "$3")
 	[ -n "$expected" ] || return 2
 	[ "$(sha256sum "$1" | cut -d ' ' -f 1)" = "$expected" ]
 }
+
+verify() { verify_named "$1" "${1##*/}" "$2"; }
 
 resolves() { # resolves HOST: an address, or a name the router resolves
 	case "$1" in *[!0-9.]*) nslookup "$1" >/dev/null 2>&1 ;; esac
@@ -737,7 +765,7 @@ check_system() {
 	fi
 
 	year=$(date +%Y)
-	if [ "$year" -lt 2025 ] 2>/dev/null; then
+	if [ "$MODE" != check ] && [ "$year" -lt 2025 ] 2>/dev/null; then
 		servers=$(uci -q get system.ntp.server)
 		set --
 		for server in ${servers:-0.openwrt.pool.ntp.org 1.openwrt.pool.ntp.org}; do set -- "$@" -p "$server"; done
@@ -750,6 +778,7 @@ check_system() {
 	fi
 
 	while pidof opkg apk >/dev/null 2>&1; do
+		[ "$MODE" != check ] || fail 1 locked "$(t 'The package manager is busy' 'Менеджер пакетов занят')"
 		[ "$waited" = 0 ] && step wait "$(t 'Waiting for another %s' 'Ожидание другого %s' "$PM")"
 		[ "$waited" -lt 120 ] || fail 1 locked "$(t '%s has been busy for two minutes' '%s занят уже две минуты' "$PM")" \
 			"$(t 'Let it finish and run the installer again' 'Дождитесь, пока он закончит, и запустите установщик снова')"
@@ -791,7 +820,7 @@ read_state() {
 	[ -z "$CORE_OLD" ] || CORE_OLD_VARIANT=$(cat /usr/share/sing-box-forkop/variant 2>/dev/null)
 	[ ! -f /etc/config/forkop ] || CONFIG_VERSION=$(uci -q get forkop.settings.config_version)
 	printf '%s\n' "$CONFIG_VERSION" | grep -Eq '^[0-9]{1,9}\.[0-9]{1,9}\.[0-9]{1,9}$' || CONFIG_VERSION=unknown
-	forkop_status
+	[ "$MODE" = check ] || forkop_status
 
 	for name in $FOREIGN_CORES; do
 		if [ -n "$(pkg_version "$name")" ]; then
@@ -811,24 +840,44 @@ read_state() {
 	if [ -n "$owner" ] && ! contains "$owner" "$OUR_PACKAGES $FOREIGN_PKGS"; then
 		FOREIGN_PKGS="$FOREIGN_PKGS $owner"
 	fi
+    [ -z "$FOREIGN_PKGS$FOREIGN_WORLD$FOREIGN_FILES" ] ||
+        fail 1 conflict "$(t 'Conflicting packages or files must be resolved before installing LoKi' 'Перед установкой LoKi нужно устранить конфликтующие пакеты или файлы')"
 	log "installed: forkop ${FORKOP_OLD:-none}, sing-box-forkop ${CORE_OLD:-none} ${CORE_OLD_VARIANT}," \
 		"other cores:${FOREIGN_PKGS:- none}, files of no package:${FOREIGN_FILES:- none}, config ${CONFIG_VERSION:-none}"
 }
 
 # --- the releases ---------------------------------------------------------------------------
 
-read_manifest() { # read_manifest FILE NAME: prints version, tag and requirement, one per line
-	local name schema
+valid_release_version() {
+	case "$1" in '' | *[!0-9.r-]*) return 1 ;; esac
+	if [ "$2" = forkop ]; then
+		printf '%s' "$1" | grep -Eq '^[0-9]{1,9}\.[0-9]{1,9}\.[0-9]{1,9}$'
+	else
+		printf '%s' "$1" | grep -Eq '^[0-9]{1,9}\.[0-9]{1,9}\.[0-9]{1,9}(-r[0-9]{1,9})?$'
+	fi
+}
+
+read_manifest() { # validate fields before using them as versions or URL path segments
+	local name schema version tag requirement
+	grep -qi '\\u0000' "$1" && return 1
 	name=$(jsonfilter -i "$1" -e '@.name' 2>/dev/null)
 	schema=$(jsonfilter -i "$1" -e '@.schema' 2>/dev/null)
 	[ "$name" = "$2" ] && [ "$schema" = 1 ] || return 1
-	jsonfilter -i "$1" -e '@.version' 2>/dev/null || return 1
-	jsonfilter -i "$1" -e '@.tag' 2>/dev/null || echo
-	if [ "$2" = forkop ]; then
-		jsonfilter -i "$1" -e '@.requires["sing-box-forkop"]' 2>/dev/null || echo
-	else
-		jsonfilter -i "$1" -e '@.requires.forkop' 2>/dev/null || echo
+	version=$(jsonfilter -i "$1" -e '@.version' 2>/dev/null) || return 1
+	valid_release_version "$version" "$2" || return 1
+	tag=$(jsonfilter -i "$1" -e '@.tag' 2>/dev/null) || tag=''
+	if [ -n "$tag" ]; then
+		case "$tag" in *[!v0-9.r-]*) return 1 ;; esac
+		valid_release_version "${tag#v}" sing-box-forkop || return 1
 	fi
+	if [ "$2" = forkop ]; then
+		requirement=$(jsonfilter -i "$1" -e '@.requires["sing-box-forkop"]' 2>/dev/null) || return 1
+		valid_release_version "$requirement" sing-box-forkop || return 1
+	else
+		requirement=$(jsonfilter -i "$1" -e '@.requires.forkop' 2>/dev/null) || return 1
+		valid_release_version "$requirement" forkop || return 1
+	fi
+	printf '%s\n%s\n%s\n' "$version" "$tag" "$requirement"
 }
 
 fetch_or_fail() { # fetch_or_fail URL FILE NAME RELEASE: a file of a release, or the reason it is not there
@@ -879,8 +928,11 @@ fetch_release() { # fetch_release forkop|core: the latest release's manifest, an
 			read -r C_TAG
 			read -r C_FORKOP_MIN
 		} <"$WORK/core.fields"
-		C_TAG=${C_TAG:-v$C_VERSION}
+        C_TAG=${C_TAG:-v$C_VERSION}
 	fi
+	fetch_or_fail "$(asset_url "$1" SHA256SUMS)" "$WORK/$1.sums" SHA256SUMS "$package"
+	verify_named "$manifest" "$asset" "$WORK/$1.sums" ||
+		fail 1 checksum "$(t 'The release manifest failed SHA256 verification' 'Manifest релиза не прошёл проверку SHA256')"
 }
 
 resolve_release() {
@@ -1511,9 +1563,6 @@ start_again() { # after a failed transaction a LoKi that ran before runs again o
 
 clean_up_after() {
 	local file
-	for file in $CONFFILE_COPIES; do
-		[ ! -e "$file" ] || rm -f "$file"
-	done
 	if [ -n "$BACKUP" ]; then
 		rm -f "$BACKUP" && log "removed $BACKUP: the transaction went through"
 	fi
@@ -1671,9 +1720,6 @@ uninstall() {
 		for file in /etc/config/forkop /etc/config/forkop.* /etc/config/forkop-opkg /etc/forkop; do
 			[ ! -e "$file" ] || rm -rf "$file"
 		done
-		[ -n "$users" ] || for file in /etc/config/sing-box /etc/config/sing-box-opkg /etc/sing-box; do
-			[ ! -e "$file" ] || rm -rf "$file"
-		done
 	fi
 	finale "$(t 'LoKi is removed' 'LoKi удалён')"
 	finish 0
@@ -1697,38 +1743,98 @@ parse_args() { # BAD_ARG names the first mistake, reported once the language is 
 			[ -n "$VARIANT" ] || ASK_VARIANT=1
 			;;
 		--lang=*) LANG_OPT=${1#*=} ;;
-		--uninstall) MODE=uninstall ;;
+		--check) [ "$MODE" = install ] || BAD_ARG=check; MODE=check ;;
+		--uninstall) [ "$MODE" = install ] || BAD_ARG=check; MODE=uninstall ;;
 		--purge) PURGE=1 ;;
 		--quiet) QUIET=1 ;;
+		--help | -h) HELP=1 ;;
 		*) BAD_ARG="unknown:$1" && return ;;
 		esac
 		shift
 	done
 	case "$LANG_OPT" in '' | ru | en) ;; *) LANG_OPT='' BAD_ARG=lang && return ;; esac
 	case "$VARIANT" in '' | base | full | tiny) ;; *) BAD_ARG=variant && return ;; esac
+	[ "$MODE" != check ] || { [ "$PURGE$ASK_VARIANT" = 00 ] && [ -z "$VARIANT" ]; } || { BAD_ARG=check; return; }
 	[ "$PURGE" = 0 ] || [ "$MODE" = uninstall ] || { BAD_ARG=purge && return; }
-	[ "$MODE" = install ] || { [ -z "$VARIANT" ] && [ "$ASK_VARIANT" = 0 ]; } || BAD_ARG=uninstall
+	[ "$MODE" != uninstall ] || { [ -z "$VARIANT" ] && [ "$ASK_VARIANT" = 0 ]; } || BAD_ARG=uninstall
+}
+
+check_result() {
+	local success=false reason="$2" installed_app="$FORKOP_OLD" installed_core="$CORE_OLD" variant="$CORE_OLD_VARIANT" app="$F_VERSION" core="$C_VERSION"
+	[ "$1" != 0 ] || success=true
+	case "$reason" in *[!a-z_]* ) reason=failed ;; esac
+	case "$installed_app" in *[!a-zA-Z0-9.+~_-]* ) installed_app='' ;; esac
+	case "$installed_core" in *[!a-zA-Z0-9.+~_-]* ) installed_core='' ;; esac
+	case "$variant" in base | full | tiny | custom | '') ;; *) variant='' ;; esac
+	valid_release_version "$app" forkop || app=''
+	valid_release_version "$core" sing-box-forkop || core=''
+	printf '{"schema":1,"success":%s,"reason":"%s","available":%s,"installed":{"app":"%s","core":"%s","variant":"%s"},"latest":{"app":"%s","core":"%s"}}\n' \
+		"$success" "$reason" "$CHECK_AVAILABLE" "$installed_app" "$installed_core" "$variant" "$app" "$core" >&3
+}
+
+check_updates() {
+	local name
+	for name in "forkop_${F_VERSION}_all.$EXT" "luci-app-forkop_${F_VERSION}_all.$EXT"; do
+		[ -n "$(checksum_of "$name" "$WORK/forkop.sums")" ] && [ -n "$(asset_url forkop "$name")" ] ||
+			fail 1 release "$(t 'The release has no package for this system' 'В релизе нет пакета для этой системы')"
+	done
+	if [ "$I18N" = 1 ]; then
+		name="luci-i18n-forkop-ru_${F_VERSION}_all.$EXT"
+		[ -n "$(checksum_of "$name" "$WORK/forkop.sums")" ] && [ -n "$(asset_url forkop "$name")" ] ||
+			fail 1 release "$(t 'The release has no translation package' 'В релизе нет пакета перевода')"
+	fi
+	if [ "$CORE_VARIANT" != custom ]; then
+		name=$(core_file "$CORE_VARIANT")
+		[ -n "$(checksum_of "$name" "$WORK/core.sums")" ] && [ -n "$(asset_url core "$name")" ] ||
+			fail 1 unsupported_arch "$(t 'The release has no core for this architecture and build' 'В релизе нет ядра для этой архитектуры и варианта сборки')"
+	fi
+	[ "$NEED_FORKOP$NEED_APP$NEED_I18N" = 000 ] && [ "$CORE_ACTION" = none ] || CHECK_AVAILABLE=true
+	finish 0
 }
 
 main() {
 	parse_args "$@"
 	pick_language
 	setup_output
-	[ "$ASK_VARIANT" = 0 ] || [ -n "$BAD_ARG" ] || may_ask || BAD_ARG=variant_tty
 	[ -z "$BAD_ARG" ] || usage_error
-	( : >"$LOG" ) 2>/dev/null || LOG=/dev/null
+	if [ "$HELP" = 1 ]; then
+		usage
+		exit 0
+	fi
+	# This development build must never reach the legacy dependency solver or apply hooks.
+	if [ "$MODE" != check ]; then
+		usage >&2
+		exit 1
+	fi
+	if [ "$MODE" = check ]; then
+		exec 3>&1
+		exec 1>&2
+		INTERACTIVE=0 LOG=/dev/null
+	else
+		( : >"$LOG" ) 2>/dev/null || LOG=/dev/null
+	fi
+    [ -z "$MIRROR" ] || valid_mirror "$MIRROR" ||
+        fail 1 source "$(t 'The release source must use a valid HTTPS URL' 'Источник релиза должен использовать допустимый HTTPS URL')"
 	log "install.sh $* ($(date))"
 	trap on_signal INT TERM HUP PIPE
 	[ "$(id -u)" = 0 ] || fail 1 not_root "$(t 'Run the installer as root' 'Запустите установщик от имени root')"
 	[ -r /etc/openwrt_release ] || fail 1 not_openwrt "$(t 'This installer runs only on OpenWrt' 'Установщик работает только на OpenWrt')"
 	detect_package_manager
+	umask 077
 	WORK=$(mktemp -d /tmp/forkop-install.XXXXXX) || fail 1 no_memory "$(t 'Cannot create a directory in /tmp' 'Не удалось создать папку в /tmp')"
 	identify_system
-	lock
-	[ "$MODE" = install ] || uninstall
+	case "$ARCH" in '' | *[!a-zA-Z0-9_-]*) fail 1 unsupported_arch "$(t 'Invalid package architecture' 'Недопустимая архитектура пакетов')" ;; esac
+	if [ "$MODE" = check ]; then
+		[ "$(mem_available_kb)" -ge 4096 ] && [ "$(free_kb /tmp)" -ge 1024 ] ||
+			fail 1 no_memory "$(t 'Not enough RAM for the update check' 'Не хватает оперативной памяти для проверки обновлений')"
+	else
+		lock
+	fi
+	[ "$MODE" != uninstall ] || uninstall
 	check_system
 	read_state
 	resolve_release
+	[ "$MODE" != check ] || check_updates
 	stop_if_current
 	download_packages
 	check_packages

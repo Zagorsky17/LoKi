@@ -173,7 +173,7 @@ function begin(action, source, pid) {
 
     let result = { status: 2, job_id: "" };
     refresh();
-    if (active_action() == "") {
+    if (!installer.active() && active_action() == "") {
         let now = clock();
         let id = sprintf("%d-%d", now[0], now[1]);
         let written = write_job(job_path(paths.service_actions, id), {
@@ -206,7 +206,7 @@ function start_worker(action, source, reason) {
         return { success: false, job_id: "" };
 
     let path = job_path(paths.service_actions, begun.job_id);
-    let pid = trim(exec.output([ "sh", "-c", "\"$@\" >/dev/null 2>&1 1000>&- & echo $!", "sh",
+    let pid = trim(exec.output([ "sh", "-c", "setsid \"$@\" </dev/null >/dev/null 2>&1 1000>&- & echo $!", "sh",
         constants.FORKOP_BIN, "service_action_worker", action, begun.job_id, reason ?? "" ]) ?? "");
     let value = read_job(path);
     if (match(pid, /^[0-9]+$/) && value?.running === true && write_job(path, { ...value, pid }))

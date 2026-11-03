@@ -1,4 +1,5 @@
 """Check source integrity and the installer's core manifest without running installation."""
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -114,15 +115,19 @@ chmod +x "$1/build.sh"
     def test_a_binary_only_build_is_not_a_package_release(self):
         self.build_case(binary_only=True)
 
-    def manifest_case(self, core=True, missing=False, mirror=False):
+    def manifest_case(self, core=True, missing=False, mirror=False, bad_url=False, bad_digest=False):
         with tempfile.TemporaryDirectory() as work:
             work = Path(work)
             manifest = {'schema': 1, 'name': 'sing-box-forkop' if core else 'forkop',
                         'version': '1.14.4-r4', 'tag': '2.0.0', 'requires': {'forkop': '2.0.0'}}
             (work / 'manifest.json').write_text(json.dumps(manifest))
-            assets = [{'name': 'release.json', 'url': 'https://api.github.com/app-manifest'}]
+            digest = hashlib.sha256((work / 'manifest.json').read_bytes()).hexdigest()
+            (work / 'sums').write_text(('0' * 64 if bad_digest else digest) + '  core-release.json\n')
+            assets = [{'name': 'release.json', 'url': 'https://api.github.com/repos/Zagorsky17/LoKi/releases/assets/1'},
+                      {'name': 'SHA256SUMS', 'url': 'https://api.github.com/repos/Zagorsky17/LoKi/releases/assets/3'}]
             if not missing:
-                assets.append({'name': 'core-release.json', 'url': 'https://api.github.com/core-manifest'})
+                assets.append({'name': 'core-release.json', 'url': 'https://elsewhere.invalid/core-manifest' if bad_url else
+                               'https://api.github.com/repos/Zagorsky17/LoKi/releases/assets/2'})
             (work / 'listing.json').write_text(json.dumps({'assets': assets}))
             binary = work / 'bin'
             binary.mkdir()
@@ -146,7 +151,9 @@ if value is not None:
 ''')
             jsonfilter.chmod(0o755)
             repos = '\n'.join(re.findall(r'^(?:FORKOP_REPO|CORE_REPO)=.*$', INSTALLER, re.M))
-            functions = '\n'.join(shell_function(name) for name in ('release_url', 'asset_url', 'read_manifest', 'fetch_release'))
+            functions = '\n'.join(shell_function(name) for name in (
+                'release_url', 'valid_mirror', 'valid_asset_url', 'asset_url', 'valid_release_version',
+                'checksum_of', 'verify_named', 'fetch_or_fail', 'read_manifest', 'fetch_release'))
             script = repos + '\n' + functions + '''
 API_URL=https://api.github.com
 MIRROR=''
@@ -160,7 +167,8 @@ download() {
     printf '%s\n' "$1" >> "$WORK/downloads"
     case "$1" in
         https://api.github.com/repos/Zagorsky17/LoKi/releases/latest) cp "$WORK/listing.json" "$2" ;;
-        https://api.github.com/core-manifest|https://mirror.test/Zagorsky17/LoKi/releases/latest/download/core-release.json) cp "$WORK/manifest.json" "$2" ;;
+        https://api.github.com/repos/Zagorsky17/LoKi/releases/assets/2|https://mirror.test/Zagorsky17/LoKi/releases/latest/download/core-release.json) cp "$WORK/manifest.json" "$2" ;;
+        https://api.github.com/repos/Zagorsky17/LoKi/releases/assets/3|https://mirror.test/Zagorsky17/LoKi/releases/download/2.0.0/SHA256SUMS) cp "$WORK/sums" "$2" ;;
         *) return 2 ;;
     esac
 }
@@ -170,8 +178,8 @@ printf '%s %s %s\n' "$C_VERSION" "$C_TAG" "$C_FORKOP_MIN"
             result = subprocess.run(['busybox', 'ash', '-c', script],
                 env=dict(os.environ, WORK=str(work), USE_MIRROR='yes' if mirror else 'no',
                          PATH=str(binary) + os.pathsep + os.environ['PATH']), capture_output=True, text=True)
-            downloads = (work / 'downloads').read_text().splitlines()
-            self.assertFalse(any('ushan0v' in url or url.endswith('/app-manifest') for url in downloads))
+            downloads = (work / 'downloads').read_text().splitlines() if (work / 'downloads').exists() else []
+            self.assertFalse(any('ushan0v' in url or url.endswith('/assets/1') or 'elsewhere.invalid' in url for url in downloads))
             return result
 
     def test_core_uses_its_manifest_from_the_project_repository(self):
@@ -186,6 +194,14 @@ printf '%s %s %s\n' "$C_VERSION" "$C_TAG" "$C_FORKOP_MIN"
 
     def test_missing_core_manifest_does_not_fall_back_to_application_or_upstream(self):
         self.assertNotEqual(self.manifest_case(missing=True).returncode, 0)
+
+    def test_manifest_source_cannot_leave_the_project_asset_namespace(self):
+        self.assertNotEqual(self.manifest_case(bad_url=True).returncode, 0)
+
+    def test_a_core_manifest_needs_its_matching_sha256(self):
+        for mirror in (False, True):
+            with self.subTest(mirror=mirror):
+                self.assertNotEqual(self.manifest_case(mirror=mirror, bad_digest=True).returncode, 0)
 
 
 if __name__ == '__main__':

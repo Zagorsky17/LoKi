@@ -44,47 +44,51 @@ export const ForkopView = {
   async render() {
     injectGlobalStyles();
 
-    const forkopMap = new form.Map(
-      FORKOP_UCI_PACKAGE,
-      pageTitle(FORKOP_LUCI_APP_VERSION, createPageStatus()),
-    );
+    const writable = L.hasViewPermission?.() === true;
+    const title = pageTitle(FORKOP_LUCI_APP_VERSION, createPageStatus());
+    const forkopMap = writable
+      ? new form.Map(FORKOP_UCI_PACKAGE, title)
+      : new form.JSONMap({}, title);
     forkopMap.tabbed = true;
+    forkopMap.readonly = !writable;
 
-    const rulesSection = forkopMap.section(
-      form.GridSection,
-      'section',
-      _('Sections'),
-      _('Routing rules are checked from top to bottom'),
-    );
-    configureGridSection(
-      rulesSection,
-      'section',
-      _('Section'),
-      _('Add a section'),
-    );
-    const renderRuleContents = rulesSection.renderContents;
-    rulesSection.renderContents = function (...args: unknown[]) {
-      const node = renderRuleContents.apply(this, args) as HTMLElement;
-      const placeholder = node.querySelector?.('.placeholder em');
-      if (placeholder) {
-        placeholder.textContent = _('Add a section to configure routing');
-      }
-      return node;
-    };
-    configureSectionSection(rulesSection);
-    createSectionContent(rulesSection);
+    if (writable) {
+      const rulesSection = forkopMap.section(
+        form.GridSection,
+        'section',
+        _('Sections'),
+        _('Routing rules are checked from top to bottom'),
+      );
+      configureGridSection(
+        rulesSection,
+        'section',
+        _('Section'),
+        _('Add a section'),
+      );
+      const renderRuleContents = rulesSection.renderContents;
+      rulesSection.renderContents = function (...args: unknown[]) {
+        const node = renderRuleContents.apply(this, args) as HTMLElement;
+        const placeholder = node.querySelector?.('.placeholder em');
+        if (placeholder) {
+          placeholder.textContent = _('Add a section to configure routing');
+        }
+        return node;
+      };
+      configureSectionSection(rulesSection);
+      createSectionContent(rulesSection);
 
-    const settingsSection = forkopMap.section(
-      form.TypedSection,
-      'settings',
-      _('Settings'),
-    );
-    settingsSection.anonymous = true;
-    settingsSection.addremove = false;
-    settingsSection.cfgsections = function () {
-      return ['settings'];
-    };
-    createSettingsContent(settingsSection);
+      const settingsSection = forkopMap.section(
+        form.TypedSection,
+        'settings',
+        _('Settings'),
+      );
+      settingsSection.anonymous = true;
+      settingsSection.addremove = false;
+      settingsSection.cfgsections = function () {
+        return ['settings'];
+      };
+      createSettingsContent(settingsSection);
+    }
 
     addMountedTab(forkopMap, 'diagnostic', _('Status'), DiagnosticTab);
     addMountedTab(forkopMap, 'dashboard', _('Dashboard'), DashboardTab);

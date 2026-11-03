@@ -438,6 +438,7 @@
       "stop"
     ],
     "actions": [
+      "check",
       "update",
       "variant",
       "uninstall"

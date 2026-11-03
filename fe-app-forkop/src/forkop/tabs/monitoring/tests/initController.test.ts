@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   getClashApiConnections: vi.fn(),
   getConfigSections: vi.fn(),
+  closeClashApiConnection: vi.fn(),
+  closeAllClashApiConnections: vi.fn(),
   deviceNames: {} as Record<string, string>,
 }));
 
@@ -15,6 +17,8 @@ vi.mock('../../../methods', () => ({
   CustomForkopMethods: {
     getClashApiConnections: mocks.getClashApiConnections,
     getConfigSections: mocks.getConfigSections,
+    closeClashApiConnection: mocks.closeClashApiConnection,
+    closeAllClashApiConnections: mocks.closeAllClashApiConnections,
   },
 }));
 vi.mock('../../../methods/custom/getClashApiSecret', () => ({
@@ -240,6 +244,12 @@ beforeEach(async () => {
   vi.useFakeTimers();
   mocks.getClashApiConnections.mockReset();
   mocks.getConfigSections.mockReset().mockResolvedValue([]);
+  mocks.closeClashApiConnection
+    .mockReset()
+    .mockResolvedValue({ success: true });
+  mocks.closeAllClashApiConnections
+    .mockReset()
+    .mockResolvedValue({ success: true });
   mocks.deviceNames = {};
   documentListeners.clear();
   selection = { isCollapsed: true, anchorNode: null, focusNode: null };
@@ -291,6 +301,77 @@ async function openMonitoring() {
   await initController();
   await vi.advanceTimersByTimeAsync(0);
 }
+
+async function closeOne(id: string) {
+  const list = byId('monitoring-connections');
+  const button = list
+    .descendants()
+    .find(
+      (node) =>
+        node.value === id && `${node.attrs.class}`.includes('__row-action'),
+    );
+  expect(button).toBeTruthy();
+  (list.onclick as (event: unknown) => void)({ target: button });
+  await vi.advanceTimersByTimeAsync(0);
+}
+
+describe('the Monitoring close controls', () => {
+  it('moves an acknowledged close-one from active to closed and updates both counters', async () => {
+    answer('a', 'b');
+    await openMonitoring();
+    await closeOne('a');
+    expect(mocks.closeClashApiConnection).toHaveBeenCalledWith('a');
+    expect([hosts(), activeCount()]).toEqual([['b.example.com'], '1']);
+    expect(byId('monitoring-tab-closed').textContent.replace(/\D/g, '')).toBe(
+      '1',
+    );
+    showTab('monitoring-tab-closed');
+    expect(hosts()).toEqual(['a.example.com']);
+  });
+
+  it('moves an acknowledged close-all to the closed list', async () => {
+    answer('a', 'b');
+    await openMonitoring();
+    (byId('monitoring-close-all').onclick as () => void)();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(mocks.closeAllClashApiConnections).toHaveBeenCalledOnce();
+    expect(activeCount()).toBe('0');
+    showTab('monitoring-tab-closed');
+    expect(hosts().sort()).toEqual(['a.example.com', 'b.example.com']);
+  });
+
+  it('preserves active rows when write authorization refuses close-one and close-all', async () => {
+    mocks.closeClashApiConnection.mockResolvedValue({
+      success: false,
+      error: 'permission denied',
+    });
+    mocks.closeAllClashApiConnections.mockResolvedValue({
+      success: false,
+      error: 'permission denied',
+    });
+    answer('a', 'b');
+    await openMonitoring();
+    await closeOne('a');
+    (byId('monitoring-close-all').onclick as () => void)();
+    await vi.advanceTimersByTimeAsync(0);
+    expect([rows().length, activeCount()]).toEqual([2, '2']);
+    expect(byId('monitoring-tab-closed').textContent.replace(/\D/g, '')).toBe(
+      '0',
+    );
+  });
+
+  it('closes only matching rows when device filtering is active', async () => {
+    answerWith(connection('a'), connection('b', { sourceIP: '192.168.1.102' }));
+    await openMonitoring();
+    choose('monitoring-device-filter', '192.168.1.101');
+    (byId('monitoring-close-all').onclick as () => void)();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(mocks.closeClashApiConnection).toHaveBeenCalledWith('a');
+    expect(mocks.closeAllClashApiConnections).not.toHaveBeenCalled();
+    choose('monitoring-device-filter', '');
+    expect(hosts()).toEqual(['b.example.com']);
+  });
+});
 
 describe('the Monitoring pause', () => {
   it('holds new connections back while Auto refresh is off', async () => {

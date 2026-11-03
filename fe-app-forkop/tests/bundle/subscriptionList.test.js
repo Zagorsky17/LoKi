@@ -11,7 +11,11 @@ beforeEach(() => {
   harness = createHarness();
   harness.bundle.setCoreFeatures(coreFeatures());
   harness.commands.get_subscription_default_headers = () =>
-    Promise.resolve({ code: 0, stdout: JSON.stringify(DEFAULT_HEADERS) });
+    Promise.resolve({
+      code: 0,
+      stdout: JSON.stringify(DEFAULT_HEADERS),
+      stderr: '',
+    });
   harness.uci.add('forkop', 'section', 'sec');
   Object.assign(harness.store.get('sec'), {
     action: 'connection',

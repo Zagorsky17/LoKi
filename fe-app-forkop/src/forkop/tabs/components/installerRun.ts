@@ -28,6 +28,7 @@ export interface InstallerRunState {
   // a stop was asked, from this page, another one or Ctrl+C in the terminal
   stopping: boolean;
   changed: boolean;
+  checkResult?: Forkop.UpdateCheckResult | null;
   // router seconds
   startedAt: number | null;
   finishedAt: number | null;
@@ -48,6 +49,7 @@ const INITIAL: InstallerRunState = {
   interrupted: false,
   stopping: false,
   changed: false,
+  checkResult: null,
   startedAt: null,
   finishedAt: null,
   log: false,
@@ -58,6 +60,9 @@ const INITIAL: InstallerRunState = {
 // A run the page watched end reloads it when the packages changed under it, and leaves it when
 // Forkop and its page are gone.
 export function afterRun(state: InstallerRunState): InstallerAfterRun | null {
+  if (state.action === 'check') {
+    return null;
+  }
   if (state.action === 'uninstall' && state.exit === 0) {
     return 'leave';
   }
@@ -130,6 +135,7 @@ export function createInstallerRun(options: {
       interrupted: Boolean(snapshot.interrupted),
       stopping: Boolean(snapshot.stop_requested) || stopAsked,
       changed: Boolean(snapshot.changed),
+      checkResult: snapshot.check_result ?? null,
       startedAt: snapshot.started_at ?? null,
       finishedAt: snapshot.finished_at ?? null,
       log: Boolean(snapshot.log),
@@ -221,11 +227,14 @@ export function createInstallerRun(options: {
           action: result.started ? action : null,
           starting: false,
           running: true,
-          interactive: result.started ? action !== 'uninstall' : false,
+          interactive: result.started
+            ? action !== 'uninstall' && action !== 'check'
+            : false,
           exit: null,
           interrupted: false,
           stopping: false,
           changed: false,
+          checkResult: null,
           startedAt: null,
           finishedAt: null,
           log: false,

@@ -37,7 +37,7 @@ describe('closing the connections a filter found', () => {
     });
   });
 
-  it('has no more than four requests in flight', async () => {
+  it('has no more than two requests in flight and keeps every requested id', async () => {
     let inFlight = 0;
     let most = 0;
     const close = vi.fn(async () => {
@@ -52,6 +52,6 @@ describe('closing the connections a filter found', () => {
     const result = await closeConnections(ids, close);
 
     expect(result.closed).toEqual(ids);
-    expect(most).toBe(4);
+    expect(most).toBe(2);
   });
 });

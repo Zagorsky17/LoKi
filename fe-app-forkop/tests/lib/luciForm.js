@@ -553,7 +553,10 @@ function buildForm(uciData) {
 
 /* ----------------------------------------------------------------- harness */
 
-export function createHarness(packageName = 'forkop') {
+export function createHarness(
+  packageName = 'forkop',
+  { writable = true } = {},
+) {
   const messages = [];
 
   const store = new Map();
@@ -654,6 +657,7 @@ export function createHarness(packageName = 'forkop') {
   };
 
   const L = {
+    hasViewPermission: () => writable,
     bind: (fn, self, ...bound) => fn.bind(self, ...bound),
     resource: (...parts) => parts.join('/'),
     toArray(value) {
@@ -671,6 +675,8 @@ export function createHarness(packageName = 'forkop') {
   const notifications = [];
 
   const commands = {};
+  const rpcJobs = new Map();
+  let rpcSequence = 0;
 
   const moduleGlobals = {
     form,
@@ -708,7 +714,48 @@ export function createHarness(packageName = 'forkop') {
     },
     poll: { add() {}, remove() {} },
     dom: { content() {}, append() {} },
-    rpc: { declare: () => () => Promise.resolve({}) },
+    rpc: {
+      declare:
+        ({ method, params = [] }) =>
+        (...values) => {
+          const input = Object.fromEntries(
+            params.map((name, index) => [name, values[index]]),
+          );
+          if (method === 'rpc_read_prepare' || method === 'rpc_write_prepare') {
+            const id = (++rpcSequence).toString(16).padStart(64, '0');
+            rpcJobs.set(id, { argv: input.argv });
+            return Promise.resolve({ success: true, id });
+          }
+          if (method === 'rpc_read' || method === 'rpc_write') {
+            const argv = input.argv;
+            const job = rpcJobs.get(input.request_id);
+            if (!job)
+              return Promise.resolve({
+                code: 1,
+                stdout: '',
+                stderr: 'Unknown request',
+              });
+            const answer = commands[`${argv?.[0] ?? ''}`];
+            return Promise.resolve(answer ? answer(argv) : {}).then((reply) => {
+              job.response = { stdout: '', stderr: '', code: 0, ...reply };
+              return { pending: true, result_id: input.request_id };
+            });
+          }
+          if (method === 'rpc_read_result' || method === 'rpc_write_result') {
+            const job = rpcJobs.get(input.id);
+            if (input.part === 'release') {
+              rpcJobs.delete(input.id);
+              return Promise.resolve({ success: true });
+            }
+            return Promise.resolve(
+              job
+                ? { success: true, pending: false, response: job.response }
+                : { success: false },
+            );
+          }
+          return Promise.resolve({});
+        },
+    },
     console: {
       log: (...args) => messages.push(args.join(' ')),
       info: (...args) => messages.push(args.join(' ')),
