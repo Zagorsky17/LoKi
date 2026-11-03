@@ -61,3 +61,6 @@ jobs:
       - name: Run tests
         shell: bash
         run: tests/run.sh
+
+      - name: Check cached generator equivalence
+        run: python3 tests/bench_bytecode.py
