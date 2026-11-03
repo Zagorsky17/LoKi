@@ -1,3 +1,4 @@
+// Modified for LoKi on 2026-11-03: protect and verify temporary nft transactions before applying them.
 // Fills the sets of provider-fed sections, one nft transaction per section, so nft never
 // holds more than the largest one.
 
@@ -288,9 +289,14 @@ function section_plan(snapshot, entry) {
     };
 }
 
+function write_exact(handle, text) {
+    if (handle.write(text) != length(text))
+        die("cannot write the complete nft transaction");
+}
+
 // The flush and the new elements land in one transaction, so the set is never seen empty.
 function write_set(handle, set_name, elements) {
-    handle.write("flush set inet " + TABLE + " " + set_name + "\n");
+    write_exact(handle, "flush set inet " + TABLE + " " + set_name + "\n");
     let prefix = "add element inet " + TABLE + " " + set_name + " { ";
     let line = [];
     let line_length = 0;
@@ -303,7 +309,7 @@ function write_set(handle, set_name, elements) {
         last = element;
         written++;
         if (length(line) >= MAX_ELEMENTS_PER_LINE || line_length + length(element) + 2 > MAX_LINE_LENGTH) {
-            handle.write(prefix + join(", ", line) + " }\n");
+            write_exact(handle, prefix + join(", ", line) + " }\n");
             line = [];
             line_length = 0;
         }
@@ -311,30 +317,48 @@ function write_set(handle, set_name, elements) {
         line_length += length(element) + 2;
     }
     if (length(line) > 0)
-        handle.write(prefix + join(", ", line) + " }\n");
+        write_exact(handle, prefix + join(", ", line) + " }\n");
     return written;
 }
 
 // Written to a file, so what this process holds is released before nft starts allocating.
 function apply_plan(plan) {
     let now = clock();
-    let path = sprintf("/tmp/forkop-ruleset-sync.%d.%d.nft", now[0], now[1]);
-    let handle = fs.open(path, "w");
-    if (!handle)
+    let base = sprintf("/tmp/forkop-ruleset-sync.%d.%d.%d", common.own_pid(), now[0], now[1]);
+    if (!fs.mkdir(base, 0700))
         die("cannot write the nft transaction");
+    let path = base + "/transaction.nft";
+    let handle = null;
     let count = plan.scoped;
-    for (let i = 0; i < length(plan.sets); i++) {
-        let written = write_set(handle, plan.sets[i][0], plan.sets[i][1]);
-        if (i < 2)
-            count += written;
-        plan.sets[i] = null;
+    try {
+        handle = fs.open(path, "w");
+        if (!handle)
+            die("cannot write the nft transaction");
+        for (let i = 0; i < length(plan.sets); i++) {
+            let written = write_set(handle, plan.sets[i][0], plan.sets[i][1]);
+            if (i < 2)
+                count += written;
+            plan.sets[i] = null;
+        }
+        let expected = handle.tell();
+        let closed = handle.close();
+        handle = null;
+        // Older fs.close() ignores a failed buffered flush; verify the resulting file as well.
+        if (expected == null || !closed || fs.stat(path)?.size != expected)
+            die("cannot finish the complete nft transaction");
+        let result = exec.combined([ "nft", "-f", path ]);
+        if (result.status != 0)
+            die(nft_apply.refusal({ status: result.status, stderr: result.output }));
     }
-    handle.close();
-
-    let result = exec.combined([ "nft", "-f", path ]);
+    catch (e) {
+        if (handle)
+            handle.close();
+        fs.unlink(path);
+        fs.rmdir(base);
+        die(e.message);
+    }
     fs.unlink(path);
-    if (result.status != 0)
-        die(nft_apply.refusal({ status: result.status, stderr: result.output }));
+    fs.rmdir(base);
     return count;
 }
 
