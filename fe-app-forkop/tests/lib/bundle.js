@@ -86,6 +86,7 @@ function defaultGlobals() {
     },
     dom: { append: noop, content: noop, findClassInstance: () => null },
     network: { getDevices: () => Promise.resolve([]) },
+    widgets: classesNamed(['DeviceSelect', 'NetworkSelect']),
     E: () => fakeNode(),
     L: {
       toArray: (value) =>

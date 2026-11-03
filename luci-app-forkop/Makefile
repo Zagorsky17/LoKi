@@ -23,6 +23,7 @@ LUCI_LANG.ru:=Русский (Russian)
 LUCI_LANG.en:=English
 LUCI_MAINTAINER:=Zagorsky17
 LUCI_DESCRIPTION:=Web interface for LoKi
+# shortcut: Preserve esbuild output; recheck SDK jsmin before enabling a second minifier.
 LUCI_MINIFY_JS:=0
 
 PKG_LICENSE:=GPL-2.0-or-later
