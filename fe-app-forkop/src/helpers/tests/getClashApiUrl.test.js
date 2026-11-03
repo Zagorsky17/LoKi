@@ -1,11 +1,30 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   canUseDirectClashApi,
   getClashSocketUrl,
   getClashUILoginUrl,
 } from '../getClashApiUrl';
 
+beforeEach(() => vi.stubGlobal('L', { hasViewPermission: () => true }));
+afterEach(() => vi.unstubAllGlobals());
+
 describe('canUseDirectClashApi', () => {
+  it('keeps a reader on the authorized RPC polling path even over HTTP', () => {
+    vi.stubGlobal('L', { hasViewPermission: () => false });
+    vi.stubGlobal('window', {
+      location: { hostname: 'router.example', protocol: 'http:' },
+    });
+    expect(canUseDirectClashApi()).toBe(false);
+  });
+
+  it('does not assume writer access when the permission API is unavailable', () => {
+    vi.stubGlobal('L', undefined);
+    vi.stubGlobal('window', {
+      location: { hostname: 'router.example', protocol: 'http:' },
+    });
+    expect(canUseDirectClashApi()).toBe(false);
+  });
+
   it('allows direct Clash API access from HTTP LuCI', () => {
     vi.stubGlobal('window', {
       location: { hostname: 'router.example', protocol: 'http:' },

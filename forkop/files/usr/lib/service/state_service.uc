@@ -339,6 +339,30 @@ function log_tick() {
 
 function object_methods() {
     return {
+        rpc_read: {
+            call: (request) => require("service.rpc").invoke(request, "rpc_read"),
+            args: { argv: [], request_id: "", ubus_rpc_session: "" }
+        },
+        rpc_write: {
+            call: (request) => require("service.rpc").invoke(request, "rpc_write"),
+            args: { argv: [], request_id: "", ubus_rpc_session: "" }
+        },
+        rpc_read_prepare: {
+            call: (request) => require("service.rpc").prepare(request, "rpc_read"),
+            args: { argv: [], ubus_rpc_session: "" }
+        },
+        rpc_write_prepare: {
+            call: (request) => require("service.rpc").prepare(request, "rpc_write"),
+            args: { argv: [], ubus_rpc_session: "" }
+        },
+        rpc_read_result: {
+            call: (request) => require("service.rpc").result(request, "rpc_read"),
+            args: { id: "", part: "", offset: 0, ubus_rpc_session: "" }
+        },
+        rpc_write_result: {
+            call: (request) => require("service.rpc").result(request, "rpc_write"),
+            args: { id: "", part: "", offset: 0, ubus_rpc_session: "" }
+        },
         state: {
             call: function(request) {
                 return reply_payload();
@@ -424,6 +448,13 @@ function object_methods() {
         config: {
             call: function(request) {
                 reread_changed_config();
+                return { sections: require("service.rpc").public_sections(uci.section_objects(constants.FORKOP_CONFIG_NAME)) };
+            },
+            args: { ubus_rpc_session: "" }
+        },
+        config_private: {
+            call: function(request) {
+                reread_changed_config();
                 return { sections: uci.section_objects(constants.FORKOP_CONFIG_NAME) };
             },
             args: { ubus_rpc_session: "" }
@@ -494,6 +525,7 @@ function run() {
     });
 
     uloop.run();
+    require("service.rpc").shutdown();
     return 0;
 }
 

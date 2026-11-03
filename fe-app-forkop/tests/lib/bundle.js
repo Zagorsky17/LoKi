@@ -89,6 +89,7 @@ function defaultGlobals() {
     widgets: classesNamed(['DeviceSelect', 'NetworkSelect']),
     E: () => fakeNode(),
     L: {
+      hasViewPermission: () => true,
       toArray: (value) =>
         value == null ? [] : Array.isArray(value) ? value : [value],
       bind: (fn, self, ...bound) => fn.bind(self, ...bound),

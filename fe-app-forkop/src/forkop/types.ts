@@ -365,7 +365,17 @@ export namespace Forkop {
   // `status` is what the service is, `busy` what is being done to it; an apply leaves it running.
   export type ServiceBusy = 'start' | 'stop' | 'restart' | 'apply' | 'install';
 
-  export type InstallerAction = 'update' | 'variant' | 'uninstall';
+  export type InstallerAction = 'check' | 'update' | 'variant' | 'uninstall';
+
+  export type UpdateCheckResult =
+    | { schema: 1; success: false; reason: string }
+    | {
+        schema: 1;
+        success: true;
+        available: boolean;
+        installed: { app: string; core: string; variant: string };
+        latest: { app: string; core: string };
+      };
 
   // A run of install.sh as service/installer.uc reports it, with its output from `offset` on.
   export interface InstallerSnapshot {
@@ -379,6 +389,7 @@ export namespace Forkop {
     interrupted?: boolean;
     stop_requested?: boolean;
     changed?: boolean;
+    check_result?: UpdateCheckResult | null;
     started_at?: number | null;
     finished_at?: number | null;
     // install.sh wrote its log during this run

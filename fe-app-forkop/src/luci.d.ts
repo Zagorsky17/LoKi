@@ -299,7 +299,12 @@ declare global {
         description?: string,
       ): CBIMap;
     };
-    JSONMap: { new (data: Record<string, unknown>, title?: string): CBIMap };
+    JSONMap: {
+      new (
+        data: Record<string, unknown>,
+        title?: string | (string | Node)[],
+      ): CBIMap;
+    };
 
     TypedSection: CBISectionClass;
     NamedSection: CBISectionClass;
@@ -467,6 +472,7 @@ declare global {
   const _: (key: string, context?: string) => string;
 
   const L: {
+    hasViewPermission?: () => boolean | null;
     env?: {
       rpctimeout?: number;
       sessionid?: string;

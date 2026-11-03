@@ -164,7 +164,17 @@ describe('the installer', () => {
       ),
     );
     expect(
-      [...acl['luci-app-forkop'].read.ubus[INSTALLER_OBJECT]].sort(),
+      [
+        ...acl['luci-app-forkop'].read.ubus[INSTALLER_OBJECT],
+        ...acl['luci-app-forkop'].write.ubus[INSTALLER_OBJECT],
+      ].sort(),
     ).toEqual(contract.installer.methods);
+    expect(acl['luci-app-forkop'].read.ubus[INSTALLER_OBJECT]).toEqual([
+      'read',
+    ]);
+    expect(acl['luci-app-forkop'].write.ubus[INSTALLER_OBJECT]).toEqual([
+      'input',
+      'stop',
+    ]);
   });
 });

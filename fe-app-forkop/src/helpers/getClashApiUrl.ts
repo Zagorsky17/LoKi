@@ -6,6 +6,8 @@ export function canUseDirectClashApi(): boolean {
   const location = getWindowLocation();
 
   return (
+    typeof L !== 'undefined' &&
+    L.hasViewPermission?.() === true &&
     typeof location?.hostname === 'string' &&
     location.hostname !== '' &&
     location.protocol !== 'https:'

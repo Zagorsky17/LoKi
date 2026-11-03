@@ -5,6 +5,8 @@ return {
     FORKOP_VERSION: "__COMPILED_VERSION_VARIABLE__",
     FORKOP_CONFIG_NAME: "forkop",
     FORKOP_BIN: "/usr/bin/forkop",
+    FORKOP_RPC_OBJECT: "forkop",
+    FORKOP_RPC_DIRECTORY: "/var/run/loki/rpc",
     FORKOP_SERVICE_INIT: "/etc/init.d/forkop",
     // START in the init script, which names its rc.d links.
     FORKOP_START_PRIORITY: "99",

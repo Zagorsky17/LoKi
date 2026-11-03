@@ -8,7 +8,7 @@ let common = require("core.common");
 let installer = require("service.installer");
 
 let me = common.own_pid();
-const MIRROR = "http://10.0.2.2:18090";
+const MIRROR = "https://10.0.2.2:18090";
 
 // The run's directory, and the system's files beside it in a directory of their own.
 function fresh() {
@@ -17,9 +17,18 @@ function fresh() {
     installer.paths.state = dir + "/state.json";
     installer.paths.output = dir + "/output";
     installer.paths.script = dir + "/install.sh";
+    installer.paths.local_script = system + "/install.sh";
+    fs.writefile(installer.paths.local_script, "#!/bin/sh\nexit 0\n");
+    fs.chmod(installer.paths.local_script, 0644);
     installer.paths.manifest = dir + "/release.json";
+    installer.paths.sums = dir + "/SHA256SUMS";
     installer.paths.listing = dir + "/listing.json";
     installer.paths.start_lock = dir + "/start.lock";
+    installer.paths.install_lock = dir + "/install.lock";
+    let ui = require("service.ui");
+    ui.paths.service_action_lock = dir + "/service.lock";
+    ui.paths.service_actions = dir + "/service-actions";
+    ui.paths.reload_lock = dir + "/reload.lock";
     installer.paths.cli = system + "/forkop";
     installer.paths.proc = system + "/proc";
     installer.paths.install_log = system + "/forkop-install.log";
@@ -67,6 +76,14 @@ function kill(pid) {
 let cyrillic = "ж";
 let euro = "€";
 let emoji = "😀";
+
+function real_sha() {
+    return [ "sha256sum", (argv, command) => {
+        let pipe = stub.real.popen(command, "r");
+        let stdout = pipe.read("all");
+        return { stdout, status: pipe.close() };
+    } ];
+}
 
 t.test("the page learns when the run began and ended, and whether install.sh left this run's log", () => {
     fresh();
@@ -191,10 +208,44 @@ t.test("a run whose processes all died is recorded as interrupted, one with a li
     kill(starter);
 });
 
+t.test("mutating starts refuse before locks, state, download or child processes", () => {
+    for (let action in [ "update", "variant", "uninstall" ]) {
+        fresh();
+        uloop.__reset();
+        stub.commands([]);
+        let error = t.throws(() => installer.start(action, "", "0", "en"));
+        let calls = stub.calls();
+        stub.restore();
+        t.contains(error.message, "disabled");
+        t.eq(calls, []);
+        t.eq(state(), null);
+        t.eq(fs.stat(installer.paths.start_lock), null);
+        t.eq(uloop.__processes(), []);
+    }
+});
+
+t.test("a recorded mutating run cannot resume the legacy installer after an upgrade", () => {
+    for (let action in [ "update", "variant", "uninstall" ]) {
+        fresh();
+        write_state({ action });
+        let previous = fs.readfile(installer.paths.state);
+        uloop.__reset();
+        ubus.__reset();
+        stub.commands([]);
+        let result = installer.run("run-1");
+        let calls = stub.calls();
+        stub.restore();
+        t.eq(result, 1);
+        t.eq(calls, []);
+        t.eq(fs.readfile(installer.paths.state), previous);
+        t.eq(uloop.__processes(), []);
+    }
+});
+
 t.test("a start launches the runner, and a start while a run goes on follows that run", () => {
     fresh();
     let launched = [];
-    stub.commands([
+    stub.commands([ real_sha(),
         [ /installer_run/, (argv) => {
             push(launched, argv[length(argv) - 1]);
             let current = state();
@@ -202,31 +253,18 @@ t.test("a start launches the runner, and a start while a run goes on follows tha
             return { stdout: me + "\n" };
         } ]
     ]);
-    let started = installer.start("variant", "", "0", "ru");
+    let started = installer.start("check", "", "0", "ru");
     t.eq(started.started, true);
     t.eq(launched, [ started.id ]);
-    t.eq([ state().action, state().variant, state().purge, state().interactive, state().lang ], [ "variant", "", false, true, "ru" ]);
+    t.eq([ state().action, state().variant, state().purge, state().interactive, state().lang ], [ "check", null, false, false, "ru" ]);
     t.eq(fs.readfile(installer.paths.output), "", "a new run starts with an empty terminal");
 
     let runner = live_process("installer_run");
     fs.writefile(installer.paths.state, sprintf("%J", { ...state(), runner_pid: runner }));
-    let again = installer.start("update", "", "0", "ru");
+    let again = installer.start("check", "", "0", "ru");
     t.eq(again, { id: started.id, started: false });
     t.eq(length(launched), 1, "no second runner");
     kill(runner);
-    stub.restore();
-});
-
-t.test("a removal asks nothing and carries the settings choice", () => {
-    fresh();
-    stub.commands([
-        [ /installer_run/, () => {
-            fs.writefile(installer.paths.state, sprintf("%J", { ...state(), runner_pid: me }));
-            return { stdout: "1\n" };
-        } ]
-    ]);
-    installer.start("uninstall", "", "1", "en");
-    t.eq([ state().purge, state().interactive, state().variant ], [ true, false, null ]);
     stub.restore();
 });
 
@@ -241,8 +279,8 @@ t.test("a start with what install.sh does not take is refused", () => {
 
 t.test("a runner that never records itself leaves an interrupted run", () => {
     fresh();
-    stub.commands([ [ /installer_run/, { stdout: "999999\n" } ] ]);
-    t.contains(t.throws(() => installer.start("update", "", "0", "ru")).message, "The installer did not start");
+    stub.commands([ real_sha(), [ /installer_run/, { stdout: "999999\n" } ] ]);
+    t.contains(t.throws(() => installer.start("check", "", "0", "ru")).message, "The installer did not start");
     stub.restore();
     t.eq([ state().interrupted, state().finished_at != null ], [ true, true ]);
 });
@@ -256,8 +294,21 @@ function run_with(value, steps, source) {
     uloop.__reset();
     stub.env({ FORKOP_DOWNLOAD_URL: source == "api" ? null : MIRROR });
     let result = { status: null };
-    uloop.__on_run(() => steps(result));
-    result.status = installer.run(value.id ?? "run-1");
+    uloop.__on_run(() => { fs.writefile(installer.paths.script, "#!/bin/sh\nexit 0\n"); steps(result); });
+    let original_lstat = fs.lstat;
+    if (value.action == "check") {
+        fs.chmod(installer.paths.local_script, value.local_mode ?? 0644);
+        if (value.local_missing)
+            fs.unlink(installer.paths.local_script);
+        // Root ownership is synthetic; no test writes to the host's package directory.
+        fs.lstat = (path) => {
+            let stat = original_lstat(path);
+            return stat != null && (path == installer.paths.local_script || path == common.parent_dir(installer.paths.local_script)) ? { ...stat, uid: 0 } : stat;
+        };
+    }
+    try { result.status = installer.run(value.id ?? "run-1"); }
+    catch (error) { fs.lstat = original_lstat; die(error.message); }
+    fs.lstat = original_lstat;
     stub.env({});
     return result;
 }
@@ -276,312 +327,86 @@ function fire_once() {
     return length(due);
 }
 
-t.test("the runner downloads install.sh, runs it in a terminal and records how it ended", () => {
-    let seen = {};
-    run_with({}, (result) => {
-        let downloads = uloop.__processes();
-        t.eq(downloads[0].executable, "uclient-fetch");
-        t.contains(join(" ", downloads[0].args), "-O " + installer.paths.script + " " + MIRROR + "/Zagorsky17/LoKi/releases/latest/download/install.sh");
-        t.eq(state().runner_pid, me, "the runner records itself first");
-        uloop.__exit(0, 0);
-        t.contains(join(" ", uloop.__processes()[1].args), "release.json", "an install checks the release first");
-        fs.writefile(installer.paths.manifest, "{\"version\":\"2.0.1\"}");
-        uloop.__exit(1, 0);
-
-        let pump = uloop.__processes()[2];
-        let child = uloop.__processes()[3];
-        t.eq([ pump.executable, pump.args[0], pump.args[3] ], [ "setsid", "sh", installer.paths.output ]);
-        t.eq(child.executable, "/bin/sh");
-        t.matches(child.args[3], /^\/dev\/pts\/[0-9]+$/, "install.sh gets the new terminal");
-        t.eq(slice(child.args, 4), [ installer.paths.script, "--lang", "ru", "--quiet" ]);
-        t.eq(child.env.TERM, "xterm");
-        t.eq(state().child_pid, "" + child.pid);
-
-        seen.running = read(0);
-        seen.typed = ubus.__invoke("forkop.installer", "input", { id: "run-1", data: "2\r" }).replied;
-        seen.other = ubus.__invoke("forkop.installer", "input", { id: "run-0", data: "2\r" }).replied;
-        fs.writefile(installer.paths.output, "Готово!\r\n");
-        // as apk does: a new file renamed over the old one
-        fs.writefile(installer.paths.package_databases[0] + ".new", "forkop 2.0.1\n");
-        fs.rename(installer.paths.package_databases[0] + ".new", installer.paths.package_databases[0]);
-        uloop.__exit(3, 0);
-        t.eq(state().finished_at, null, "what install.sh left in its terminal is read first");
-        uloop.__raise("SIGTERM");
-        uloop.__exit(2, 1);
-        seen.finished = read(0);
-        seen.typed_late = ubus.__invoke("forkop.installer", "input", { id: "run-1", data: "x" }).replied;
-        uloop.__fire("timer");
-    });
-    t.eq([ seen.running.running, seen.running.interactive ], [ true, true ]);
-    t.eq(seen.typed, { accepted: true });
-    t.eq(seen.other, { accepted: false }, "keys for another run");
-    t.eq([ seen.finished.running, seen.finished.exit, seen.finished.changed, seen.finished.data ], [ false, 0, true, "Готово!\r\n" ]);
-    t.eq(seen.typed_late, { accepted: false }, "no keys once install.sh is gone");
-    t.eq([ state().exit, state().changed ], [ 0, true ]);
-    t.ok(fs.stat(installer.paths.script) == null && fs.stat(installer.paths.manifest) == null, "the downloads go");
-});
-
-t.test("a removal skips the release check, asks nothing and takes the run's files along", () => {
-    let seen = {};
-    run_with({ action: "uninstall", purge: true, interactive: false }, () => {
-        uloop.__exit(0, 0);
-        let child = uloop.__processes()[2];
-        t.eq(slice(child.args, 4), [ installer.paths.script, "--lang", "ru", "--quiet", "--uninstall", "--purge" ]);
-        t.contains(child.args[1], "</dev/null");
-        t.eq(ubus.__invoke("forkop.installer", "input", { id: "run-1", data: "y\r" }).replied, { accepted: false });
-        fs.unlink(installer.paths.cli);
-        uloop.__exit(2, 0);
-        uloop.__exit(1, 0);
-        seen.finished = read(0);
-        uloop.__fire("timer");
-    });
-    t.eq([ seen.finished.running, seen.finished.exit ], [ false, 0 ], "the page reads the end while the run lingers");
-    t.eq([ fs.stat(installer.paths.state), fs.stat(installer.paths.output), fs.stat(common.parent_dir(installer.paths.state)) ],
-        [ null, null, null ]);
-});
-
-t.test("a stop ends a download of the run's own and says what install.sh says on an interrupt", () => {
-    let killed = [];
-    let seen = {};
-    stub.commands([ [ "kill", (argv) => { push(killed, join(" ", argv)); return { status: 0 }; } ] ]);
-    run_with({}, () => {
-        t.contains(join(" ", uloop.__processes()[0].args), "-q -T 30 -O");
-        seen.stop = ubus.__invoke("forkop.installer", "stop", { id: "run-1" }).replied;
-        seen.other = ubus.__invoke("forkop.installer", "stop", { id: "run-0" }).replied;
-        seen.stopping = read(0).stop_requested;
-        uloop.__exit(0, -15);
-        uloop.__fire("timer");
-    });
-    stub.restore();
-    t.eq([ seen.stop, seen.other, seen.stopping ], [ { accepted: true }, { accepted: false }, true ]);
-    t.eq(killed, [ "kill 40000" ], "the download alone");
-    t.eq(fs.readfile(installer.paths.output), "\u001b[1;33m[!]\u001b[0m Прервано, ничего не изменено\r\n");
-    t.eq([ state().exit, state().stop_requested, length(uloop.__processes()) ], [ 1, true, 1 ]);
-});
-
 t.test("a stop interrupts install.sh's whole session as Ctrl+C does, once its trap and session exist", () => {
     let killed = [];
     let seen = {};
     let refusals = 1;
-    stub.commands([ [ "kill", (argv) => { push(killed, join(" ", argv)); return { status: refusals-- > 0 ? 1 : 0 }; } ] ]);
-    run_with({}, () => {
-        uloop.__exit(0, 0);
-        uloop.__exit(1, 8);
+    stub.commands([ real_sha(), [ "kill", (argv) => { push(killed, join(" ", argv)); return { status: refusals-- > 0 ? 1 : 0 }; } ] ]);
+    run_with({ action: "check", interactive: false }, () => {
         seen.stop = ubus.__invoke("forkop.installer", "stop", { id: "run-1" }).replied;
         seen.early = length(killed);
-        sigint(40003, "default");
+        sigint(40001, "default");
         fire_once();
         seen.untrapped = length(killed);
-        sigint(40003, "caught");
+        sigint(40001, "caught");
         fire_once();
         fire_once();
-        uloop.__exit(3, 1);
+        uloop.__exit(1, 1);
         seen.late = ubus.__invoke("forkop.installer", "stop", { id: "run-1" }).replied;
-        uloop.__exit(2, 0);
+        uloop.__exit(0, 0);
         uloop.__fire("timer");
     });
     stub.restore();
     t.eq(seen.stop, { accepted: true });
     t.eq([ seen.early, seen.untrapped ], [ 0, 0 ], "nothing before install.sh traps SIGINT");
-    t.eq(killed, [ "kill -INT -- -40003", "kill -INT -- -40003" ], "sent again while the session did not exist yet");
+    t.eq(killed, [ "kill -INT -- -40001", "kill -INT -- -40001" ], "sent again while the session did not exist yet");
     t.eq(seen.late, { accepted: false }, "nothing to stop once install.sh is gone");
     t.eq([ state().exit, state().stop_requested ], [ 1, true ]);
 });
 
-t.test("a stop while install.sh changes packages leaves it to finish, and its end stands", () => {
+t.test("a checker ignoring SIGINT is not sent a destructive signal", () => {
     let killed = [];
     let seen = {};
-    stub.commands([ [ "kill", (argv) => { push(killed, join(" ", argv)); return { status: 0 }; } ] ]);
-    run_with({}, () => {
-        uloop.__exit(0, 0);
-        uloop.__exit(1, 8);
-        sigint(40003, "ignored");
+    stub.commands([ real_sha(), [ "kill", (argv) => { push(killed, join(" ", argv)); return { status: 0 }; } ] ]);
+    run_with({ action: "check", interactive: false }, () => {
+        sigint(40001, "ignored");
         seen.stop = ubus.__invoke("forkop.installer", "stop", { id: "run-1" }).replied;
         seen.retries = fire_once();
-        uloop.__exit(3, 0);
-        uloop.__exit(2, 0);
+        uloop.__exit(1, 0);
+        uloop.__exit(0, 0);
         uloop.__fire("timer");
     });
     stub.restore();
     t.eq([ seen.stop, seen.retries ], [ { accepted: true }, 0 ]);
     t.eq(killed, [], "nothing reaches the package manager");
-    t.eq([ state().exit, state().stop_requested ], [ 0, true ]);
-});
-
-t.test("Ctrl+C sent to the terminal is the stop, never the terminal's own SIGINT", () => {
-    let seen = {};
-    run_with({}, () => {
-        uloop.__exit(0, 0);
-        uloop.__exit(1, 8);
-        seen.typed = ubus.__invoke("forkop.installer", "input", { id: "run-1", data: "\u0003" }).replied;
-        seen.stopping = read(0).stop_requested;
-        uloop.__exit(3, 1);
-        uloop.__exit(2, 0);
-        uloop.__fire("timer");
-    });
-    t.eq([ seen.typed, seen.stopping, state().stop_requested ], [ { accepted: true }, true, true ]);
-});
-
-t.test("install.sh that cannot be downloaded is tried three times and said as install.sh says it", () => {
-    let fail_three_times = () => {
-        for (let i = 0; i < 3; i++) {
-            uloop.__exit(i, 4);
-            uloop.__fire("timer");
-        }
-    };
-    run_with({ lang: "en" }, () => {
-        fail_three_times();
-        t.eq(uloop.__processes()[3].executable + " " + join(" ", uloop.__processes()[3].args), "nslookup api.github.com");
-        uloop.__exit(3, 1);
-        uloop.__fire("timer");
-    }, "api");
-    t.eq(fs.readfile(installer.paths.output),
-        "\u001b[1;31m[x]\u001b[0m Cannot download install.sh\r\n\u001b[1;33m[!]\u001b[0m The router cannot resolve api.github.com: check its DNS and internet connection\r\n");
-    t.eq(state().exit, 1);
-
-    run_with({}, () => {
-        fail_three_times();
-        uloop.__exit(3, 0);
-        uloop.__fire("timer");
-    }, "api");
-    t.eq(fs.readfile(installer.paths.output),
-        "\u001b[1;31m[x]\u001b[0m Не удалось скачать install.sh\r\n\u001b[1;33m[!]\u001b[0m Проверьте, открывается ли api.github.com с роутера\r\n");
-
-    run_with({}, () => {
-        fs.writefile(installer.paths.listing, "{\"tag_name\":\"1.0.5\",\"assets\":[{\"name\":\"forkop_1.0.5.apk\",\"url\":\"https://api.github.com/x/1\"}]}");
-        uloop.__exit(0, 0);
-        uloop.__fire("timer");
-    }, "api");
-    t.eq([ length(uloop.__processes()), state().exit ], [ 1, 1 ], "nothing is fetched for a file the listing has not got");
-    t.eq(fs.readfile(installer.paths.output), "\u001b[1;31m[x]\u001b[0m В последнем релизе LoKi нет install.sh\r\n",
-        "a release that predates install.sh, as 1.0.5 does");
-
-    run_with({}, () => {
-        uloop.__exit(0, 8);
-        t.eq(join(" ", uloop.__processes()[1].args), "-q -T 30 -O " + installer.paths.listing + " https://api.github.com/rate_limit",
-            "an answer of the server's own is not tried again, and the rate limit is looked up");
-        fs.writefile(installer.paths.listing, "{\"resources\":{\"core\":{\"limit\":60,\"remaining\":0}}}");
-        uloop.__exit(1, 0);
-        uloop.__fire("timer");
-    }, "api");
-    t.eq(fs.readfile(installer.paths.output),
-        "\u001b[1;31m[x]\u001b[0m GitHub пока не принимает запросы с этого адреса: без входа он даёт 60 запросов в час\r\n" +
-        "\u001b[1;33m[!]\u001b[0m Запустите снова позже: лимит сбрасывается в течение часа\r\n");
-
-    run_with({}, () => {
-        uloop.__exit(0, 8);
-        fs.writefile(installer.paths.listing, "{\"resources\":{\"core\":{\"limit\":60,\"remaining\":41}}}");
-        uloop.__exit(1, 0);
-        uloop.__fire("timer");
-    }, "api");
-    t.eq(fs.readfile(installer.paths.output), "\u001b[1;31m[x]\u001b[0m В последнем релизе LoKi нет install.sh\r\n",
-        "an HTTP error with requests left is a missing release");
-
-    run_with({}, () => {
-        uloop.__exit(0, 8);
-        uloop.__fire("timer");
-    });
-    t.eq([ length(uloop.__processes()), fs.readfile(installer.paths.output) ],
-        [ 1, "\u001b[1;31m[x]\u001b[0m В последнем релизе LoKi нет install.sh\r\n" ], "a mirror's HTTP error is a missing file");
-});
-
-t.test("through GitHub's API the run reads the release's listing, then its files at their addresses there", () => {
-    run_with({}, () => {
-        let listing = uloop.__processes()[0];
-        t.eq([ listing.executable, join(" ", listing.args) ],
-            [ "uclient-fetch", "-q -T 30 -O " + installer.paths.listing + " https://api.github.com/repos/Zagorsky17/LoKi/releases/latest" ]);
-        fs.writefile(installer.paths.listing, "{\"assets\":[{\"name\":\"install.sh\",\"url\":\"https://api.github.com/repos/Zagorsky17/LoKi/releases/assets/1\"}," +
-            "{\"name\":\"release.json\",\"url\":\"https://api.github.com/repos/Zagorsky17/LoKi/releases/assets/2\"}]}");
-        uloop.__exit(0, 0);
-        t.eq(join(" ", uloop.__processes()[1].args), "-q -T 30 --header=Accept: application/octet-stream -O " + installer.paths.script +
-            " https://api.github.com/repos/Zagorsky17/LoKi/releases/assets/1");
-        uloop.__exit(1, 0);
-        t.eq(uloop.__processes()[2].args[5], installer.paths.manifest);
-        t.eq(uloop.__processes()[2].args[6], "https://api.github.com/repos/Zagorsky17/LoKi/releases/assets/2");
-        fs.writefile(installer.paths.manifest, "{\"version\":\"2.0.1\"}");
-        uloop.__exit(2, 0);
-        t.eq(uloop.__processes()[4].args[4], installer.paths.script, "install.sh runs");
-        uloop.__exit(4, 0);
-        uloop.__exit(3, 0);
-        uloop.__fire("timer");
-    }, "api");
-    t.eq(state().exit, 0);
-    t.eq(fs.stat(installer.paths.listing), null, "the listing goes with the downloads");
-});
-
-t.test("a stop between two tries of a download ends the run at once", () => {
-    run_with({}, () => {
-        uloop.__exit(0, 4);
-        t.eq(ubus.__invoke("forkop.installer", "stop", { id: "run-1" }).replied, { accepted: true });
-        t.eq(uloop.__fire("timer"), 1, "only the linger: the next try is gone");
-    });
-    t.eq(fs.readfile(installer.paths.output), "\u001b[1;33m[!]\u001b[0m Прервано, ничего не изменено\r\n");
-    t.eq([ state().exit, length(uloop.__processes()) ], [ 1, 1 ]);
-});
-
-t.test("a release that installs only from a console is shown, not installed", () => {
-    run_with({ action: "variant", variant: "" }, () => {
-        uloop.__exit(0, 0);
-        fs.writefile(installer.paths.manifest, "{\"version\":\"3.0.0\",\"install_command\":\"sh <(wget -O - https://x/install.sh)\"}");
-        uloop.__exit(1, 0);
-        uloop.__fire("timer");
-    });
-    t.eq(fs.readfile(installer.paths.output),
-        "\u001b[1;33m[!]\u001b[0m LoKi 3.0.0 устанавливается только этой командой в консоли:\r\nsh <(wget -O - https://x/install.sh)\r\n");
-    t.eq([ state().exit, length(uloop.__processes()) ], [ 1, 2 ]);
-});
-
-t.test("a missing release.json leaves the check to install.sh", () => {
-    run_with({}, () => {
-        uloop.__exit(0, 0);
-        uloop.__exit(1, 8);
-        t.eq(length(uloop.__processes()), 4, "install.sh runs");
-        uloop.__exit(2, 1);
-        uloop.__exit(3, 3);
-        uloop.__fire("timer");
-    });
-    t.eq(state().exit, 3);
+    t.eq([ state().exit, state().stop_requested ], [ 1, true ]);
 });
 
 t.test("a terminal that never lets go is left after a while, and the run ends", () => {
     let killed = [];
-    stub.commands([ [ "kill", (argv) => { push(killed, join(" ", argv)); return { status: 0 }; } ] ]);
-    run_with({}, () => {
-        uloop.__exit(0, 0);
-        uloop.__exit(1, 8);
-        uloop.__exit(3, 0);
+    stub.commands([ real_sha(), [ "kill", (argv) => { push(killed, join(" ", argv)); return { status: 0 }; } ] ]);
+    run_with({ action: "check", interactive: false }, () => {
+        uloop.__exit(1, 0);
         uloop.__fire("timer");
         uloop.__fire("timer");
     });
     stub.restore();
-    t.eq(killed, [ "kill -- -40002" ], "the pump's whole session");
-    t.eq(state().exit, 0);
+    t.eq(killed, [ "kill -- -40000" ], "the pump's whole session");
+    t.eq(state().exit, 1);
 });
 
 t.test("past the output limit the terminal is read into nothing, and that reader ends the run", () => {
     let killed = [];
-    stub.commands([ [ "kill", (argv) => { push(killed, join(" ", argv)); return { status: 0 }; } ] ]);
-    run_with({}, () => {
-        uloop.__exit(0, 0);
-        uloop.__exit(1, 8);
+    stub.commands([ real_sha(), [ "kill", (argv) => { push(killed, join(" ", argv)); return { status: 0 }; } ] ]);
+    run_with({ action: "check", interactive: false }, () => {
         uloop.__fire("interval");
-        t.eq(length(uloop.__processes()), 4, "nothing to cap yet");
+        t.eq(length(uloop.__processes()), 2, "nothing to cap yet");
         fs.writefile(installer.paths.output, sprintf("%" + (installer.OUTPUT_LIMIT + 1) + "s", ""));
         uloop.__fire("interval");
-        let reader = uloop.__processes()[4];
+        let reader = uloop.__processes()[2];
         t.eq([ reader.executable, reader.args[3] ], [ "setsid", installer.paths.output ]);
         t.contains(reader.args[2], ">/dev/null");
         uloop.__fire("interval");
-        t.eq(length(uloop.__processes()), 5, "capped once");
-        uloop.__exit(2, -15);
-        uloop.__exit(3, 0);
+        t.eq(length(uloop.__processes()), 3, "capped once");
+        uloop.__exit(0, -15);
+        uloop.__exit(1, 0);
         t.eq(state().finished_at, null, "the pump it replaced does not end the run");
-        uloop.__exit(4, 1);
+        uloop.__exit(2, 1);
         uloop.__fire("timer");
     });
     stub.restore();
-    t.eq(killed, [ "kill -- -40002" ]);
-    t.eq(state().exit, 0);
+    t.eq(killed, [ "kill -- -40000" ]);
+    t.eq(state().exit, 1);
 });
 
 t.test("a run another one is not is left alone", () => {
@@ -590,6 +415,114 @@ t.test("a run another one is not is left alone", () => {
     t.eq(installer.run("run-1"), 1);
     write_state({ finished_at: common.now_seconds(), exit: 0 });
     t.eq(installer.run("run-1"), 1, "a finished run");
+});
+
+t.test("release validation still rejects malformed manifests and modified bytes behind the apply gate", () => {
+    let manifest = { schema: 1, name: "forkop", version: "2.0.1", tag: "2.0.1", requires: { "sing-box-forkop": "1.14.4-r4" } };
+    t.eq(installer.valid_manifest(sprintf("%J", manifest)), true);
+    for (let value in [ null, "not json", "{}", sprintf("%J", { ...manifest, schema: 2 }),
+        sprintf("%J", { ...manifest, name: "other" }), sprintf("%J", { ...manifest, version: "2.0.1; id" }),
+        sprintf("%J", { ...manifest, requires: {} }), sprintf("%J", { ...manifest, tag: "../../other" }) ])
+        t.eq(installer.valid_manifest(value), false);
+    fresh();
+    fs.writefile(installer.paths.script, "#!/bin/sh\nexit 0\n");
+    let pipe = stub.real.popen("sha256sum '" + installer.paths.script + "'", "r");
+    let digest = split(pipe.read("all"), " ")[0];
+    pipe.close();
+    t.eq(installer.verified_file(installer.paths.script, "install.sh", digest + "  install.sh\n"), true);
+    fs.writefile(installer.paths.script, "#!/bin/sh\necho modified\n");
+    t.eq(installer.verified_file(installer.paths.script, "install.sh", digest + "  install.sh\n"), false);
+});
+
+t.test("release asset URLs cannot leave the fixed HTTPS LoKi API namespace", () => {
+    for (let url in [ "http://api.github.com/repos/Zagorsky17/LoKi/releases/assets/1", "https://elsewhere.invalid/asset", "file:///etc/passwd",
+        "https://api.github.com/repos/other/project/releases/assets/1", "https://api.github.com@elsewhere.invalid/asset",
+        "https://api.github.com/repos/Zagorsky17/LoKi/releases/assets/1?token=synthetic-secret" ])
+        t.eq(installer.asset_url(sprintf("%J", { assets: [ { name: "install.sh", url } ] }), "install.sh"), null);
+});
+
+t.test("checks are noninteractive and retain a structured result without package reload", () => {
+    t.eq(installer.install_arguments("check", "", false, "en"), [ "--lang", "en", "--quiet", "--check" ]);
+    let result = { schema: 1, success: true, available: false, installed: { app: "2.0.0", core: "1.14.4-r3", variant: "base" },
+        latest: { app: "2.0.0", core: "1.14.4-r3" } };
+    run_with({ action: "check", interactive: false }, () => {
+        t.eq(length(uloop.__processes()), 2);
+        t.eq(length(filter(uloop.__processes(), (process) => process.executable == "uclient-fetch")), 0);
+        t.contains(join(" ", uloop.__processes()[1].args), "--check");
+        fs.writefile(installer.paths.output, sprintf("%J\n", result));
+        fs.writefile(installer.paths.package_databases[0], "changed elsewhere");
+        uloop.__exit(1, 0);
+        uloop.__exit(0, 0);
+    });
+    t.eq([ state().exit, state().changed, state().check_result ], [ 0, false, result ]);
+    for (let output in [ "", "not json", "{\"schema\":1,\"success\":true,\"available\":false}", sprintf("%J\n%J", result, result) ])
+        t.eq(installer.parse_update_result(output), null, output);
+    t.eq(installer.parse_update_result('{"schema":1,"success":false,"reason":"network"}'), { schema: 1, success: false, reason: "network" });
+});
+
+t.test("a live SSH installer or service job excludes another LuCI installer start", () => {
+    fresh();
+    let lock = require("service.lock");
+    lock.acquire(installer.paths.install_lock, me);
+    t.eq(installer.active(), true);
+    t.contains(t.throws(() => installer.start("check", "", "0", "en")).message, "running");
+    t.eq(state(), null);
+    lock.release(installer.paths.install_lock, me);
+    let ui = require("service.ui");
+    common.ensure_dir(ui.paths.service_actions);
+    fs.writefile(ui.paths.service_actions + "/busy.json", sprintf("%J", { action: "reload", running: true, pid: me, started_at: common.now_seconds() }));
+    t.contains(t.throws(() => installer.start("check", "", "0", "ru")).message, "running");
+    t.eq(state(), null);
+});
+
+t.test("bootstrap SHA entries and asset names are unique and canonical", () => {
+    fresh();
+    fs.writefile(installer.paths.script, "#!/bin/sh\nexit 0\n");
+    let pipe = stub.real.popen("sha256sum '" + installer.paths.script + "'", "r");
+    let digest = split(pipe.read("all"), " ")[0];
+    pipe.close();
+    let valid = digest + "  install.sh\n";
+    t.eq(installer.verified_file(installer.paths.script, "install.sh", valid), true);
+    for (let sums in [ "", valid + valid, digest + "  install.sh extra\n", "nothex  install.sh\n", digest + "  other.sh\n" ])
+        t.eq(installer.verified_file(installer.paths.script, "install.sh", sums), false, sums);
+    let asset = { name: "install.sh", url: "https://api.github.com/repos/Zagorsky17/LoKi/releases/assets/1" };
+    t.eq(installer.asset_url(sprintf("%J", { assets: [ asset, asset ] }), "install.sh"), null);
+});
+
+t.test("read checks refuse a missing or writable installed resolver without remote fallback", () => {
+    for (let options in [ { local_missing: true }, { local_mode: 0666 } ]) {
+        run_with({ action: "check", interactive: false, ...options }, () => {
+            t.eq(length(uloop.__processes()), 0);
+        });
+        t.eq([ state().exit, state().check_result.success ], [ 1, false ]);
+    }
+    let file = { type: "file", uid: 0, mode: 0644, size: 100 };
+    let directory = { type: "directory", uid: 0, mode: 0755 };
+    t.eq(installer.protected_checker(file, directory), true);
+    for (let change in [ { uid: 1000 }, { mode: 0664 }, { type: "link" }, { size: 0 }, { size: 524289 } ])
+        t.eq(installer.protected_checker({ ...file, ...change }, directory), false);
+    for (let change in [ { uid: 1000 }, { mode: 0777 }, { type: "link" } ])
+        t.eq(installer.protected_checker(file, { ...directory, ...change }), false);
+});
+
+t.test("a check cannot report success after a failed child or a failed result with exit zero", () => {
+    let success = { schema: 1, success: true, available: false, installed: { app: "2.0.0", core: "1.14.4-r3", variant: "base" }, latest: { app: "2.0.0", core: "1.14.4-r3" } };
+    for (let code in [ 1, -9 ]) {
+        run_with({ action: "check", interactive: false }, () => {
+            fs.writefile(installer.paths.output, sprintf("%J\n", success));
+            uloop.__exit(1, code);
+            uloop.__exit(0, 0);
+        });
+        t.eq(state().check_result.success, false);
+        t.ok(state().exit != 0);
+    }
+    run_with({ action: "check", interactive: false }, () => {
+        fs.writefile(installer.paths.output, '{"schema":1,"success":false,"reason":"network"}\n');
+        uloop.__exit(1, 0);
+        uloop.__exit(0, 0);
+    });
+    t.eq(state().check_result.success, false);
+    t.ok(state().exit != 0);
 });
 
 t.done();

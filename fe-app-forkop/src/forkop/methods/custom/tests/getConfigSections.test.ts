@@ -40,14 +40,28 @@ describe('the configuration the runtime views read', () => {
     );
   });
 
-  it('is the session view when no state service answers for it', async () => {
+  it('fails without falling back to raw UCI when the state service is unavailable', async () => {
     mocks.callUbus.mockResolvedValue({
       success: false,
       message: 'Method not found',
       unavailable: true,
     });
 
-    expect(await getConfigSections()).toEqual(unsaved);
+    await expect(getConfigSections()).rejects.toThrow('Method not found');
+    expect(uci.load).not.toHaveBeenCalled();
+  });
+
+  it('requests the private configuration only for a writable view', async () => {
+    vi.stubGlobal('L', { hasViewPermission: () => true });
+    mocks.callUbus.mockResolvedValue({
+      success: true,
+      data: { sections: applied },
+    });
+    expect(await getConfigSections()).toEqual(applied);
+    expect(mocks.callUbus).toHaveBeenCalledWith(
+      expect.objectContaining({ method: 'config_private' }),
+    );
+    vi.stubGlobal('L', { hasViewPermission: () => false });
   });
 
   it('is an error when the state service fails', async () => {

@@ -142,7 +142,7 @@ const COMMANDS = {
     get_core_features: { help: "Get what the installed sing-box can do, from the tags it was built with, in JSON format", run: json(() => require("singbox.features").report()) },
     service_action_async: { args: 1, usage: "<action>", help: "Start a service action in the background", run: action_reply((action) => ui().start_action(action)) },
     ui_action_ack: { args: 1, usage: "<job>", help: "Acknowledge a finished service action state", run: action_reply((job) => ui().acknowledge(job)) },
-    installer_start: { args: 4, usage: "<update|variant|uninstall> <variant> <purge> <lang>", help: "Run install.sh in the background for the Components tab", run: reply((action, variant, purge, lang) => installer().start(action, variant, purge, lang)) },
+    installer_start: { args: 4, usage: "<check|update|variant|uninstall> <variant> <purge> <lang>", help: "Run install.sh in the background for the Components tab", run: reply((action, variant, purge, lang) => installer().start(action, variant, purge, lang)) },
     installer_status: { args: 1, usage: "[offset]", help: "Show the Components tab's run of install.sh in JSON format", run: json((offset) => installer().status(offset)) },
     installer_run: { args: 1, run: (args) => installer().run(args[0]) },
     installer_log: { help: "Print the log of install.sh's last run", run: installer_log },
@@ -181,7 +181,7 @@ function help() {
     }
 }
 
-function main(argv, lib) {
+function dispatch(argv, lib) {
     library.set_dir(lib);
     let command = COMMANDS[argv[0] ?? ""];
     if (command == null) {
@@ -195,4 +195,55 @@ function main(argv, lib) {
     return command.run(args) ?? 0;
 }
 
-return { main, COMMANDS };
+// The RPC broker validates before spawning, and the child rechecks before dispatch.
+function read_allowed(argv) {
+    for (let arg in argv)
+        if (type(arg) != "string" || length(arg) > 65536 || index(arg, chr(0)) >= 0 || match(arg, /[[:cntrl:]]/))
+            return false;
+    let name = argv[0];
+    if (length(argv) == 1 && index([ "check_service", "check_dns", "check_traffic", "check_logs", "clash_summary",
+        "get_status", "get_system_info", "get_ui_state", "get_core_features", "show_version" ], name) >= 0)
+        return true;
+    if (name == "show_config" || name == "show_sing_box_config")
+        return length(argv) == 2 && argv[1] == "masked";
+    if (name == "report")
+        return length(argv) == 3 && argv[1] == "masked";
+    if (name == "installer_status")
+        return length(argv) == 2 && match(argv[1], /^[0-9]{1,9}$/) != null;
+    if (name == "installer_log")
+        return length(argv) == 1;
+    if (name == "installer_start")
+        return length(argv) == 5 && argv[1] == "check" && argv[2] == "" && argv[3] == "0" &&
+            index([ "ru", "en" ], argv[4]) >= 0;
+    if (name == "clash_api")
+        return length(argv) == 4 && argv[1] == "GET" && argv[3] == "" &&
+            index([ "/proxies", "/providers/proxies", "/connections" ], argv[2]) >= 0;
+    return false;
+}
+
+function write_allowed(argv) {
+    if (read_allowed(argv))
+        return true;
+    let name = argv[0];
+    if (length(argv) == 1)
+        return index([ "enable", "disable", "get_subscription_default_headers" ], name) >= 0;
+    if (length(argv) == 2 && name == "service_action_async")
+        return index([ "start", "stop", "restart", "reload" ], argv[1]) >= 0;
+    if (length(argv) == 2 && name == "ui_action_ack")
+        return length(argv[1]) <= 128 && match(argv[1], /^[0-9]+-[0-9]+$/) != null;
+    if (length(argv) == 2 && (name == "show_config" || name == "show_sing_box_config"))
+        return argv[1] == "raw";
+    if (length(argv) == 3 && name == "report")
+        return argv[1] == "raw";
+    if (length(argv) == 5 && name == "installer_start")
+        return index([ "update", "variant", "uninstall" ], argv[1]) >= 0 &&
+            index([ "", "base", "full", "tiny" ], argv[2]) >= 0 && index([ "0", "1" ], argv[3]) >= 0 &&
+            index([ "ru", "en" ], argv[4]) >= 0;
+    return name == "clash_api" && length(argv) == 4 && require("singbox.clash_api").allowed(argv[1], argv[2], argv[3]);
+}
+
+function main(argv, lib) {
+    return argv[0] == "rpc_dispatch" ? require("service.rpc").run(slice(argv, 2), lib, argv[1]) : dispatch(argv, lib);
+}
+
+return { main, dispatch, read_allowed, write_allowed, COMMANDS };

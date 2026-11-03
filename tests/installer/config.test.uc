@@ -16,6 +16,8 @@ function isolated(action, options) {
     fs.writefile(foreign, "foreign data");
     let source = replace(SOURCE, /\nmain "\$@"\s*$/, "\n");
     source = replace(source, /\/etc\/config\/forkop/g, config);
+    source = replace(source, /\/etc\/config\/sing-box/g, foreign);
+    source = replace(source, /\/etc\/sing-box/g, dir + "/foreign-directory");
     let script = dir + "/test.sh";
     fs.writefile(script, source + "\n" +
         "WORK='" + dir + "' LOG='" + dir + "/log' EVENTS='" + dir + "/events'\n" +
@@ -84,7 +86,6 @@ t.test("legacy state is not deleted and an own backup copies rather than moves t
     t.excludes(SOURCE, "LEGACY_FILES=");
 });
 
-
 t.test("setup failures name LoKi and require review of a masked report before sharing", () => {
     for (let language in [ "en", "ru" ]) {
         let result = isolated("RU=" + (language == "ru" ? "1" : "0") + "; F_VERSION=2.0.0; FILE_CORE=; FILE_APP=; FILE_I18N=; FILE_IP=; REMOVE_PKGS=; " +
@@ -100,6 +101,21 @@ t.test("setup failures name LoKi and require review of a masked report before sh
         t.eq(result.config, "original synthetic-secret");
         t.eq(result.foreign, "foreign data");
     }
+});
+
+t.test("successful updates preserve unrelated conffile copies", () => {
+    let result = isolated("CONFFILE_COPIES=\"$LEFTOVERS\" FILE_FORKOP=''; clean_up_after");
+    t.eq(result.status, 0, result.output);
+    t.eq(result.foreign, "foreign data");
+    t.eq(result.config, "original synthetic-secret");
+});
+
+t.test("uninstall purge preserves generic sing-box settings owned by another application", () => {
+    let result = isolated("PURGE=1; DB_PHASE=0; needed_by() { :; }; may_ask() { return 1; }; " +
+        "refresh_db() { DB_PHASE=$((DB_PHASE + 1)); }; pkg_version() { [ \"$DB_PHASE:$1\" != 1:forkop ] || echo 2.0.0; }; " +
+        "cleanup() { :; }; deadline() { :; }; perform() { :; }; find() { :; }; cp() { :; }; gone() { :; }; dropped() { :; }; uninstall");
+    t.eq(result.status, 0, result.output);
+    t.eq(result.foreign, "foreign data");
 });
 
 t.done();

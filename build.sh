@@ -248,6 +248,7 @@ build_backend_root() {
   install -m 0755 "$ROOT_DIR/forkop/files/etc/init.d/forkop-state" "$output_root/etc/init.d/forkop-state"
   install -m 0644 "$ROOT_DIR/forkop/files/etc/config/forkop" "$output_root/etc/config/forkop"
   install -m 0644 "$ROOT_DIR/forkop/files/etc/config/forkop" "$output_root/usr/share/forkop/default-config"
+  install -m 0644 "$ROOT_DIR/install.sh" "$output_root/usr/share/forkop/install.sh"
   install -m 0755 "$ROOT_DIR/forkop/files/usr/bin/forkop" "$output_root/usr/bin/forkop"
   cp -a "$ROOT_DIR/forkop/files/usr/lib/." "$output_root/usr/lib/forkop/"
   install -m 0644 "$ROOT_DIR/forkop/files/usr/share/nftables.d/chain-pre/input/forkop.nft" \

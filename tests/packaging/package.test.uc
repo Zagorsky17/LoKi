@@ -8,6 +8,8 @@ let repo = require("repo");
 let constants = require("core.constants");
 let singbox_constants = require("singbox.constants");
 let cli = require("service.cli");
+let stub = require("stub");
+let exec = require("core.exec");
 
 const MAKEFILE = fs.readfile(repo.path("forkop/Makefile"));
 const BUILD_SH = fs.readfile(repo.path("build.sh"));
@@ -202,7 +204,6 @@ t.test("packages contain only LoKi's configuration migration framework", () => {
         t.eq(match(name, /^forkop-1\.0\..*\.conf$/), null);
 });
 
-
 t.test("LoKi menu labels retain the technical route and permission identifiers", () => {
     let menu = json(fs.readfile(repo.path("luci-app-forkop/root/usr/share/luci/menu.d/luci-app-forkop.json")));
     t.eq(keys(menu), [ "admin/services/forkop" ]);
@@ -212,8 +213,35 @@ t.test("LoKi menu labels retain the technical route and permission identifiers",
     let acl = json(fs.readfile(repo.path("luci-app-forkop/root/usr/share/rpcd/acl.d/luci-app-forkop.json")));
     t.eq(keys(acl), [ "luci-app-forkop" ]);
     t.contains(acl["luci-app-forkop"].description, "LoKi");
-    t.contains(acl["luci-app-forkop"].read.uci, "forkop");
-    t.eq(acl["luci-app-forkop"].read.file["/usr/bin/loki"], null);
+    t.eq(acl["luci-app-forkop"].write.uci.forkop, [ "read", "write" ]);
+    t.eq(acl["luci-app-forkop"].read.file, null);
+});
+
+t.test("the RPC implementation and the local resolver replace the executable reader", () => {
+    t.eq(fs.stat(repo.path("forkop/files/usr/bin/forkop-read")), null);
+    t.excludes(BUILD_SH, 'forkop-read');
+    t.excludes(MAKEFILE, 'forkop-read');
+    t.contains(MAKEFILE, '$(INSTALL_DATA) ../install.sh $(1)/usr/share/forkop/install.sh');
+    t.contains(BUILD_SH, 'install -m 0644 "$ROOT_DIR/install.sh" "$output_root/usr/share/forkop/install.sh"');
+    t.contains(fs.readfile(repo.path("forkop/files/usr/lib/service/lifecycle.uc")), '"/usr/share/forkop/install.sh"');
+    t.excludes(fs.readfile(repo.path("forkop/files/usr/lib/service/lifecycle.uc")), '"/usr/bin/forkop-read"');
+});
+
+t.test("the actual backend root includes trusted RPC and the installed resolver", () => {
+    let dir = stub.tmpdir();
+    let start = index(BUILD_SH, "\nmake_dir() {");
+    let end = index(BUILD_SH, "\nbuild_app_root() {");
+    t.ok(start >= 0 && end > start);
+    let script = dir + "/root.sh";
+    fs.writefile(script, "set -euo pipefail\n" + substr(BUILD_SH, start, end - start) +
+        '\nROOT_DIR=$1 RELEASE_VERSION=2.0.0; build_backend_root "$2"\n');
+    let root = dir + "/root";
+    let run = exec.combined([ "bash", script, repo.root, root ]);
+    t.eq(run.status, 0, run.output);
+    t.eq(fs.stat(root + "/usr/bin/forkop-read"), null);
+    t.eq(fs.readfile(root + "/usr/lib/forkop/service/rpc.uc"), fs.readfile(repo.path("forkop/files/usr/lib/service/rpc.uc")));
+    t.eq(fs.stat(root + "/usr/share/forkop/install.sh").mode & 0777, 0644);
+    t.eq(fs.readfile(root + "/usr/share/forkop/install.sh"), fs.readfile(repo.path("install.sh")));
 });
 
 // Evaluate the real initializers only: package/network actions lie after this boundary.

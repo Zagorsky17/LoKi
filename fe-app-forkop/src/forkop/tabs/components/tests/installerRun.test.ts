@@ -15,6 +15,7 @@ interface Router {
   interactive: boolean;
   exit: number | null;
   changed: boolean;
+  checkResult?: Forkop.UpdateCheckResult | null;
   stopRequested: boolean;
   output: string;
   alive: boolean;
@@ -35,6 +36,7 @@ function snapshotOf(router: Router, offset: number): Forkop.InstallerSnapshot {
     interrupted: false,
     stop_requested: router.stopRequested,
     changed: router.changed,
+    check_result: router.checkResult,
     offset,
     next: offset + data.length,
     data,
@@ -368,4 +370,32 @@ describe('after a run', () => {
     ).toBe('reload');
     expect(afterRun(base)).toBeNull();
   });
+});
+
+it('retains a read-only check result and never reloads even if packages changed elsewhere', async () => {
+  const result = {
+    schema: 1 as const,
+    success: true as const,
+    available: true,
+    installed: { app: '2.0.0', core: '1.14.4-r3', variant: 'base' },
+    latest: { app: '2.0.1', core: '1.14.4-r4' },
+  };
+  const page = setup({ action: 'check', interactive: false });
+  page.run.setShown(true);
+  await vi.advanceTimersByTimeAsync(0);
+  Object.assign(page.router, {
+    running: false,
+    exit: 0,
+    changed: true,
+    checkResult: result,
+  });
+  await vi.advanceTimersByTimeAsync(5000);
+  expect(page.state().checkResult).toEqual(result);
+  expect(page.state().after).toBeNull();
+  expect(page.after).toEqual([]);
+  await page.run.input('y');
+  expect(page.api.input).not.toHaveBeenCalled();
+  expect(
+    afterRun({ ...page.state(), action: 'check', changed: true }),
+  ).toBeNull();
 });

@@ -27,7 +27,6 @@ vi.mock('../../../../helpers/isCopyableProxyLink', () => ({
 }));
 
 import {
-  closeAllClashApiConnections,
   getClashApiConnections,
   getClashApiConnectionsSummary,
   getClashApiGroupLatency,
@@ -920,7 +919,7 @@ describe('getDashboardSections', () => {
     vi.stubGlobal('fetch', neverAnsweringFetch());
     vi.useFakeTimers();
 
-    const pending = closeAllClashApiConnections();
+    const pending = setClashApiGroupProxy('Office', 'Office/Node');
     await vi.advanceTimersByTimeAsync(60000);
     const result = await pending;
     vi.useRealTimers();

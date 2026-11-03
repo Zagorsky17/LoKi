@@ -7,8 +7,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: FORKOP\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-03 04:52+0300\n"
-"PO-Revision-Date: 2026-11-03 04:52+0300\n"
+"POT-Creation-Date: 2026-11-03 15:13+0300\n"
+"PO-Revision-Date: 2026-11-03 15:13+0300\n"
 "Last-Translator: ushan0v\n"
 "Language-Team: none\n"
 "Language: ru\n"
@@ -265,6 +265,12 @@ msgstr "Изменить параметры серверов, которые д�
 
 msgid "Check again"
 msgstr "Проверить снова"
+
+msgid "Check for updates"
+msgstr "Проверить обновления"
+
+msgid "Check for updates to see the available versions"
+msgstr "Проверьте обновления, чтобы увидеть доступные версии"
 
 msgid "Check interval"
 msgstr "Интервал проверки"
@@ -1061,6 +1067,9 @@ msgstr "Нет секций с прокси"
 msgid "No tag field"
 msgstr "Нет поля tag"
 
+msgid "No updates available"
+msgstr "Обновлений нет"
+
 msgid "Node list is empty"
 msgstr "Список узлов пуст"
 
@@ -1129,6 +1138,9 @@ msgstr "ОС"
 
 msgid "Output Network Interface"
 msgstr "Выходной сетевой интерфейс"
+
+msgid "Package changes are disabled in this development build until preflight and recovery are implemented."
+msgstr "Изменения пакетов в этой сборке разработки отключены до реализации проверки среды и восстановления после ошибки."
 
 msgid "Parallel"
 msgstr "Параллельно"
@@ -1270,9 +1282,6 @@ msgstr "Наборы правил"
 
 msgid "Run Diagnostic"
 msgstr "Запустить диагностику"
-
-msgid "Run the installer"
-msgstr "Запустить установщик"
 
 msgid "running"
 msgstr "работает"
@@ -1550,6 +1559,9 @@ msgstr "Группа участвует как один выбранный уз�
 msgid "the installed sing-box lacks %s"
 msgstr "в установленном sing-box нет %s"
 
+msgid "The installer checks the release again before changing packages."
+msgstr "Перед изменением пакетов установщик проверит релиз повторно."
+
 msgid "The interface the traffic comes from"
 msgstr "Интерфейс, с которого исходит трафик"
 
@@ -1616,11 +1628,20 @@ msgstr "Непринятые изменения LoKi, сделанные ран�
 msgid "Unsupported link"
 msgstr "Ссылка не поддерживается"
 
+msgid "Update check failed. See the installer output for the reason."
+msgstr "Не удалось проверить обновления. Причина указана в выводе установщика."
+
 msgid "Update interval"
 msgstr "Интервал обновления"
 
 msgid "Update lists"
 msgstr "Обновить списки"
+
+msgid "Update LoKi"
+msgstr "Обновить LoKi"
+
+msgid "Update LoKi?"
+msgstr "Обновить LoKi?"
 
 msgid "Update remote lists and rule sets on a schedule"
 msgstr "Обновлять удалённые списки и наборы правил по расписанию"
@@ -1633,6 +1654,9 @@ msgstr "Автоматически обновлять подписку чере�
 
 msgid "Updated %s"
 msgstr "Обновлено %s"
+
+msgid "Updates are available"
+msgstr "Доступны обновления"
 
 msgid "Uplink"
 msgstr "Исходящий"

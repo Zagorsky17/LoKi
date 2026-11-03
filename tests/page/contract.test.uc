@@ -82,11 +82,11 @@ t.test("the state service parks a request as long as the page expects", () => {
     t.eq(state_service.MAX_WAIT_MS, contract.state_wait_ms);
 });
 
-// rpcd refuses a method the page's ACL does not list; the one that changes something is a write.
+// The read snapshot and controlled commands cannot share the private writer grant.
 t.test("the page may call every method the state service publishes", () => {
     let acl = json(fs.readfile(repo.path("luci-app-forkop/root/usr/share/rpcd/acl.d/luci-app-forkop.json")))["luci-app-forkop"];
     t.eq(sort([ ...acl.read.ubus.forkop, ...acl.write.ubus.forkop ]), sort(keys(state_service.object_methods())));
-    t.eq(acl.write.ubus.forkop, [ "import_config" ]);
+    t.eq(acl.write.ubus.forkop, [ "rpc_write", "rpc_write_prepare", "rpc_write_result", "config_private", "import_config" ]);
 });
 
 t.test("the option every password field is stored in is masked in diagnostics", () => {
@@ -113,13 +113,12 @@ t.test("the page follows a run of install.sh through the object and methods its 
     installer.paths.state = dir + "/state.json";
     installer.paths.output = dir + "/output";
     installer.paths.package_databases = [];
-    fs.writefile(installer.paths.state, sprintf("%J", { schema: 1, id: "run-1", action: "update", lang: "en", interactive: true, finished_at: null }));
+    fs.writefile(installer.paths.state, sprintf("%J", { schema: 1, id: "run-1", action: "check", lang: "en", interactive: false, finished_at: null }));
     ubus.__reset();
     uloop.__reset();
     let methods = null;
     uloop.__on_run(() => {
         methods = sort(keys(ubus.__published(contract.installer.object)));
-        uloop.__exit(0, 7);
         uloop.__fire("timer");
     });
     installer.run("run-1");

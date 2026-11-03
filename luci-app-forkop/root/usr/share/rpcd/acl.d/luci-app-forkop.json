@@ -2,13 +2,11 @@
   "luci-app-forkop": {
     "description": "Grant UCI and RPC access to LuCI app LoKi",
     "read": {
-      "file": {
-        "/usr/bin/forkop": [
-          "exec"
-        ]
-      },
       "ubus": {
         "forkop": [
+          "rpc_read",
+          "rpc_read_prepare",
+          "rpc_read_result",
           "state",
           "state_wait",
           "config",
@@ -19,9 +17,7 @@
           "refresh"
         ],
         "forkop.installer": [
-          "read",
-          "input",
-          "stop"
+          "read"
         ],
         "luci-rpc": [
           "getDHCPLeases",
@@ -32,8 +28,7 @@
         ]
       },
       "uci": [
-        "dhcp",
-        "forkop"
+        "dhcp"
       ]
     },
     "write": {
@@ -50,12 +45,23 @@
           "remove"
         ],
         "forkop": [
+          "rpc_write",
+          "rpc_write_prepare",
+          "rpc_write_result",
+          "config_private",
           "import_config"
+        ],
+        "forkop.installer": [
+          "input",
+          "stop"
         ]
       },
-      "uci": [
-        "forkop"
-      ]
+      "uci": {
+        "forkop": [
+          "read",
+          "write"
+        ]
+      }
     }
   }
 }

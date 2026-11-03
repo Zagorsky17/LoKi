@@ -39,6 +39,7 @@ import { removedPackages, renderRemoveDialog } from './removeDialog';
 import { pageRoot } from './render';
 import { formatRunTime } from './runTime';
 import { createTerminal } from './terminal';
+import { renderUpdateCheck, renderUpdateDialog } from './updateCheck';
 
 let controllerInitialized = false;
 
@@ -218,7 +219,9 @@ export function initController(): void {
     const live = state.starting || state.running;
     // a start, stop or apply in progress leaves install.sh nothing safe to stop
     const blocked = live || (operation !== null && operation !== 'install');
-    const drawn = JSON.stringify([blocked, live && state.action]);
+    const canUpdate =
+      state.checkResult?.success === true && state.checkResult.available;
+    const drawn = JSON.stringify([blocked, live && state.action, canUpdate]);
     if (drawn === actionsDrawn) {
       return;
     }
@@ -235,19 +238,43 @@ export function initController(): void {
         icon,
         text,
         loading: live && state.action === action,
-        disabled: blocked,
+        disabled: blocked || action !== 'check',
         onClick,
       });
 
     part(root, 'components-actions').replaceChildren(
       E('b', {}, _('Available actions')),
-      button(
-        'update',
-        renderDownloadIcon24,
-        _('Run the installer'),
-        ['cbi-button-apply'],
-        () => void run.start('update'),
+      E(
+        'p',
+        {},
+        _(
+          'Package changes are disabled in this development build until preflight and recovery are implemented.',
+        ),
       ),
+      button(
+        'check',
+        renderDownloadIcon24,
+        _('Check for updates'),
+        ['cbi-button-apply'],
+        () => void run.start('check'),
+      ),
+      renderButton({
+        icon: renderDownloadIcon24,
+        text: _('Update LoKi'),
+        classNames: ['cbi-button-apply'],
+        disabled: true,
+        onClick: () => {
+          if (state.checkResult?.success && state.checkResult.available) {
+            ui.showModal(
+              _('Update LoKi?'),
+              renderUpdateDialog(
+                state.checkResult,
+                () => void run.start('update'),
+              ),
+            );
+          }
+        },
+      }),
       button('variant', renderLayersIcon24, _('Change the build'), [], () => {
         void run.start('variant').then(() => terminal.focus());
       }),
@@ -415,6 +442,9 @@ export function initController(): void {
     onChange: (state) => {
       runState = state;
       renderRun(state);
+      part(root, 'components-update-check').replaceChildren(
+        ...renderUpdateCheck(state.checkResult),
+      );
       renderActions(state);
       renderConfig();
     },
@@ -428,6 +458,9 @@ export function initController(): void {
     },
   });
 
+  part(root, 'components-update-check').replaceChildren(
+    ...renderUpdateCheck(null),
+  );
   renderRun(run.state);
   renderActions(run.state);
   renderConfig();
