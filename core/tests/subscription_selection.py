@@ -105,7 +105,11 @@ class Runtime:
                 while True:
                     assert process.poll() is None, 'core exited before local API readiness'
                     try:
-                        if len(self.group()['all']) == 4:
+                        group = self.group()
+                        members = group.get('all') if isinstance(group, dict) else None
+                        # The API can be ready before its asynchronous providers populate the group.
+                        if isinstance(members, list) and len(members) == 4 and all(
+                                isinstance(member, str) and member for member in members):
                             break
                     except (OSError, ValueError, KeyError):
                         pass
