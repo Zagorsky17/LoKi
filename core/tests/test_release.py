@@ -58,7 +58,7 @@ class ReleaseTests(unittest.TestCase):
             self.assertFalse(marker.exists())
             self.assertFalse(output.exists())
 
-    def build_case(self, binary_only=False):
+    def build_case(self, binary_only=False, source_failure=False, repeat_profile=False):
         with tempfile.TemporaryDirectory() as work:
             work = Path(work)
             recipe, binary, output = work / 'recipe', work / 'bin', work / 'output'
@@ -67,6 +67,14 @@ class ReleaseTests(unittest.TestCase):
             for name in ('build.sh', 'upstream.env', 'GO_VERSION'):
                 (recipe / name).write_bytes((ROOT / 'core' / name).read_bytes())
             (recipe / 'build.sh').chmod(0o755)
+            collector = recipe / 'module_sources.py'
+            collector.write_text('''from pathlib import Path
+import sys
+source, output, *binaries = map(Path, sys.argv[1:])
+assert source.joinpath('build.sh').is_file()
+assert binaries and all(path.read_bytes() == b'binary' for path in binaries)
+output.write_bytes(b'synthetic module source asset')
+''' if not source_failure else 'raise SystemExit(23)\n')
             go = binary / 'go'
             go.write_text('#!/bin/sh\nprintf "go' + (recipe / 'GO_VERSION').read_text().strip() + '\\n"\n')
             go.chmod(0o755)
@@ -95,26 +103,50 @@ chmod +x "$1/build.sh"
 ''')
             prepare.chmod(0o755)
             args = [str(recipe / 'build.sh'), '2.0.0', str(output)]
+            if source_failure:
+                output.mkdir()
+                (output / 'existing').write_bytes(b'keep')
             if binary_only:
                 args.append('--binary-only')
             result = subprocess.run(args, env=dict(os.environ,
                 PATH=str(binary) + os.pathsep + os.environ['PATH']), capture_output=True, text=True)
+            if source_failure:
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual({p.name for p in output.iterdir()}, {'existing'})
+                self.assertEqual((output / 'existing').read_bytes(), b'keep')
+                return
             if binary_only:
                 self.assertNotEqual(result.returncode, 0)
                 self.assertFalse((output / 'core-release.json').exists())
                 return
             self.assertEqual(result.returncode, 0, result.stderr)
+            asset_digest = hashlib.sha256(b'synthetic module source asset').hexdigest()
             self.assertEqual({p.name for p in output.iterdir()},
                 {'core.ipk', 'core.apk', 'core-release.json', 'SHA256SUMS',
-                 'core-source-1.14.4-r6.tar.gz'})
+                 'core-source-1.14.4-r6.tar.gz', f'core-module-sources-1.14.4-r6-{asset_digest}.tar.gz'})
             self.assertEqual(json.loads((output / 'core-release.json').read_text())['tag'], '2.0.0')
             subprocess.run(['sha256sum', '--check', 'SHA256SUMS'], cwd=output, check=True, capture_output=True)
+            if repeat_profile:
+                collector.write_text(collector.read_text().replace('synthetic module source asset', 'another module source asset'))
+                repeated = subprocess.run(args, env=dict(os.environ,
+                    PATH=str(binary) + os.pathsep + os.environ['PATH']), capture_output=True, text=True)
+                self.assertEqual(repeated.returncode, 0, repeated.stderr)
+                assets = {p.name for p in output.glob('core-module-sources-*.tar.gz')}
+                self.assertEqual(assets, {f'core-module-sources-1.14.4-r6-{hashlib.sha256(data).hexdigest()}.tar.gz'
+                                        for data in (b'synthetic module source asset', b'another module source asset')})
+                subprocess.run(['sha256sum', '--check', 'SHA256SUMS'], cwd=output, check=True, capture_output=True)
 
     def test_only_packages_and_manifests_are_published_as_build_outputs(self):
         self.build_case()
 
     def test_a_binary_only_build_is_not_a_package_release(self):
         self.build_case(binary_only=True)
+
+    def test_source_collection_failure_preserves_the_existing_release_directory(self):
+        self.build_case(source_failure=True)
+
+    def test_combined_builds_retain_each_profiles_module_sources(self):
+        self.build_case(repeat_profile=True)
 
     def manifest_case(self, core=True, missing=False, mirror=False, bad_url=False, bad_digest=False):
         with tempfile.TemporaryDirectory() as work:
