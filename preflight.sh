@@ -14,7 +14,7 @@ command -v timeout >/dev/null 2>&1 || incomplete timeout-unavailable
 root=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd -P) || incomplete source-directory-unavailable
 result=$(
     ulimit -v 65536 && ulimit -t 10 || exit 3
-    exec env -i PATH="$PATH" timeout -s KILL 15 ucode -L "$root/forkop/files/usr/lib" "$root/preflight.uc"
+    exec env -i PATH="$PATH" timeout -s KILL 15 ucode -L "$root/forkop/files/usr/lib" "$root/preflight.uc" "$root/candidate-manifest.json"
 ) 2>/dev/null
 status=$?
 case "$status" in

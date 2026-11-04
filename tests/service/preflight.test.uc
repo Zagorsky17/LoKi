@@ -155,7 +155,7 @@ t.test("APK and multiple databases fail closed without package-manager execution
     t.ok(has(preflight.collect(root), "incomplete", "multiple-package-databases"));
     fs.unlink(root + "/usr/lib/opkg/status");
     let result = preflight.collect(root);
-    t.ok(has(result, "incomplete", "apk-reader-not-implemented"));
+    t.ok(has(result, "incomplete", "apk-record-termination-invalid"));
     t.excludes(sprintf("%J", result), "synthetic-secret");
 });
 

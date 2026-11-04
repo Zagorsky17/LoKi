@@ -1,4 +1,6 @@
 let fs = require("fs");
+let apk_reader = require("service.preflight_apk");
+let manifest_reader = require("service.preflight_manifest");
 
 // Critical current package targets, not yet a complete install manifest.
 const TARGETS = [
@@ -13,7 +15,7 @@ const TARGETS = [
     "/usr/bin/sing-box", "/etc/init.d/sing-box",
     "/etc/config/sing-box", "/etc/sing-box/config.json"
 ];
-const OWN_NAMES = [ "forkop", "luci-app-forkop", "sing-box-forkop" ];
+const OWN_NAMES = [ "forkop", "luci-app-forkop", "sing-box-forkop", "luci-i18n-forkop-ru" ];
 const STATUS_LIMIT = 4194304;
 const LIST_LIMIT = 1048576;
 const TOTAL_LIMIT = 16777216;
@@ -119,7 +121,11 @@ function packages_from_status(data) {
     return packages;
 }
 
-function target_paths(data) {
+function target_paths(data, targets) {
+    if (targets == null) {
+        targets = {};
+        for (let path in TARGETS) targets[path] = true;
+    }
     if (type(data) != "string" || data == "" || length(data) > LIST_LIMIT ||
         substr(data, -1) != "\n" || index(data, "\u0000") >= 0)
         return null;
@@ -130,7 +136,7 @@ function target_paths(data) {
             match(path, /\/(\.\.?)(\/|$)/) || exists(seen, path))
             return null;
         seen[path] = true;
-        if (index(TARGETS, path) >= 0)
+        if (exists(targets, path))
             push(found, path);
     }
     return found;
@@ -140,17 +146,79 @@ function observation(kind, object, state, reason) {
     return { kind, object, state, reason };
 }
 
-function collect(root) {
+function collect(root, manifest_path) {
     // The CLI always passes "/". A fixture root is only an in-process test seam.
     root = root == "/" ? "" : root;
     let observations = [];
+    let targets = map(TARGETS, (path) => path);
+    let labels = {};
+    for (let path in TARGETS) labels[path] = path;
+    if (manifest_path == null) {
+        push(observations, observation("candidate-manifest", "candidate-manifest", "incomplete", "manifest-not-provided"));
+    }
+    else {
+        let read = read_metadata(manifest_path, 2097152, root || "/");
+        let manifest = read.error == null ? manifest_reader.parse(read.data) : { error: "manifest-" + read.error };
+        if (manifest.error != null)
+            push(observations, observation("candidate-manifest", "candidate-manifest", "incomplete", manifest.error));
+        else {
+            let ordinal = 0;
+            for (let path in sort(keys(manifest.paths))) {
+                // Shared directories do not imply conflicting files; host types remain pending.
+                if (manifest.paths[path].type != "file") continue;
+                ordinal++;
+                if (!exists(labels, path)) {
+                    push(targets, path);
+                    labels[path] = "candidate-file-" + ordinal;
+                }
+            }
+            push(observations, observation("candidate-manifest", "candidate-manifest", "incomplete", "artifact-provenance-unverified"));
+            push(observations, observation("candidate-manifest", "candidate-manifest", "incomplete", "artifact-content-unverified"));
+            push(observations, observation("candidate-manifest", "candidate-manifest", "incomplete", "candidate-component-set-unverified"));
+        }
+    }
     let opkg = root + "/usr/lib/opkg";
     let apk = fs.lstat(root + "/lib/apk/db/installed");
     let status = fs.lstat(opkg + "/status");
-    if (apk != null || status == null) {
-        push(observations, observation("ownership", "package-database", "incomplete",
-            apk != null && status != null ? "multiple-package-databases" :
-            apk != null ? "apk-reader-not-implemented" : "opkg-database-unavailable"));
+    if (apk != null && status != null) {
+        push(observations, observation("ownership", "package-database", "incomplete", "multiple-package-databases"));
+    }
+    else if (apk != null) {
+        let path = root + "/lib/apk/db/installed";
+        let read = read_metadata(path, STATUS_LIMIT, root || "/");
+        let parsed = read.error == null ? apk_reader.parse(read.data) : { error: "apk-installed-" + read.error };
+        if (parsed.error != null)
+            push(observations, observation("ownership", "apk-installed", "incomplete", parsed.error));
+        else {
+            let owners = {};
+            for (let package in parsed.packages) {
+                for (let entry in package.entries) {
+                    if (!exists(labels, entry.path))
+                        continue;
+                    if (owners[entry.path] == null)
+                        owners[entry.path] = [];
+                    push(owners[entry.path], package.name);
+                }
+            }
+            for (let target in targets) {
+                let names = owners[target] || [];
+                if (length(names) > 1)
+                    push(observations, observation("ownership", labels[target], "conflict", "multiple-packages-claim-candidate-path"));
+                else if (length(names) == 1)
+                    push(observations, observation("ownership", labels[target],
+                        index(OWN_NAMES, names[0]) >= 0 ? "incomplete" : "conflict",
+                        index(OWN_NAMES, names[0]) >= 0 ? "package-name-does-not-prove-own-origin" : "foreign-package-owns-candidate-path"));
+            }
+            // The same bounded database is reread; no apk lock or scripts are involved.
+            let final_read = read_metadata(path, length(read.data), root || "/");
+            if (final_read.error != null || read.data != final_read.data)
+                push(observations, observation("ownership", "apk-installed", "incomplete", "apk-changed-or-unavailable-on-recheck"));
+            else
+                push(observations, observation("ownership", "installed-apk-candidate-files", "checked", "metadata-read-complete"));
+        }
+    }
+    else if (status == null) {
+        push(observations, observation("ownership", "package-database", "incomplete", "package-database-unavailable"));
     }
     else {
         let status_read = read_metadata(opkg + "/status", STATUS_LIMIT, root || "/");
@@ -183,26 +251,26 @@ function collect(root) {
                 failures["aggregate-byte-limit"] = "opkg-metadata";
                 break;
             }
-            let targets = target_paths(listing);
-            if (targets == null) {
+            let listed_targets = target_paths(listing, labels);
+            if (listed_targets == null) {
                 complete = false;
                 let reason = read.error == null ? "ownership-list-invalid" : "ownership-list-" + read.error;
                 if (!exists(failures, reason))
                     failures[reason] = "installed-package-list-" + ordinal;
                 continue;
             }
-            for (let path in targets) {
+            for (let path in listed_targets) {
                 if (index(OWN_NAMES, name) >= 0)
                     uncertain[path] = true;
                 else
                     conflicts[path] = true;
             }
         }
-        for (let path in TARGETS) {
+        for (let path in targets) {
             if (conflicts[path])
-                push(observations, observation("ownership", path, "conflict", "foreign-package-owns-candidate-path"));
+                push(observations, observation("ownership", labels[path], "conflict", "foreign-package-owns-candidate-path"));
             if (uncertain[path])
-                push(observations, observation("ownership", path, "incomplete", "package-name-does-not-prove-own-origin"));
+                push(observations, observation("ownership", labels[path], "incomplete", "package-name-does-not-prove-own-origin"));
         }
         if (status_read.error == null) {
             let final_status = read_metadata(opkg + "/status", length(data), root || "/");
@@ -214,10 +282,10 @@ function collect(root) {
         for (let reason in sort(keys(failures)))
             push(observations, observation("ownership", failures[reason], "incomplete", reason));
         if (complete)
-            push(observations, observation("ownership", "installed-opkg-critical-paths", "checked", "metadata-read-complete"));
+            push(observations, observation("ownership", "installed-opkg-candidate-files", "checked", "metadata-read-complete"));
     }
     // Unimplemented domains are mandatory; a partial inventory never grants permission.
-    for (let kind in [ "candidate-manifest", "files", "services", "autostart", "hooks", "listeners",
+    for (let kind in [ "files", "services", "autostart", "hooks", "listeners",
         "dns-committed", "dns-pending", "dns-runtime", "nft-loaded", "nft-persisted",
         "ipv4-routes-rules", "ipv6-routes-rules", "dependencies", "resources", "configuration", "core-check" ])
         push(observations, observation(kind, kind, "incomplete", "not-implemented"));
@@ -225,6 +293,11 @@ function collect(root) {
     for (let item in observations)
         if (item.state == "conflict")
             conflict = true;
+    if (length(observations) > 256) {
+        // Keep the final mandatory-domain failures as well as the first conflicts.
+        splice(observations, 224, length(observations) - 255);
+        push(observations, observation("report", "ownership-observations", "incomplete", "observation-count-limit"));
+    }
     return { schema: 1, result: conflict ? "conflict" : "incomplete", complete: false,
         install_allowed: false, observations };
 }
