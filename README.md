@@ -133,6 +133,8 @@ On Linux, `python3 core/tests/plain_links.py CORE OUTPUT_DIR [REFERENCE_CORE]` c
 
 For generated proxy cascades, run `python3 core/tests/cascade_links.py CORE NEW_OUTPUT_DIR [REFERENCE_CORE]` with the same trusted binaries. It tests HTTP/HTTPS first hops, HTTP/HTTPS/SOCKS5 exits, both peers becoming unavailable, authentication/TLS refusals, stream interruption and recovery. A deliberately removed detour must be detected even when the response succeeds. All peers are local; this does not certify router routing or every cascade protocol.
 
+New writes of the generated core configuration and own atomic state use mode `0600`; the transient core-check input is also private and removed after success, refusal or an execution exception. An occupied temporary name causes refusal without overwriting or deleting the existing file. Existing directories and unchanged files are not automatically repaired; this protection assumes trusted parent directories. It does not guarantee power-loss durability.
+
 ## Documentation and testing
 
 The public project documentation is maintained in this README and [README.ru.md](README.ru.md). The inherited documentation site and its GitHub Pages workflow have been removed.

@@ -11,6 +11,7 @@ let runtime = require("singbox.runtime");
 let cli = require("service.cli");
 
 function configuration(dir, extra) {
+    fs.chmod(dir, 0700);
     return {
         settings: fixture.settings({
             config_path: dir + "/etc/sing-box/config.json",
@@ -56,9 +57,86 @@ t.test("the running core is the service's sing-box run, not a one-shot command",
 
 const CHECK = /'sing-box' '--disable-color' '-c' .* 'check'/;
 
+t.test("the one-shot core reads a private configuration which is removed after success or refusal", () => {
+    for (let status in [ 0, 1 ]) {
+        let dir = stub.tmpdir();
+        fixture.seed(configuration(dir));
+        let checked_path = "";
+        let mode = null;
+        let content = "";
+        tools([ [ CHECK, (argv) => {
+            checked_path = argv[3];
+            mode = fs.stat(checked_path)?.mode & 0777;
+            content = fs.readfile(checked_path);
+            return { status, stdout: status ? "synthetic refusal\n" : "" };
+        } ] ]);
+        let error = null;
+        try { runtime.write_config(true); }
+        catch (e) { error = e; }
+        stub.restore();
+        t.eq(error == null, status == 0);
+        t.eq(mode, 0600, "the check input is private before the child sees it");
+        t.contains(content, "vless://u@a.example:443#A");
+        t.ok(checked_path != "");
+        t.eq(fs.lstat(checked_path), null);
+        t.eq(fs.stat(dir + "/etc/sing-box/config.json") != null, status == 0);
+    }
+});
+
+t.test("a core execution exception removes its secret check input and preserves the running file", () => {
+    let dir = stub.tmpdir();
+    fixture.seed(configuration(dir));
+    tools([ [ CHECK, {} ] ]);
+    runtime.write_config(true);
+    let path = dir + "/etc/sing-box/config.json";
+    let running = fs.readfile(path);
+    fixture.seed(configuration(dir, { log_level: "debug" }));
+    let checked_path = "";
+    tools([ [ CHECK, (argv) => {
+        checked_path = argv[3];
+        die("synthetic spawn failure");
+    } ] ]);
+    let error = null;
+    try { runtime.write_config(true); }
+    catch (e) { error = e; }
+    stub.restore();
+    t.ok(error != null);
+    t.contains(error.message, "synthetic spawn failure");
+    t.ok(checked_path != "");
+    let remaining = fs.lstat(checked_path);
+    if (remaining != null)
+        fs.unlink(checked_path);
+    t.eq(remaining, null, "exceptions cannot leave a check input behind");
+    t.eq(fs.readfile(path), running);
+});
+
 function checks_run() {
     return length(filter(stub.command_lines(), (line) => match(line, / check$/)));
 }
+
+t.test("a pre-existing check-input symlink is refused without invoking the core or unlinking foreign data", () => {
+    let dir = stub.tmpdir();
+    fixture.seed(configuration(dir));
+    let ticks = [ 3456789, int(require("core.common").own_pid()) ];
+    let temporary = sprintf("/tmp/forkop-sing-box-check.%d.%d.json", ticks[0], ticks[1]);
+    t.eq(fs.lstat(temporary), null, "a unique fixture path is required");
+    fs.writefile(dir + "/victim", "foreign-data\n");
+    t.ok(fs.symlink(dir + "/victim", temporary));
+    tools([ [ CHECK, {} ] ]);
+    global.clock = () => ticks;
+    let error = null;
+    try { runtime.write_config(true); }
+    catch (e) { error = e; }
+    let commands = checks_run();
+    stub.restore();
+    let entry = fs.lstat(temporary);
+    fs.unlink(temporary);
+    t.ok(error != null);
+    t.eq(commands, 0);
+    t.eq(fs.readfile(dir + "/victim"), "foreign-data\n");
+    t.eq(entry?.type, "link", "a refused collision is not ours to delete");
+    t.eq(fs.stat(dir + "/etc/sing-box/config.json"), null);
+});
 
 t.test("the configuration is written where the service reads it, and only when it changed", () => {
     let dir = stub.tmpdir();
@@ -96,7 +174,8 @@ t.test("a configuration the core refuses is reported by its first line and never
     stub.restore();
     t.eq(e.message, "sing-box refused the generated configuration: FATAL[0000] route: missing outbound tag");
     t.ok(fs.stat(dir + "/etc/sing-box/config.json") == null);
-    t.eq(filter(fs.lsdir("/tmp"), (name) => substr(name, 0, 22) == "forkop-sing-box-check." && index(name, ".json") > 0), [],
+    let prefix = "forkop-sing-box-check.";
+    t.eq(filter(fs.lsdir("/tmp"), (name) => substr(name, 0, length(prefix)) == prefix && index(name, ".json") > 0), [],
         "the file checked is removed");
 });
 
@@ -309,6 +388,7 @@ t.test("the runtime creates a private cache directory under the effective proces
 t.test("an unsafe custom cache parent is refused without running the core or changing its mode", () => {
     let dir = stub.tmpdir();
     fs.mkdir(dir + "/public-cache", 0755);
+    fs.chmod(dir + "/public-cache", 0755);
     fixture.seed(configuration(dir, { cache_path: dir + "/public-cache/cache.db" }));
     tools([ [ CHECK, {} ] ]);
     let error = t.throws(() => runtime.write_config(false));

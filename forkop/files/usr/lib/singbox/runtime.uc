@@ -120,9 +120,16 @@ function failure_reason(result) {
 function check(text) {
     let now = clock();
     let path = sprintf("/tmp/forkop-sing-box-check.%d.%d.json", now[0], now[1]);
-    if (!common.write_file(path, text))
+    if (!common.write_private_file(path, text))
         die("Failed to write the generated sing-box configuration to " + path);
-    let result = exec.combined([ "sing-box", "--disable-color", "-c", path, "check" ]);
+    let result;
+    try {
+        result = exec.combined([ "sing-box", "--disable-color", "-c", path, "check" ]);
+    }
+    catch (e) {
+        fs.unlink(path);
+        die(e.message);
+    }
     fs.unlink(path);
     if (result.status == 0)
         return;
