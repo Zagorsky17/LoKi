@@ -1,0 +1,17 @@
+diff --git a/release/forkop/package.sh b/release/forkop/package.sh
+--- a/release/forkop/package.sh
++++ b/release/forkop/package.sh
+@@ -1,4 +1,5 @@
+ #!/usr/bin/env bash
++# Modified for LoKi on 2026-11-04: attach binary-specific dependency notices.
+ # Modified for LoKi on 2026-11-01: identify the independent core build.
+ # Packages a sing-box-forkop binary for one OpenWrt architecture as .ipk and .apk.
+ # build.sh runs it once per architecture; the packages are byte-for-byte the
+@@ -69,6 +70,7 @@
+ install -Dm755 "$PROJECT/release/config/openwrt.init" "$ROOT/etc/init.d/sing-box"
+ install -Dm644 "$PROJECT/release/config/openwrt.keep" "$ROOT/lib/upgrade/keep.d/sing-box"
+ install -Dm644 "$PROJECT/LICENSE" "$ROOT/usr/share/licenses/sing-box/LICENSE"
++python3 "$PROJECT/release/forkop/notices.py" "$PROJECT" "$BINARY" "$ROOT/usr/share/licenses/sing-box"
+ 
+ comma_list() {
+   local joined

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Modified for LoKi on 2026-11-04: include the reviewed notice recipe in core sources.
 set -euo pipefail
 
 HERE=$(cd -- "$(dirname -- "$0")" && pwd)
@@ -28,6 +29,7 @@ for patch in "$HERE"/patches/*.patch; do
     git -C "$destination" apply --whitespace=error-all "$patch"
 done
 cp -- "$HERE/COPYING" "$destination/LICENSE"
+cp -- "$HERE/notices.py" "$HERE/notice-files.json" "$destination/release/forkop/"
 # The inherited builder checks indexed files for CRLF; no commit or remote is needed.
 git -C "$destination" init --quiet --initial-branch=vendor
 git -C "$destination" add .
