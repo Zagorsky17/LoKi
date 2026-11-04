@@ -12,13 +12,14 @@ READY = {'all': ['main/One/A', 'main/One/B', 'main/Two/A', 'main/Two/B']}
 
 
 @contextlib.contextmanager
-def harness(responses, clock=None):
+def harness(responses, clock=None, expected_members=4):
     with tempfile.TemporaryDirectory(prefix='loki-readiness-') as scratch:
         runtime = selection.Runtime.__new__(selection.Runtime)
         runtime.core = Path('/not-executed/synthetic-core')
         runtime.directory = Path(scratch)
         runtime.path = runtime.directory / 'runtime.json'
         runtime.runs = 0
+        runtime.expected_members = expected_members
         runtime.group = Mock(side_effect=responses)
         process = Mock()
         process.poll.return_value = None
@@ -30,6 +31,14 @@ def harness(responses, clock=None):
 
 
 class ReadinessTest(unittest.TestCase):
+    def test_resource_workload_waits_for_its_entire_member_set(self):
+        members = [f'main/P1/node-{i}' for i in range(100)]
+        with harness([{'all': members[:4]}, {'all': members[:99]}, {'all': members}],
+                     expected_members=100) as (runtime, _, _, sleep):
+            with runtime.running():
+                self.assertEqual(runtime.group.call_count, 3)
+            self.assertEqual(sleep.call_count, 2)
+
     def test_null_empty_and_absent_members_wait_for_complete_provider_list(self):
         with harness([{'all': None}, {'all': []}, {}, READY]) as (runtime, process, start, sleep):
             with runtime.running() as running:

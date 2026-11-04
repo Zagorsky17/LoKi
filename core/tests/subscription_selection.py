@@ -65,21 +65,22 @@ class Subscription(http.server.BaseHTTPRequestHandler):
         pass
 
 
-def api(port, path, method='GET', data=None, authenticated=True):
+def api(port, path, method='GET', data=None, authenticated=True, timeout=4):
     body = json.dumps(data).encode() if data is not None else (b'' if method == 'PUT' else None)
     headers = {'Content-Type': 'application/json'}
     if authenticated:
         headers['Authorization'] = 'Bearer ' + API_SECRET
     request = Request(f'http://127.0.0.1:{port}{path}', data=body, method=method, headers=headers)
-    with OPENER.open(request, timeout=4) as reply:
+    with OPENER.open(request, timeout=timeout) as reply:
         content = reply.read(65537)
         assert len(content) <= 65536, 'oversized local API response'
         return json.loads(content) if content else None
 
 
 class Runtime:
-    def __init__(self, core, product, directory):
+    def __init__(self, core, product, directory, expected_members=4):
         self.core, self.directory = core, directory
+        self.expected_members = expected_members
         self.api_port, self.port = links.free_port(), links.free_port()
         config = copy.deepcopy(product)
         config['inbounds'] = [{'type': 'mixed', 'tag': 'harness', 'listen': '127.0.0.1', 'listen_port': self.port}]
@@ -108,7 +109,7 @@ class Runtime:
                         group = self.group()
                         members = group.get('all') if isinstance(group, dict) else None
                         # The API can be ready before its asynchronous providers populate the group.
-                        if isinstance(members, list) and len(members) == 4 and all(
+                        if isinstance(members, list) and len(members) == self.expected_members and all(
                                 isinstance(member, str) and member for member in members):
                             break
                     except (OSError, ValueError, KeyError):
