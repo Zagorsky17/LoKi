@@ -298,6 +298,8 @@ function run_with(value, steps, source) {
     let original_lstat = fs.lstat;
     if (value.action == "check") {
         fs.chmod(installer.paths.local_script, value.local_mode ?? 0644);
+        // Model package permissions independently of the test user's umask.
+        fs.chmod(common.parent_dir(installer.paths.local_script), value.local_directory_mode ?? 0755);
         if (value.local_missing)
             fs.unlink(installer.paths.local_script);
         // Root ownership is synthetic; no test writes to the host's package directory.
@@ -490,7 +492,7 @@ t.test("bootstrap SHA entries and asset names are unique and canonical", () => {
 });
 
 t.test("read checks refuse a missing or writable installed resolver without remote fallback", () => {
-    for (let options in [ { local_missing: true }, { local_mode: 0666 } ]) {
+    for (let options in [ { local_missing: true }, { local_mode: 0666 }, { local_directory_mode: 0775 } ]) {
         run_with({ action: "check", interactive: false, ...options }, () => {
             t.eq(length(uloop.__processes()), 0);
         });

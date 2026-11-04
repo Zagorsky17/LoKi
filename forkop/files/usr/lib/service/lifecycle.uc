@@ -1,9 +1,11 @@
+// Modified for LoKi on 2026-11-03: check private cache paths before lifecycle mutations.
 // Modified for LoKi on 2026-11-03: product labels in user-facing messages.
 // Every action holds the lifecycle lock. A reload changes only what would come out different:
 // the nft script against the one applied last, the sing-box config against the service's file.
 
 let fs = require("fs");
 let common = require("core.common");
+let cache_path = require("core.cache_path");
 let exec = require("core.exec");
 let constants = require("core.constants");
 let netstat = require("core.netstat");
@@ -76,6 +78,21 @@ function migrate_restored_config() {
     let migrated = require("config.migration").start();
     uci.reset();
     return migrated;
+}
+
+function validate_cache_path(create) {
+    try {
+        let settings = uci.get_all(CONFIG_NAME, "settings") ?? {};
+        if (create)
+            cache_path.ensure(settings);
+        else
+            cache_path.validate(settings);
+        return true;
+    }
+    catch (e) {
+        log("error", e.message);
+        return false;
+    }
 }
 
 // Validate the configuration before changing the runtime.
@@ -250,7 +267,7 @@ function start_runtime() {
         return false;
     }
 
-    if (!validate())
+    if (!validate() || !validate_cache_path(true))
         return false;
     start_fingerprint = config_fingerprint();
     if (!nft.ensure_bridge_netfilter_disabled()) {
@@ -339,6 +356,8 @@ function start() {
             return 0;
         }
         log("info", "Starting LoKi");
+        if (!validate_cache_path(false))
+            return 1;
         if (!migrate_restored_config()) {
             cleanup_failed_runtime();
             return 1;
@@ -500,7 +519,7 @@ function reload_announcement(reason, forced) {
 function reload_runtime(reason) {
     let forced = reason != "on_config_change" && reason != "pending";
     log("info", reload_announcement(reason, forced));
-    if (!migrate_restored_config() || !validate())
+    if (!validate_cache_path(false) || !migrate_restored_config() || !validate())
         return reload_failed(false);
     let fingerprint = config_fingerprint();
 

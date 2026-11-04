@@ -1,8 +1,10 @@
+// Modified for LoKi on 2026-11-03: reject unsafe cache paths before restart stops the service.
 // Modified for LoKi on 2026-11-03: product labels in user-facing messages.
 // The init script's hooks; each is tracked as a UI action unless the page opened one for it.
 
 let fs = require("fs");
 let common = require("core.common");
+let cache_path = require("core.cache_path");
 let exec = require("core.exec");
 let constants = require("core.constants");
 let uci = require("core.uci");
@@ -96,6 +98,14 @@ function stop() {
 // One action, though rc.common runs a stop and a start: the nested two open none of their own.
 function restart() {
     let job = begin("restart");
+    try {
+        cache_path.validate(settings());
+    }
+    catch (e) {
+        exec.log("error", e.message);
+        finish("restart", job, 1);
+        return 1;
+    }
     let status = exec.run([ SERVICE_INIT, "stop" ]);
     let start_status = exec.run([ SERVICE_INIT, "start" ]);
     if (start_status != 0)

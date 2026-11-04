@@ -1,7 +1,9 @@
+// Modified for LoKi on 2026-11-03: validate private cache paths before configuration writes.
 // Modified for LoKi on 2026-11-03: product labels in user-facing messages.
 // Modified for LoKi on 2026-11-01: preserve LAN reverse zones while routing external PTR by DNS policy.
 let fs = require("fs");
 let common = require("core.common");
+let cache_path = require("core.cache_path");
 let exec = require("core.exec");
 let uci = require("core.uci");
 let singbox_constants = require("singbox.constants");
@@ -135,10 +137,8 @@ function write_config(checked) {
     if (path == "")
         die("The sing-box configuration file path is not set in Settings");
 
-    // sing-box needs its cache directory, and a reboot empties /tmp.
-    let cache_dir = common.parent_dir(common.option(values, "cache_path", singbox_constants.TMP_SING_BOX_FOLDER + "/cache.db"));
-    if (!common.ensure_dir(cache_dir))
-        die("Failed to create " + cache_dir + " for the sing-box cache file");
+    // The private tmpfs directory is created only after the read-only path gate.
+    cache_path.ensure(values);
 
     let output_interface = common.option(values, "output_network_interface", "");
     if (output_interface != "" && mwan3_active())

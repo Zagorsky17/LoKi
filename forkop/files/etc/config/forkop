@@ -1,3 +1,4 @@
+# Modified for LoKi on 2026-11-03: use a private cache directory.
 # Modified for LoKi on 2026-10-31: keep the default UDP mode explicit.
 config settings 'settings'
         option config_format 'loki'
@@ -22,5 +23,5 @@ config settings 'settings'
         option download_lists_via_proxy '0'
         option unmatched_dns_mode 'forkop'
         option config_path '/etc/sing-box/config.json'
-        option cache_path '/tmp/sing-box/cache.db'
+        option cache_path '/tmp/loki/cache.db'
         option log_level 'warn'
