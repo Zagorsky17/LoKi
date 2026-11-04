@@ -40,15 +40,15 @@ t.test("APK parser refuses truncation, control bytes and unsupported fields", ()
 t.test("APK path grammar refuses traversal and aliases without normalizing them", () => {
     for (let directory in [ "/etc", "etc/", "etc//config", ".", "..", "etc/../config", "etc\tconfig" ])
         t.eq(apk.parse(record("test", "F:" + directory + "\n")).error, "apk-directory-invalid");
-    for (let file in [ "", "/forkop", "../forkop", ".", "..", "a/b", "a\tb" ])
+    for (let file in [ "", "/loki", "../loki", ".", "..", "a/b", "a\tb" ])
         t.eq(apk.parse(record("test", "F:etc\nR:" + file + "\n")).error, "apk-file-invalid");
 });
 
 t.test("APK ordering and duplicates cannot silently replace ownership", () => {
-    for (let body in [ "R:forkop\n", "a:0:0:644\n", "M:0:0:755\n", "Z:Q1AAAA\n",
-        "F:etc\nR:forkop\nR:forkop\n", "F:etc\nF:etc\n", "P:other\n",
-        "F:etc\nV:2\n", "F:etc\nR:forkop\nM:0:0:755\n", "F:etc\nR:forkop\na:0:0:644\na:0:0:644\n",
-        "F:etc\nR:forkop\nZ:Q1AAAA\nZ:Q1AAAA\n", "F:etc\nR:forkop\nF:etc/forkop\n" ])
+    for (let body in [ "R:loki\n", "a:0:0:644\n", "M:0:0:755\n", "Z:Q1AAAA\n",
+        "F:etc\nR:loki\nR:loki\n", "F:etc\nF:etc\n", "P:other\n",
+        "F:etc\nV:2\n", "F:etc\nR:loki\nM:0:0:755\n", "F:etc\nR:loki\na:0:0:644\na:0:0:644\n",
+        "F:etc\nR:loki\nZ:Q1AAAA\nZ:Q1AAAA\n", "F:etc\nR:loki\nF:etc/loki\n" ])
         t.ok(apk.parse(record("test", body)).error != null);
     t.eq(apk.parse(record("test") + record("test")).error, "apk-package-duplicate");
 });
@@ -74,7 +74,7 @@ t.test("APK parser bounds bytes, lines, packages and entries", () => {
 });
 
 t.test("APK collector compares exact candidate paths and does not execute PM or hooks", () => {
-    let root = fixture(record("base-files", "F:etc\nR:banner\nR:forkop.backup\n"));
+    let root = fixture(record("base-files", "F:etc\nR:banner\nR:loki.backup\n"));
     let path = root + "/lib/apk/db/installed";
     let before = fs.readfile(path);
     stub.commands([[ "exec timeout", { stdout: "{}" } ]]);
@@ -90,10 +90,10 @@ t.test("APK collector compares exact candidate paths and does not execute PM or 
 });
 
 t.test("APK conflicting owners survive and names never establish own provenance", () => {
-    let body = "F:usr/bin\nR:sing-box\n";
-    let root = fixture(record("sing-box-forkop", body));
+    let body = "F:usr/bin\nR:loki-core\n";
+    let root = fixture(record("loki-core", body));
     t.ok(has(preflight.collect(root), "incomplete", "package-name-does-not-prove-own-origin"));
-    fs.writefile(root + "/lib/apk/db/installed", record("sing-box-forkop", body) + record("forkop", body));
+    fs.writefile(root + "/lib/apk/db/installed", record("loki-core", body) + record("loki", body));
     t.ok(has(preflight.collect(root), "conflict", "multiple-packages-claim-candidate-path"));
     fs.writefile(root + "/lib/apk/db/installed", record("synthetic-secret", body));
     let result = preflight.collect(root);
@@ -103,7 +103,7 @@ t.test("APK conflicting owners survive and names never establish own provenance"
 });
 
 t.test("APK directory claims cannot hide a collision with a candidate file", () => {
-    let result = preflight.collect(fixture(record("foreign", "F:usr/bin/sing-box\n")));
+    let result = preflight.collect(fixture(record("foreign", "F:usr/bin/loki-core\n")));
     t.ok(has(result, "conflict", "foreign-package-owns-candidate-path"));
 });
 

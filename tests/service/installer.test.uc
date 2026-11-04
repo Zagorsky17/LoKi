@@ -29,12 +29,12 @@ function fresh() {
     ui.paths.service_action_lock = dir + "/service.lock";
     ui.paths.service_actions = dir + "/service-actions";
     ui.paths.reload_lock = dir + "/reload.lock";
-    installer.paths.cli = system + "/forkop";
+    installer.paths.cli = system + "/loki";
     installer.paths.proc = system + "/proc";
-    installer.paths.install_log = system + "/forkop-install.log";
+    installer.paths.install_log = system + "/loki-install.log";
     installer.paths.ptmx = "/dev/ptmx";
     installer.paths.package_databases = [ system + "/installed" ];
-    fs.writefile(system + "/installed", "forkop 2.0.0\n");
+    fs.writefile(system + "/installed", "loki 2.0.0\n");
     fs.writefile(installer.paths.cli, "");
     fs.mkdir(installer.paths.proc);
     return dir;
@@ -100,9 +100,9 @@ t.test("the page learns when the run began and ended, and whether install.sh lef
 
 t.test("the command line prints install.sh's log, and says when there is none", () => {
     fresh();
-    fs.writefile(installer.paths.install_log, "$ apk add forkop.apk\nOK: 83.7 MiB in 199 packages\n");
+    fs.writefile(installer.paths.install_log, "$ apk add loki.apk\nOK: 83.7 MiB in 199 packages\n");
     let printed = stub.capture(() => require("service.cli").main([ "installer_log" ], "/lib"));
-    t.eq([ printed.result, printed.stdout ], [ 0, "$ apk add forkop.apk\nOK: 83.7 MiB in 199 packages\n" ]);
+    t.eq([ printed.result, printed.stdout ], [ 0, "$ apk add loki.apk\nOK: 83.7 MiB in 199 packages\n" ]);
     fs.unlink(installer.paths.install_log);
     let missing = stub.capture(() => require("service.cli").main([ "installer_log" ], "/lib"));
     t.eq([ missing.result, missing.stderr ], [ 1, "install.sh has left no log\n" ]);
@@ -150,7 +150,7 @@ t.test("the latest release comes through GitHub's API, or from a mirror at githu
     t.eq([ installer.asset_url("{\"message\":\"Not Found\"}", "install.sh"), installer.asset_url(null, "install.sh") ], [ null, null ]);
     t.eq([ installer.rate_limited("{\"resources\":{\"core\":{\"remaining\":0}}}"),
         installer.rate_limited("{\"resources\":{\"core\":{\"remaining\":12}}}"), installer.rate_limited(null) ], [ true, false, false ]);
-    stub.env({ FORKOP_DOWNLOAD_URL: MIRROR });
+    stub.env({ LOKI_DOWNLOAD_URL: MIRROR });
     t.eq(installer.release_url("release.json"), MIRROR + "/Zagorsky17/LoKi/releases/latest/download/release.json");
     stub.restore();
     t.eq(installer.url_host(MIRROR + "/Zagorsky17/LoKi"), "10.0.2.2");
@@ -292,7 +292,7 @@ function run_with(value, steps, source) {
     write_state(value);
     ubus.__reset();
     uloop.__reset();
-    stub.env({ FORKOP_DOWNLOAD_URL: source == "api" ? null : MIRROR });
+    stub.env({ LOKI_DOWNLOAD_URL: source == "api" ? null : MIRROR });
     let result = { status: null };
     uloop.__on_run(() => { fs.writefile(installer.paths.script, "#!/bin/sh\nexit 0\n"); steps(result); });
     let original_lstat = fs.lstat;
@@ -316,7 +316,7 @@ function run_with(value, steps, source) {
 }
 
 function read(offset) {
-    return ubus.__invoke("forkop.installer", "read", { offset }).replied;
+    return ubus.__invoke("loki.installer", "read", { offset }).replied;
 }
 
 // The timers set so far fire once each, and those they set wait for the next call.
@@ -335,7 +335,7 @@ t.test("a stop interrupts install.sh's whole session as Ctrl+C does, once its tr
     let refusals = 1;
     stub.commands([ real_sha(), [ "kill", (argv) => { push(killed, join(" ", argv)); return { status: refusals-- > 0 ? 1 : 0 }; } ] ]);
     run_with({ action: "check", interactive: false }, () => {
-        seen.stop = ubus.__invoke("forkop.installer", "stop", { id: "run-1" }).replied;
+        seen.stop = ubus.__invoke("loki.installer", "stop", { id: "run-1" }).replied;
         seen.early = length(killed);
         sigint(40001, "default");
         fire_once();
@@ -344,7 +344,7 @@ t.test("a stop interrupts install.sh's whole session as Ctrl+C does, once its tr
         fire_once();
         fire_once();
         uloop.__exit(1, 1);
-        seen.late = ubus.__invoke("forkop.installer", "stop", { id: "run-1" }).replied;
+        seen.late = ubus.__invoke("loki.installer", "stop", { id: "run-1" }).replied;
         uloop.__exit(0, 0);
         uloop.__fire("timer");
     });
@@ -362,7 +362,7 @@ t.test("a checker ignoring SIGINT is not sent a destructive signal", () => {
     stub.commands([ real_sha(), [ "kill", (argv) => { push(killed, join(" ", argv)); return { status: 0 }; } ] ]);
     run_with({ action: "check", interactive: false }, () => {
         sigint(40001, "ignored");
-        seen.stop = ubus.__invoke("forkop.installer", "stop", { id: "run-1" }).replied;
+        seen.stop = ubus.__invoke("loki.installer", "stop", { id: "run-1" }).replied;
         seen.retries = fire_once();
         uloop.__exit(1, 0);
         uloop.__exit(0, 0);
@@ -420,7 +420,7 @@ t.test("a run another one is not is left alone", () => {
 });
 
 t.test("release validation still rejects malformed manifests and modified bytes behind the apply gate", () => {
-    let manifest = { schema: 1, name: "forkop", version: "2.0.1", tag: "2.0.1", requires: { "sing-box-forkop": "1.14.4-r4" } };
+    let manifest = { schema: 1, name: "loki", version: "2.0.1", tag: "2.0.1", requires: { "loki-core": "1.14.4-r4" } };
     t.eq(installer.valid_manifest(sprintf("%J", manifest)), true);
     for (let value in [ null, "not json", "{}", sprintf("%J", { ...manifest, schema: 2 }),
         sprintf("%J", { ...manifest, name: "other" }), sprintf("%J", { ...manifest, version: "2.0.1; id" }),

@@ -136,7 +136,7 @@ t.test("static records answer from a hosts server after the sections and before 
     t.ok(hosts_at > last_fakeip, "sections keep their FakeIP answers");
     t.ok(hosts_at < q.dns_rule_index(records, (r) => r.server == "dnsmasq-server"), "records answer before the local resolver");
     t.eq(records.dns.rules[hosts_at].domain, [ "ntc.party", "www.ntc.party", "example.com" ]);
-    t.eq(records.dns.rules[hosts_at].query_type, null, "the rule also matches the lookups sing-box makes to dial");
+    t.eq(records.dns.rules[hosts_at].query_type, null, "the rule also matches the lookups loki-core makes to dial");
 
     let resolve_at = q.route_rule_index(records, (r) => r.action == "resolve" && r.server == "hosts-server");
     let section_at = q.route_rule_index(records, (r) => r.action == "route" && r.domain_suffix != null && r.domain_suffix[0] == "ntc.party");
@@ -168,7 +168,7 @@ t.test("a DNS inbound refuses what is not hijacked", () => {
     }
 });
 
-t.test("the router's own lookups reach sing-box whatever the sections say, and leave the way a client's do", () => {
+t.test("the router's own lookups reach loki-core whatever the sections say, and leave the way a client's do", () => {
     let config = build({ settings: DNS, section: BYPASS });
     t.eq(q.inbound(config, "system-dns-in").listen_port, 1605);
     t.ok(q.route_rule(config, (r) => r.action == "sniff" && q.has(r.inbound, "system-dns-in")) != null);
@@ -206,7 +206,7 @@ t.test("no DNS rule matches the answer without asking for it, which the core ref
         { ".name": "direct_all", enabled: "1", action: "bypass", fully_routed_ips: [ "@system", "192.168.1.20/32" ] },
         { ".name": "dns_all", enabled: "1", action: "dns", dns_server: [ "8.8.8.8" ], fully_routed_ips: [ "192.168.1.30/32" ] }
     ];
-    for (let mode in [ "forkop", "router" ]) {
+    for (let mode in [ "loki", "router" ]) {
         let config = build({ settings: { ...DNS, unmatched_dns_mode: mode }, section: sections });
         for (let rule in config.dns.rules)
             t.eq(response_matchers(rule), [], mode + ": " + sprintf("%J", rule));
@@ -242,7 +242,7 @@ t.test("a device whose every query goes to one server keeps the local zone with 
     t.eq(q.dns_rule(router, (r) => q.has(r.source_ip_cidr, "192.168.1.30/32") && r.domain_regex != null), null, "with nothing to carve out");
 });
 
-t.test("unmatched client DNS goes to Forkop, with the local zone left to whoever owns loopback 53", () => {
+t.test("unmatched client DNS goes to Loki, with the local zone left to whoever owns loopback 53", () => {
     let moved = build({ settings: DNS, dhcp_dnsmasq: { port: "5353", domain: "home" }, section: BYPASS });
     let local = q.dns_server_tag(moved, "dnsmasq-server");
     t.eq([ local.server, local.server_port ], [ "127.0.0.1", 53 ], "a moved dnsmasq port changes nothing about the fallback");
@@ -250,10 +250,10 @@ t.test("unmatched client DNS goes to Forkop, with the local zone left to whoever
     t.ok(q.dns_rule(moved, (r) => r.server == "dnsmasq-server" && q.has(r.inbound, "source-dns-in") && r.domain_regex == "^[^.]+$") != null, "single-label names");
     t.ok(q.dns_rule(moved, (r) => r.server == "dnsmasq-server" && q.has(r.inbound, "source-dns-in") && r.domain_suffix == ".home") != null, "the DHCP domain");
     t.ok(q.dns_rule(moved, (r) => r.server == "dnsmasq-server" && q.has(r.inbound, "source-dns-in") && q.has(r.query_type, "PTR")) != null, "reverse lookups");
-    let forkop_at = q.dns_rule_index(moved, (r) => r.server == "dns-server" && q.has(r.inbound, "source-dns-in") && r.domain_regex == null);
+    let loki_at = q.dns_rule_index(moved, (r) => r.server == "dns-server" && q.has(r.inbound, "source-dns-in") && r.domain_regex == null);
     for (let i, rule in moved.dns.rules)
         if (rule.server == "dnsmasq-server" && q.has(rule.inbound, "source-dns-in"))
-            t.ok(i < forkop_at, "the local zone is answered before the LoKi fallback");
+            t.ok(i < loki_at, "the local zone is answered before the LoKi fallback");
 
     let disabled = build({ settings: DNS, dhcp_dnsmasq: { port: "0" }, section: BYPASS });
     t.eq(q.dns_server_tag(disabled, "dnsmasq-server").server_port, 53, "a disabled dnsmasq port changes nothing either");

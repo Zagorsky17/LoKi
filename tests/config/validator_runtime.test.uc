@@ -140,7 +140,7 @@ t.test("accepts valid", () => {
     });
 });
 
-t.test("leaves the contents of proxy JSON outbounds to sing-box", () => {
+t.test("leaves the contents of proxy JSON outbounds to loki-core", () => {
     v.accepts({
         "settings": {},
         "section": [
@@ -824,7 +824,7 @@ t.test("bad filter mode", () => {
 });
 
 
-// sing-box check accepts both, and the endpoint then fails to start.
+// loki-core check accepts both, and the endpoint then fails to start.
 t.test("unsupported server records are not interpreted or included in validation logs", () => {
     let result = v.accepts({
         section: [ { ".name": "main", enabled: "1", action: "connection" } ],

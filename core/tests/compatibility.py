@@ -137,13 +137,13 @@ def main(reference, directory, output):
         (output / f'version-{version}.log').write_text(reply.stdout)
     generator = output / 'generate.uc'
     generator.write_text('let fixture=require("fixture"); let generator=require("singbox.generator"); '
-                         'fixture.seed(json(getenv("FORKOP_COMPAT_FIXTURE"))); '
+                         'fixture.seed(json(getenv("LOKI_COMPAT_FIXTURE"))); '
                          'print(sprintf("%J",generator.build({service_address:"127.0.0.1",local_prefixes:[]})));\n')
     results = []
     for profile, fixture in profiles(output).items():
-        environment = {**os.environ, 'FORKOP_COMPAT_FIXTURE': json.dumps(fixture)}
+        environment = {**os.environ, 'LOKI_COMPAT_FIXTURE': json.dumps(fixture)}
         generated = subprocess.run(['ucode', '-L', str(ROOT / 'tests/fakes'), '-L', str(ROOT / 'tests/lib'),
-                                    '-L', str(ROOT / 'forkop/files/usr/lib'), str(generator)], env=environment,
+                                    '-L', str(ROOT / 'loki/files/usr/lib'), str(generator)], env=environment,
                                    check=True, capture_output=True, text=True, timeout=20)
         config = output / f'{profile}.json'
         json.loads(generated.stdout)

@@ -5,20 +5,20 @@ on:
     paths:
       - 'core/**'
       - 'install.sh'
-      - 'forkop/files/usr/lib/core/constants.uc'
-      - 'forkop/files/usr/lib/core/url.uc'
-      - 'forkop/files/usr/lib/core/ip.uc'
-      - 'forkop/files/usr/lib/singbox/**'
+      - 'loki/files/usr/lib/core/constants.uc'
+      - 'loki/files/usr/lib/core/url.uc'
+      - 'loki/files/usr/lib/core/ip.uc'
+      - 'loki/files/usr/lib/singbox/**'
       - '.github/workflows/core-ci.yml'
   push:
     branches: [main]
     paths:
       - 'core/**'
       - 'install.sh'
-      - 'forkop/files/usr/lib/core/constants.uc'
-      - 'forkop/files/usr/lib/core/url.uc'
-      - 'forkop/files/usr/lib/core/ip.uc'
-      - 'forkop/files/usr/lib/singbox/**'
+      - 'loki/files/usr/lib/core/constants.uc'
+      - 'loki/files/usr/lib/core/url.uc'
+      - 'loki/files/usr/lib/core/ip.uc'
+      - 'loki/files/usr/lib/singbox/**'
       - '.github/workflows/core-ci.yml'
 
 permissions:

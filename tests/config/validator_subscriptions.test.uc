@@ -369,7 +369,7 @@ t.test("subscription request profiles, filters and a local source pass", () => {
             {
                 ".name": "source_local",
                 "section": "proxy",
-                "url": "/etc/forkop/local-subscription.txt",
+                "url": "/etc/loki/local-subscription.txt",
                 "subscription_update_enabled": "1",
                 "subscription_update_interval": "invalid",
                 "download_via_proxy_enabled": "1",

@@ -21,9 +21,9 @@ class WatchRecovery(unittest.TestCase):
         self.assertIsNotNone(binary, "native ucode is required")
         with tempfile.TemporaryDirectory() as directory:
             snapshot = Path(directory) / "intercepted.json"
-            environment = dict(os.environ, FORKOP_TEST_TMP=directory,
-                               FORKOP_TEST_FATAL_SNAPSHOT=str(snapshot))
-            command = [binary, "-L", "fakes", "-L", "lib", "-L", "../forkop/files/usr/lib",
+            environment = dict(os.environ, LOKI_TEST_TMP=directory,
+                               LOKI_TEST_FATAL_SNAPSHOT=str(snapshot))
+            command = [binary, "-L", "fakes", "-L", "lib", "-L", "../loki/files/usr/lib",
                        "service/lifecycle.test.uc"]
             child = subprocess.Popen(command, cwd=ROOT / "tests", env=environment,
                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -44,8 +44,8 @@ class WatchRecovery(unittest.TestCase):
                 self.assertTrue(state["watcher"], state)
                 self.assertFalse(state["planned_stop"], state)
                 self.assertNotIn("rule-set worker started", state["events"])
-                recovery_environment = dict(os.environ, FORKOP_TEST_TMP=directory,
-                                            FORKOP_TEST_RECOVER_SNAPSHOT=str(snapshot))
+                recovery_environment = dict(os.environ, LOKI_TEST_TMP=directory,
+                                            LOKI_TEST_RECOVER_SNAPSHOT=str(snapshot))
                 recovered = subprocess.run(command, cwd=ROOT / "tests", env=recovery_environment,
                                            capture_output=True, text=True, timeout=5)
                 self.assertEqual(recovered.returncode, 0, recovered.stderr)

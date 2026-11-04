@@ -1,7 +1,7 @@
 let t = require("t");
 let conflicts = require("diagnostics.conflicts");
 
-// What the AX3000T runs beside Forkop: Zapret with its own marks and queues, fw4's DNS redirect.
+// What the AX3000T runs beside Loki: Zapret with its own marks and queues, fw4's DNS redirect.
 const NEIGHBOURS = join("\n", [
     "table inet zapret {",
     "\tset wanif {",
@@ -24,7 +24,7 @@ const NEIGHBOURS = join("\n", [
     "\t\tudp dport 53 counter redirect to :5353",
     "\t}",
     "}",
-    "table inet ForkopTable {",
+    "table inet loki {",
     "\tchain proxy {",
     "\t\ttype filter hook prerouting priority dstnat; policy accept;",
     "\t\tmeta l4proto tcp tproxy ip to :1602",
@@ -43,7 +43,7 @@ t.test("priorities read the way nft prints them", () => {
     t.eq(conflicts.priority_value("unknown"), null);
 });
 
-t.test("neighbours that mark with their own bits or redirect DNS after Forkop are no conflict", () => {
+t.test("neighbours that mark with their own bits or redirect DNS after Loki are no conflict", () => {
     t.eq(conflicts.find(NEIGHBOURS), []);
 });
 
@@ -70,7 +70,7 @@ t.test("a transparent proxy of another table is a conflict wherever its chain is
     t.eq(conflicts.find(listing), [ { table: "inet PodkopTable", kind: "tproxy" } ], "a chain no hook reaches redirects nothing");
 });
 
-t.test("a DNS redirect counts when it can run before Forkop's", () => {
+t.test("a DNS redirect counts when it can run before Loki's", () => {
     let redirect = (hook, priority, rule) => sprintf("table ip other {\n\tchain c {\n\t\ttype nat hook %s priority %s; policy accept;\n\t\t%s\n\t}\n}\n", hook, priority, rule);
     t.eq(conflicts.find(redirect("prerouting", "dstnat - 5", "meta l4proto udp th dport 53 redirect to :5353")), [ { table: "ip other", kind: "dns" } ]);
     t.eq(conflicts.find(redirect("prerouting", "dstnat - 5", "udp dport { 53, 853 } dnat to 10.0.0.1")), [ { table: "ip other", kind: "dns" } ], "a port set");

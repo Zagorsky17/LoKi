@@ -9,7 +9,7 @@ t.test("as_string keeps strings and turns null into an empty string", () => {
     t.eq(common.as_string(42), "42");
 });
 
-t.test("durations follow Go syntax, as sing-box reads them", () => {
+t.test("durations follow Go syntax, as loki-core reads them", () => {
     let cases = [
         [ "3m", 180 ], [ "30m", 1800 ], [ "1h30m", 5400 ], [ "1d", 86400 ], [ "1.5s", 2 ],
         [ "90", null ], [ "bogus", null ], [ "", null ], [ "0s", null ]

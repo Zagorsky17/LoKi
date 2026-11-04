@@ -7,19 +7,19 @@ let stub = require("stub");
 
 global.time = () => 1000;
 function line(stamp, message, tag) {
-    return "Sun Nov  1 12:00:00 2026 [" + stamp + ".000] daemon.err " + (tag ?? "sing-box[12]") + ": " + message + "\n";
+    return "Sun Nov  1 12:00:00 2026 [" + stamp + ".000] daemon.err " + (tag ?? "loki-core[12]") + ": " + message + "\n";
 }
 function read_log(text, status) {
     stub.commands([ [ "logread", { stdout: text, status: status ?? 0 } ] ]);
     let value = checks.core_log();
-    t.eq(stub.calls()[0].argv, [ "logread", "-t", "-l", "1000", "-e", "^sing-box" ]);
+    t.eq(stub.calls()[0].argv, [ "logread", "-t", "-l", "1000", "-e", "^loki-core" ]);
     stub.restore();
     return value;
 }
 
 t.test("counts messages in (now - 60, now], not the failures hidden by DNS aggregation", () => {
     let text = line(940, "ERROR old") + line(941, "ERROR[0042] first") +
-        line(1000, "FATAL failure", "sing-box") + line(999, "ERROR dns: 246 more exchanges failed in 10s") +
+        line(1000, "FATAL failure", "loki-core") + line(999, "ERROR dns: 246 more exchanges failed in 10s") +
         line(998, "INFO ERROR is quoted") + line(997, "WARN failed") + line(996, "\x1b[31mERROR\x1b[0m colored");
     t.eq(read_log(text), { available: true, count: 4, limited: false });
     t.eq(read_log(""), { available: true, count: 0, limited: false });
@@ -27,9 +27,9 @@ t.test("counts messages in (now - 60, now], not the failures hidden by DNS aggre
 
 t.test("untrusted tags, dates and trailing fragments cannot manufacture a complete count", () => {
     for (let text in [ line(1001, "ERROR future"), line(999, "ERROR forged", "other"),
-        "ERROR [999.000] sing-box: ERROR injected\n", line(999, "INFO [999.000] sing-box: ERROR injected"),
-        "Sun Nov  1 12:00:00 2026 daemon.err sing-box[12]: ERROR timestamp missing\n",
-        "Sun Nov  1 12:00:00 2026 [oops.000] daemon.err sing-box[12]: ERROR invalid\n" ]) {
+        "ERROR [999.000] loki-core: ERROR injected\n", line(999, "INFO [999.000] loki-core: ERROR injected"),
+        "Sun Nov  1 12:00:00 2026 daemon.err loki-core[12]: ERROR timestamp missing\n",
+        "Sun Nov  1 12:00:00 2026 [oops.000] daemon.err loki-core[12]: ERROR invalid\n" ]) {
         let value = read_log(text);
         t.eq(value.count, 0);
     }
@@ -68,7 +68,7 @@ t.test("only 64 KiB plus one overflow byte can be read, with no temporary file o
 });
 
 t.test("a full line limit is reported as incomplete rather than a precise rate", () => {
-    t.eq(read_log(join("", map(split(sprintf("%01000d", 0), ""), () => "Sun Nov  1 12:00:00 2026 [999.000] a.b sing-box: ERROR x\n"))) ,
+    t.eq(read_log(join("", map(split(sprintf("%01000d", 0), ""), () => "Sun Nov  1 12:00:00 2026 [999.000] a.b loki-core: ERROR x\n"))) ,
         { available: true, count: 1000, limited: true });
 });
 t.done();

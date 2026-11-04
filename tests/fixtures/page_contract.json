@@ -431,7 +431,7 @@
     }
   },
   "installer": {
-    "object": "forkop.installer",
+    "object": "loki.installer",
     "methods": [
       "input",
       "read",

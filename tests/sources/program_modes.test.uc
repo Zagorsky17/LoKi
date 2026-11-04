@@ -5,7 +5,7 @@ let t = require("t");
 let fs = require("fs");
 let repo = require("repo");
 
-const LIBRARY = repo.path("forkop/files/usr/lib");
+const LIBRARY = repo.path("loki/files/usr/lib");
 
 function library_files() {
     let pipe = fs.popen("cd '" + LIBRARY + "' && find . -name '*.uc' -type f | sort", "r");
@@ -23,11 +23,11 @@ function dispatched_modes(source) {
 }
 
 // The modes a source runs a module with, as [ module, mode ] pairs:
-//   ucode -L /usr/lib/forkop /usr/lib/forkop/config/migration.uc migrate
+//   ucode -L /usr/lib/loki /usr/lib/loki/config/migration.uc migrate
 //   ucode -L "$library" "$library/service/state_service.uc" run
 function requested_modes(source) {
     let requests = [];
-    for (let found in match(source, /(\/usr\/lib\/forkop|\$library)\/([a-z_]+\/[a-z_]+\.uc)"? ([a-z][a-z-]*)/g) ?? [])
+    for (let found in match(source, /(\/usr\/lib\/loki|\$library)\/([a-z_]+\/[a-z_]+\.uc)"? ([a-z][a-z-]*)/g) ?? [])
         push(requests, [ found[2], found[3] ]);
     return requests;
 }
@@ -39,11 +39,11 @@ t.test("every mode a module is run with is one it dispatches", () => {
 
     let callers = [
         ...map(library_files(), (path) => [ path, LIBRARY + "/" + path ]),
-        [ "forkop/Makefile", repo.path("forkop/Makefile") ],
+        [ "loki/Makefile", repo.path("loki/Makefile") ],
         [ "build.sh", repo.path("build.sh") ],
         [ "install.sh", repo.path("install.sh") ],
-        [ "init.d/forkop", repo.path("forkop/files/etc/init.d/forkop") ],
-        [ "init.d/forkop-state", repo.path("forkop/files/etc/init.d/forkop-state") ]
+        [ "init.d/loki", repo.path("loki/files/etc/init.d/loki") ],
+        [ "init.d/loki-state", repo.path("loki/files/etc/init.d/loki-state") ]
     ];
 
     let checked = 0;

@@ -7,10 +7,10 @@ let nft = require("nft.apply");
 let constants = require("core.constants");
 
 let dir = stub.tmpdir();
-let init = dir + "/forkop-init";
-let state_init = dir + "/forkop-state";
+let init = dir + "/loki-init";
+let state_init = dir + "/loki-state";
 let firewall_init = dir + "/firewall";
-let include = dir + "/forkop.nft";
+let include = dir + "/loki.nft";
 
 pkg.paths.init = init;
 pkg.paths.state_service_init = state_init;
@@ -24,7 +24,7 @@ nft.paths.rt_tables = dir + "/rt_tables";
 for (let path in [ state_init, firewall_init, include, pkg.paths.rpcd_init ])
     fs.writefile(path, "");
 
-const RT_TABLES = "100 main\n105 forkop\n1105 forkopx\n200 custom\n";
+const RT_TABLES = "100 main\n105 loki\n1105 lokix\n200 custom\n";
 
 function leave_runtime() {
     fs.mkdir(dir + "/run");
@@ -50,12 +50,12 @@ t.test("a removal takes autostart away, stops the service, then drops the routin
     leave_runtime();
     let named_at_stop = null;
     let result = run(() => pkg.prerm("remove"), [
-        [ init + " stop", () => { named_at_stop = index(fs.readfile(nft.paths.rt_tables), "105 forkop\n") >= 0; return {}; } ]
+        [ init + " stop", () => { named_at_stop = index(fs.readfile(nft.paths.rt_tables), "105 loki\n") >= 0; return {}; } ]
     ]);
     t.eq(result.status, 0);
     t.eq(result.commands, [ init + " disable", state_init + " disable", state_init + " stop", init + " stop" ]);
     t.ok(named_at_stop, "the stop still finds the table name it removes routes by");
-    t.eq(fs.readfile(nft.paths.rt_tables), "100 main\n1105 forkopx\n200 custom\n");
+    t.eq(fs.readfile(nft.paths.rt_tables), "100 main\n1105 lokix\n200 custom\n");
     t.eq(runtime_left(), [ false, false ]);
 });
 
@@ -76,12 +76,12 @@ t.test("postinst starts again only what the upgrade stopped", () => {
     fs.writefile(pkg.paths.was_running, "1\n");
     let result = run(() => pkg.postinst(), [ [ "nft list chain", { status: 1 } ] ]);
     t.eq(result.status, 0);
-    t.eq(result.commands, [ "logger -t forkop -p user.info [info] Installed LoKi " + constants.FORKOP_VERSION, state_init + " enable", state_init + " restart",
+    t.eq(result.commands, [ "logger -t loki -p user.info [info] Installed LoKi " + constants.LOKI_VERSION, state_init + " enable", state_init + " restart",
         "nft list chain inet fw4 input", init + " start" ]);
     t.eq(fs.stat(pkg.paths.was_running), null);
 
     t.eq(run(() => pkg.postinst(), [ [ "nft list chain", { status: 1 } ] ]).commands,
-        [ "logger -t forkop -p user.info [info] Installed LoKi " + constants.FORKOP_VERSION, state_init + " enable", state_init + " restart", "nft list chain inet fw4 input" ]);
+        [ "logger -t loki -p user.info [info] Installed LoKi " + constants.LOKI_VERSION, state_init + " enable", state_init + " restart", "nft list chain inet fw4 input" ]);
 
     fs.writefile(pkg.paths.was_running, "1\n");
     t.eq(run(() => pkg.postinst(), [ [ "nft list chain", { status: 1 } ], [ init + " start", { status: 1 } ] ]).status, 1);
@@ -91,17 +91,18 @@ t.test("postinst starts again only what the upgrade stopped", () => {
 
 t.test("postinst loads the firewall include into a running firewall that lacks it, and nowhere else", () => {
     let chain_without = "chain input {\n\tiif \"lo\" accept\n}\n";
-    let chain_with = "chain input {\n" + fs.readfile(repo.path("forkop/files/usr/share/nftables.d/chain-pre/input/forkop.nft")) + "}\n";
+    let chain_with = "chain input {\n" + fs.readfile(repo.path("loki/files/usr/share/nftables.d/chain-pre/input/loki.nft")) + "}\n";
     function reloads(nft_reply, reload_status) {
         let result = run(() => pkg.postinst(), [ [ "nft list chain", nft_reply ], [ firewall_init + " reload", { status: reload_status ?? 0 } ] ]);
-        return filter(result.commands, (line) => line == firewall_init + " reload" || substr(line, 0, 32) == "logger -t forkop -p user.warning");
+        let warning = "logger -t loki -p user.warning";
+        return filter(result.commands, (line) => line == firewall_init + " reload" || substr(line, 0, length(warning)) == warning);
     }
 
     t.eq(reloads({ stdout: chain_without }), [ firewall_init + " reload" ]);
     t.eq(reloads({ stdout: chain_with }), [], "a firewall already carrying the accept is left alone");
     t.eq(reloads({ status: 1 }), [], "a firewall the user keeps stopped is not started");
     t.eq(reloads({ stdout: chain_without }, 1), [ firewall_init + " reload",
-        "logger -t forkop -p user.warning [warn] Failed to reload the firewall; reload it by hand so that its input chain accepts LoKi's traffic" ]);
+        "logger -t loki -p user.warning [warn] Failed to reload the firewall; reload it by hand so that its input chain accepts LoKi's traffic" ]);
 
     fs.unlink(include);
     t.eq(reloads({ stdout: chain_without }), [], "without the shipped include there is nothing to load");

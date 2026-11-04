@@ -1,6 +1,7 @@
 """Exercise package-root recipes without an SDK, package manager or downloads."""
 # Modified for LoKi on 2026-11-04: preserve the root license in distributed payloads.
 from pathlib import Path
+import json
 import re
 import subprocess
 import tempfile
@@ -25,7 +26,7 @@ build_backend_root "$2/backend"
 build_app_root "$2/app"
 build_i18n_root "$2/i18n" "$2/po2lmo"
 ''')
-            payloads = {'backend': 'forkop', 'app': 'luci-app-forkop', 'i18n': 'luci-i18n-forkop-ru'}
+            payloads = {'backend': 'loki', 'app': 'luci-app-loki', 'i18n': 'luci-i18n-loki-ru'}
             for attempt in range(2):
                 result = subprocess.run(['bash', str(script), str(ROOT), str(work)], capture_output=True, text=True)
                 self.assertEqual(result.returncode, 0, result.stderr)
@@ -37,10 +38,27 @@ build_i18n_root "$2/i18n" "$2/po2lmo"
                     self.assertEqual(license_file.stat().st_mode & 0o777, 0o644)
                     self.assertEqual(license_file.parent.stat().st_mode & 0o777, 0o755)
                     paths.append(license_file)
-                self.assertEqual((work / 'backend/usr/share/forkop/install.sh').read_bytes(), (ROOT / 'install.sh').read_bytes())
-                font = 'luci-static/resources/view/forkop/fonts/LICENSE.md'
-                self.assertEqual((work / 'app/www' / font).read_bytes(), (ROOT / 'luci-app-forkop/htdocs' / font).read_bytes())
-                self.assertTrue((work / 'i18n/usr/lib/lua/luci/i18n/forkop.ru.lmo').is_file())
+                self.assertEqual((work / 'backend/usr/share/loki/install.sh').read_bytes(), (ROOT / 'install.sh').read_bytes())
+                font = 'luci-static/resources/view/loki/fonts/LICENSE.md'
+                self.assertEqual((work / 'app/www' / font).read_bytes(), (ROOT / 'luci-app-loki/htdocs' / font).read_bytes())
+                self.assertTrue((work / 'i18n/usr/lib/lua/luci/i18n/loki.ru.lmo').is_file())
+                installed = {str(path.relative_to(work / 'backend')) for path in (work / 'backend').rglob('*')}
+                self.assertTrue({'usr/bin/loki', 'etc/init.d/loki', 'etc/init.d/loki-state', 'etc/config/loki',
+                                 'usr/lib/loki/service/lifecycle.uc'} <= installed)
+                self.assertEqual((work / 'backend/etc/config/loki').stat().st_mode & 0o777, 0o600,
+                                 'the mutable credential store must be private before its first commit')
+                self.assertEqual((work / 'backend/usr/share/loki/default-config').stat().st_mode & 0o777, 0o644)
+                self.assertFalse(any('forkop' in path for path in installed), 'legacy installed entrypoints must be absent')
+                acl_path = work / 'app/usr/share/rpcd/acl.d/luci-app-loki.json'
+                acl = json.loads(acl_path.read_text())
+                self.assertEqual(set(acl), {'luci-app-loki'})
+                self.assertTrue({'loki', 'loki.installer'} <= set(acl['luci-app-loki']['read']['ubus']))
+                self.assertFalse({'forkop', 'forkop.installer'} & set(acl['luci-app-loki']['read']['ubus']))
+                self.assertEqual(acl['luci-app-loki']['write']['uci'], {'loki': ['read', 'write']})
+                self.assertNotIn('loki', acl['luci-app-loki']['read']['uci'])
+                for payload in ('app', 'i18n'):
+                    self.assertFalse(any('forkop' in str(path.relative_to(work / payload))
+                                         for path in (work / payload).rglob('*')), 'legacy LuCI/ACL/locale paths must be absent')
                 if attempt == 0:
                     for path in paths:
                         path.write_text('stale notice')
@@ -51,7 +69,7 @@ build_i18n_root "$2/i18n" "$2/po2lmo"
             work = Path(work)
             source = work / 'source'
             source.mkdir()
-            for name in ('forkop', 'luci-app-forkop', 'install.sh'):
+            for name in ('loki', 'luci-app-loki', 'install.sh'):
                 (source / name).symlink_to(ROOT / name)
             compiler = work / 'po2lmo'
             compiler.write_text('#!/bin/sh\ncp "$1" "$2"\n')
@@ -64,22 +82,22 @@ build_i18n_root "$2/i18n" "$2/po2lmo"
                     self.assertIn('LICENSE', result.stderr)
 
     def test_feed_recipes_copy_the_same_license_without_changing_metadata(self):
-        backend = (ROOT / 'forkop/Makefile').read_text()
-        luci = (ROOT / 'luci-app-forkop/Makefile').read_text()
+        backend = (ROOT / 'loki/Makefile').read_text()
+        luci = (ROOT / 'luci-app-loki/Makefile').read_text()
         self.assertIn('PKG_LICENSE:=GPL-2.0-or-later', backend)
         self.assertIn('PKG_LICENSE:=GPL-2.0-or-later', luci)
-        self.assertIn('$(INSTALL_DATA) ../LICENSE $(1)/usr/share/licenses/forkop/LICENSE', backend)
+        self.assertIn('$(INSTALL_DATA) ../LICENSE $(1)/usr/share/licenses/loki/LICENSE', backend)
         hook = re.search(r'define Build/Prepare/\$\(PKG_NAME\)\n(.*?)\nendef', luci, re.S)[1]
         with tempfile.TemporaryDirectory() as work:
             work = Path(work)
-            bundle = work / 'htdocs/luci-static/resources/view/forkop/main.js'
+            bundle = work / 'htdocs/luci-static/resources/view/loki/main.js'
             bundle.parent.mkdir(parents=True)
             bundle.write_text('__COMPILED_VERSION_VARIABLE__')
-            recipe = hook.replace('$(PKG_BUILD_DIR)', str(work)).replace('$(FORKOP_COMPILED_VERSION)', '2.0.0').replace('$(INSTALL_DIR)', 'install -d -m0755').replace('$(INSTALL_DATA)', 'install -m0644')
-            result = subprocess.run(['bash', '-e', '-c', recipe], cwd=ROOT / 'luci-app-forkop', capture_output=True, text=True)
+            recipe = hook.replace('$(PKG_BUILD_DIR)', str(work)).replace('$(LOKI_COMPILED_VERSION)', '2.0.0').replace('$(INSTALL_DIR)', 'install -d -m0755').replace('$(INSTALL_DATA)', 'install -m0644')
+            result = subprocess.run(['bash', '-e', '-c', recipe], cwd=ROOT / 'luci-app-loki', capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(bundle.read_text(), '2.0.0')
-            self.assertEqual((work / 'root/usr/share/licenses/luci-app-forkop/LICENSE').read_bytes(), (ROOT / 'LICENSE').read_bytes())
+            self.assertEqual((work / 'root/usr/share/licenses/luci-app-loki/LICENSE').read_bytes(), (ROOT / 'LICENSE').read_bytes())
 
 
 if __name__ == '__main__':

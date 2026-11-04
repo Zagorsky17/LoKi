@@ -31,7 +31,7 @@ t.test("netstat tells a listener apart and names who else holds its port", () =>
         "Proto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name\n" +
         "tcp        0      0 0.0.0.0:443             0.0.0.0:*               LISTEN      111/nginx\n" +
         "udp        0      0 0.0.0.0:443             0.0.0.0:*                           222/dnsmasq\n" +
-        "tcp        0      0 0.0.0.0:443             0.0.0.0:*               LISTEN      333/sing-box\n";
+        "tcp        0      0 0.0.0.0:443             0.0.0.0:*               LISTEN      333/loki-core\n";
     let found = [];
     for (let proto in [ "tcp", "udp" ])
         push(found, ...netstat.port_conflict_owners(owners, "0.0.0.0", "443", proto));

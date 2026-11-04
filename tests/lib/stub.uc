@@ -126,7 +126,7 @@ function calls() {
     return state == null ? [] : state.calls;
 }
 
-// A handler that keeps the "[level] message" of every line Forkop logs.
+// A handler that keeps the "[level] message" of every line Loki logs.
 function logger(lines) {
     return [ "logger", (argv) => { push(lines, argv[length(argv) - 1]); return { status: 0 }; } ];
 }
@@ -203,9 +203,9 @@ function restore() {
 // A fresh directory under the runner's scratch root.
 let tmp_counter = 0;
 function tmpdir() {
-    let root = real.getenv("FORKOP_TEST_TMP") || "/tmp";
+    let root = real.getenv("LOKI_TEST_TMP") || "/tmp";
     let now = real.clock();
-    let path = sprintf("%s/forkop-unit.%d.%d.%d", root, now[0], now[1], ++tmp_counter);
+    let path = sprintf("%s/loki-unit.%d.%d.%d", root, now[0], now[1], ++tmp_counter);
     real.system("mkdir -p '" + path + "'");
     return path;
 }

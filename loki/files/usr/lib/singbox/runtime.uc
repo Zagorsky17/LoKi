@@ -1,0 +1,203 @@
+// Modified for LoKi on 2026-11-03: validate private cache paths before configuration writes.
+// Modified for LoKi on 2026-11-03: product labels in user-facing messages.
+// Modified for LoKi on 2026-11-01: preserve LAN reverse zones while routing external PTR by DNS policy.
+let fs = require("fs");
+let common = require("core.common");
+let cache_path = require("core.cache_path");
+let exec = require("core.exec");
+let uci = require("core.uci");
+let singbox_constants = require("singbox.constants");
+let packages = require("core.packages");
+let generator = require("singbox.generator");
+let core_ip = require("core.ip");
+
+const CONFIG_NAME = "loki";
+
+function settings() {
+    return uci.get_all(CONFIG_NAME, "settings") ?? {};
+}
+
+// Loki starts loki-core itself; the core's own autostart would start it without the rules
+// around it.
+function configure_service() {
+    if (!uci.exists("loki-core.main") && !uci.set_section("loki-core.main", "loki-core"))
+        die("Failed to create the loki-core service section in /etc/config/loki-core");
+
+    let changed = [];
+    for (let option in [ [ "enabled", "1" ], [ "user", "root" ], [ "conffile", common.option(settings(), "config_path", "") ] ]) {
+        if (trim(uci.get("loki-core.main." + option[0])) == option[1])
+            continue;
+        if (!uci.set("loki-core.main." + option[0], option[1]))
+            die("Failed to set loki-core.main." + option[0] + " in /etc/config/loki-core");
+        push(changed, option[0] + "=" + option[1]);
+    }
+    if (length(changed) > 0) {
+        if (!uci.commit("loki-core"))
+            die("Failed to save the loki-core service settings in /etc/config/loki-core");
+        exec.log("info", "Set up the loki-core service for LoKi: " + join(", ", changed));
+    }
+
+    if (fs.stat("/etc/rc.d/S99loki-core") == null)
+        return;
+    if (exec.ok([ "/etc/init.d/loki-core", "disable" ]))
+        exec.log("info", "Disabled the loki-core autostart; LoKi starts loki-core itself");
+    else
+        exec.log("warn", "Failed to disable the loki-core autostart; at boot loki-core may start without LoKi");
+}
+
+function interface_ipv4_address(name) {
+    let status = common.parse_json(exec.output([ "ubus", "call", "network.interface." + name, "status" ]));
+    return common.as_string(status?.["ipv4-address"]?.[0]?.address);
+}
+
+function device_ipv4_address(device) {
+    let matched = match(exec.output([ "ip", "-4", "addr", "show", "dev", device ]) ?? "", /inet[ \t]+([0-9.]+)\//);
+    return matched ? matched[1] : "";
+}
+
+// The address the service inbounds listen on: the one configured, else the LAN's.
+function listen_address(values) {
+    values ??= settings();
+    let configured = common.option(values, "service_listen_address", "");
+    if (configured != "")
+        return configured;
+
+    let address = interface_ipv4_address("lan");
+    for (let name in common.words(common.option(values, "source_network_interfaces", "br-lan"))) {
+        if (address != "")
+            break;
+        address = interface_ipv4_address(name) || device_ipv4_address(name);
+    }
+    return address;
+}
+
+function local_prefixes(values) {
+    let devices = common.words(common.option(values, "source_network_interfaces", "br-lan"));
+    if (length(devices) > 64)
+        return null;
+    let seen = {};
+    let prefixes = {};
+    for (let device in devices) {
+        if (seen[device])
+            continue;
+        seen[device] = true;
+        let pipe = fs.popen(exec.command_line([ "ip", "-o", "addr", "show", "dev", device ]) + " 2>/dev/null", "r");
+        if (!pipe)
+            return null;
+        // Bound each snapshot before expanding its addresses into reverse-zone matchers.
+        let output = pipe.read(65537);
+        let status = pipe.close();
+        if (status != 0 || type(output) != "string" || output == "" || length(output) > 65536)
+            return null;
+        for (let line in split(trim(output), "\n")) {
+            let entry = match(line, /^[0-9]+:[ \t]+([^ \t]+)[ \t]+(inet6?)[ \t]+([^ \t]+)([ \t]|$)/);
+            if (entry == null || split(entry[1], "@")[0] != device || !core_ip.valid_ip_cidr(entry[3]) ||
+                core_ip.ip_family(entry[3]) != (entry[2] == "inet" ? 4 : 6))
+                return null;
+            prefixes[entry[3]] = true;
+            if (length(prefixes) > 256)
+                return null;
+        }
+    }
+    return sort(keys(prefixes));
+}
+
+// While mwan3 has an enabled interface and runs or will start, it owns egress routing, which a
+// pinned output interface bypasses.
+function mwan3_active() {
+    if (((fs.stat("/etc/init.d/mwan3")?.mode ?? 0) & 0111) == 0 || (fs.stat("/etc/config/mwan3")?.size ?? 0) == 0)
+        return false;
+    if (length(filter(uci.section_objects("mwan3", "interface"), (s) => common.option(s, "enabled", "0") == "1")) == 0)
+        return false;
+    return exec.ok([ "/etc/init.d/mwan3", "status" ]) || exec.ok([ "/etc/init.d/mwan3", "enabled" ]);
+}
+
+// The first line a failed core command printed, which is its fatal error.
+function failure_reason(result) {
+    return filter(split(result.output, "\n"), (line) => trim(line) != "")[0] ?? "exit status " + result.status;
+}
+
+function check(text) {
+    let now = clock();
+    let path = sprintf("/tmp/loki-core-check.%d.%d.json", now[0], now[1]);
+    if (!common.write_private_file(path, text))
+        die("Failed to write the generated loki-core configuration to " + path);
+    let result;
+    try {
+        result = exec.combined([ "/usr/bin/loki-core", "--disable-color", "-c", path, "check" ]);
+    }
+    catch (e) {
+        fs.unlink(path);
+        die(e.message);
+    }
+    fs.unlink(path);
+    if (result.status == 0)
+        return;
+    die("loki-core refused the generated configuration: " + failure_reason(result));
+}
+
+// The file is written only once the core accepted it. Returns whether it changed; a start
+// checks it regardless, since the core may have been replaced.
+function write_config(checked) {
+    let values = settings();
+    let path = common.option(values, "config_path", "");
+    if (path == "")
+        die("The loki-core configuration file path is not set in Settings");
+
+    // The private tmpfs directory is created only after the read-only path gate.
+    cache_path.ensure(values);
+
+    let output_interface = common.option(values, "output_network_interface", "");
+    if (output_interface != "" && mwan3_active())
+        exec.log("warn", "mwan3 is active, but the output interface is set to '" + output_interface + "': loki-core sends its traffic out of it, past mwan3");
+
+    let address = listen_address(values);
+    if (address == "")
+        exec.log("warn", "No IPv4 address found on the LAN, so the Clash API listens on 127.0.0.1 only; set loki.settings.service_listen_address to choose one");
+
+    let text;
+    try {
+        let prefixes = local_prefixes(values);
+        if (prefixes == null)
+            exec.log("warn", "Cannot determine LAN prefixes; keeping all PTR queries with the local DNS resolver");
+        text = sprintf("%J\n", generator.build({ service_address: address, local_prefixes: prefixes }));
+    }
+    catch (e) {
+        die("Failed to generate the loki-core configuration: " + e.message);
+    }
+    let unchanged = fs.readfile(path) == text;
+    if (checked || !unchanged)
+        check(text);
+
+    if (unchanged)
+        return false;
+    if (!common.write_file_atomic(path, text))
+        die("Failed to write the loki-core configuration to " + path);
+    return true;
+}
+
+// The devices the running configuration binds the core's own sockets to.
+function bound_devices() {
+    let config = common.read_json_file(common.option(settings(), "config_path", ""));
+    let bound = map(config?.outbounds ?? [], (item) => item?.bind_interface);
+    let devices = [];
+    for (let name in [ config?.route?.default_interface, ...bound ])
+        if (type(name) == "string" && name != "" && index(devices, name) < 0)
+            push(devices, name);
+    return sort(devices);
+}
+
+function version() {
+    let value = packages.version("loki-core") || trim(fs.readfile(packages.paths.sing_box_version) ?? "");
+    return replace(value, /~/g, "-");
+}
+
+// The service's core only: the state service runs the binary for its version on every restart.
+function process_running() {
+    return exec.ok([ "pgrep", "-f", "^/usr/bin/loki-core[[:space:]]+run([[:space:]]|$)" ]);
+}
+
+return {
+    configure_service, write_config, listen_address, device_ipv4_address,
+    mwan3_active, bound_devices, version, process_running
+};

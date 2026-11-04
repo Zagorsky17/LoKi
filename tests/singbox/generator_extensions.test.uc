@@ -32,7 +32,7 @@ t.test("only an explicitly disabled unified delay is omitted", () => {
 });
 
 t.test("active local and remote providers retain their options and subscription cache", () => {
-    for (let source in [ "http://127.0.0.1:18081/sub", "/etc/forkop/subscription.txt" ]) {
+    for (let source in [ "http://127.0.0.1:18081/sub", "/etc/loki/subscription.txt" ]) {
         let config = build({ unified_delay: "0" }, {
             subscription_url: [ { ".name": "sub", section: "main", tag: "Sub", url: source, subscription_update_enabled: "0" } ]
         });

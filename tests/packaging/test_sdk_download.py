@@ -242,7 +242,7 @@ class SDKDownloadTests(unittest.TestCase):
         subprocess.run(['zstd', '-q', str(raw), '-o', str(archive)], check=True)
         destination = self.directory / 'extracted' / 'ipk'
         destination.mkdir(parents=True)
-        (destination / '.forkop-sdk-url').write_text(self.url + '/valid\n')
+        (destination / '.loki-sdk-url').write_text(self.url + '/valid\n')
         (destination / 'old').write_text('unverified')
         settings = dict(os.environ, SDK_DIR=str(destination.parent))
         def extract(digest):
@@ -252,7 +252,7 @@ class SDKDownloadTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse((destination / 'old').exists())
         self.assertEqual((destination / 'payload').read_bytes(), b'fresh')
-        self.assertEqual((destination / '.forkop-sdk-sha256').read_text(), SHA + '\n')
+        self.assertEqual((destination / '.loki-sdk-sha256').read_text(), SHA + '\n')
         (destination / 'reuse').write_text('kept')
         self.assertEqual(extract(SHA).returncode, 0)
         self.assertTrue((destination / 'reuse').exists())

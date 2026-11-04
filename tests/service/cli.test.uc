@@ -14,15 +14,15 @@ function run(argv, status) {
 t.test("start, stop, restart and reload go to the init script and return its status", () => {
     for (let verb in [ "start", "stop", "restart" ]) {
         let result = run([ verb ], 3);
-        t.eq(result.commands, [ "/etc/init.d/forkop " + verb ]);
+        t.eq(result.commands, [ "/etc/init.d/loki " + verb ]);
         t.eq(result.result, 3);
     }
     let reload = run([ "reload", "manual" ], 0);
-    t.eq(reload.commands, [ "/etc/init.d/forkop reload manual" ]);
+    t.eq(reload.commands, [ "/etc/init.d/loki reload manual" ]);
 });
 
 t.test("a command takes only the arguments it declares", () => {
-    t.eq(run([ "reload", "manual", "extra" ]).commands, [ "/etc/init.d/forkop reload manual" ]);
+    t.eq(run([ "reload", "manual", "extra" ]).commands, [ "/etc/init.d/loki reload manual" ]);
 });
 
 t.test("autostart answers the page whether the switch moved or not", () => {
@@ -46,11 +46,11 @@ t.test("autostart answers the page whether the switch moved or not", () => {
 t.test("the log command answers an empty log with nothing, successfully", () => {
     stub.commands([ [ () => true, { status: 0, stdout: "" } ] ]);
     let empty = stub.capture(() => cli.main([ "check_logs" ], "/lib"));
-    stub.commands([ [ () => true, { status: 0, stdout: "forkop: [info] up\n" } ] ]);
+    stub.commands([ [ () => true, { status: 0, stdout: "loki: [info] up\n" } ] ]);
     let some = stub.capture(() => cli.main([ "check_logs" ], "/lib"));
     stub.restore();
     t.eq([ empty.result, empty.stdout ], [ 0, "" ]);
-    t.eq([ some.result, some.stdout ], [ 0, "forkop: [info] up\n" ]);
+    t.eq([ some.result, some.stdout ], [ 0, "loki: [info] up\n" ]);
 });
 
 t.test("an unknown or retired command prints the help and fails without running anything", () => {
@@ -80,9 +80,9 @@ t.test("report defaults to masked JSON and only an explicit raw request returns 
     let fixture = require("fixture");
     let report = require("diagnostics.report");
     let dir = stub.tmpdir();
-    report.paths.forkop_config = dir + "/report-config";
+    report.paths.loki_config = dir + "/report-config";
     fixture.seed({ settings: { mixed_proxy_password: "cli-report-secret" } });
-    fs.writefile(report.paths.forkop_config, "config settings 'settings'\n\toption mixed_proxy_password 'cli-report-secret'\n");
+    fs.writefile(report.paths.loki_config, "config settings 'settings'\n\toption mixed_proxy_password 'cli-report-secret'\n");
     for (let args in [ [ "report" ], [ "report", "masked" ], [ "report", "typo" ], [ "report", "raw" ] ]) {
         let result = run(args);
         let value = json(result.stdout);
@@ -91,7 +91,7 @@ t.test("report defaults to masked JSON and only an explicit raw request returns 
         t.eq(value.visibility, raw ? "raw" : "masked");
         if (raw) {
             t.contains(value.notice, "UNMASKED REPORT");
-            t.contains(value.forkop_config, "cli-report-secret");
+            t.contains(value.loki_config, "cli-report-secret");
         }
         else
             t.excludes(result.stdout, "cli-report-secret");

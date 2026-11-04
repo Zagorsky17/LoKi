@@ -14,8 +14,8 @@ function configuration(dir, extra) {
     fs.chmod(dir, 0700);
     return {
         settings: fixture.settings({
-            config_path: dir + "/etc/sing-box/config.json",
-            cache_path: dir + "/tmp/sing-box/cache.db",
+            config_path: dir + "/etc/loki-core/config.json",
+            cache_path: dir + "/tmp/loki-core/cache.db",
             service_listen_address: "127.0.0.1",
             ...(extra ?? {})
         }),
@@ -47,15 +47,15 @@ function processes(command_lines) {
     } ];
 }
 
-t.test("the running core is the service's sing-box run, not a one-shot command", () => {
-    tools([ processes([ "/usr/bin/sing-box version", "/usr/bin/sing-box generate warp-profile --json" ]) ]);
+t.test("the running core is the service's loki-core run, not a one-shot command", () => {
+    tools([ processes([ "/usr/bin/loki-core version", "/usr/bin/loki-core generate warp-profile --json" ]) ]);
     t.eq(runtime.process_running(), false, "the state service asking the version during an install");
-    tools([ processes([ "/usr/bin/sing-box run -c /etc/sing-box/config.json -D /usr/share/sing-box" ]) ]);
+    tools([ processes([ "/usr/bin/loki-core run -c /etc/loki-core/config.json -D /usr/share/loki-core" ]) ]);
     t.eq(runtime.process_running(), true);
     stub.restore();
 });
 
-const CHECK = /'sing-box' '--disable-color' '-c' .* 'check'/;
+const CHECK = /'\/usr\/bin\/loki-core' '--disable-color' '-c' .* 'check'/;
 
 t.test("the one-shot core reads a private configuration which is removed after success or refusal", () => {
     for (let status in [ 0, 1 ]) {
@@ -79,7 +79,7 @@ t.test("the one-shot core reads a private configuration which is removed after s
         t.contains(content, "vless://u@a.example:443#A");
         t.ok(checked_path != "");
         t.eq(fs.lstat(checked_path), null);
-        t.eq(fs.stat(dir + "/etc/sing-box/config.json") != null, status == 0);
+        t.eq(fs.stat(dir + "/etc/loki-core/config.json") != null, status == 0);
     }
 });
 
@@ -88,7 +88,7 @@ t.test("a core execution exception removes its secret check input and preserves 
     fixture.seed(configuration(dir));
     tools([ [ CHECK, {} ] ]);
     runtime.write_config(true);
-    let path = dir + "/etc/sing-box/config.json";
+    let path = dir + "/etc/loki-core/config.json";
     let running = fs.readfile(path);
     fixture.seed(configuration(dir, { log_level: "debug" }));
     let checked_path = "";
@@ -118,7 +118,7 @@ t.test("a pre-existing check-input symlink is refused without invoking the core 
     let dir = stub.tmpdir();
     fixture.seed(configuration(dir));
     let ticks = [ 3456789, int(require("core.common").own_pid()) ];
-    let temporary = sprintf("/tmp/forkop-sing-box-check.%d.%d.json", ticks[0], ticks[1]);
+    let temporary = sprintf("/tmp/loki-core-check.%d.%d.json", ticks[0], ticks[1]);
     t.eq(fs.lstat(temporary), null, "a unique fixture path is required");
     fs.writefile(dir + "/victim", "foreign-data\n");
     t.ok(fs.symlink(dir + "/victim", temporary));
@@ -135,7 +135,7 @@ t.test("a pre-existing check-input symlink is refused without invoking the core 
     t.eq(commands, 0);
     t.eq(fs.readfile(dir + "/victim"), "foreign-data\n");
     t.eq(entry?.type, "link", "a refused collision is not ours to delete");
-    t.eq(fs.stat(dir + "/etc/sing-box/config.json"), null);
+    t.eq(fs.stat(dir + "/etc/loki-core/config.json"), null);
 });
 
 t.test("the configuration is written where the service reads it, and only when it changed", () => {
@@ -143,13 +143,13 @@ t.test("the configuration is written where the service reads it, and only when i
     fixture.seed(configuration(dir));
     tools([ [ CHECK, {} ] ]);
     t.eq(runtime.write_config(false), true);
-    let written = fs.readfile(dir + "/etc/sing-box/config.json");
+    let written = fs.readfile(dir + "/etc/loki-core/config.json");
     t.eq(json(written).outbounds != null, true);
-    t.ok(fs.stat(dir + "/tmp/sing-box")?.type == "directory", "the cache directory exists for the core to open");
+    t.ok(fs.stat(dir + "/tmp/loki-core")?.type == "directory", "the cache directory exists for the core to open");
 
-    let inode = fs.stat(dir + "/etc/sing-box/config.json").inode;
+    let inode = fs.stat(dir + "/etc/loki-core/config.json").inode;
     t.eq(runtime.write_config(false), false);
-    t.eq(fs.stat(dir + "/etc/sing-box/config.json").inode, inode, "an unchanged configuration is not rewritten");
+    t.eq(fs.stat(dir + "/etc/loki-core/config.json").inode, inode, "an unchanged configuration is not rewritten");
     t.eq(checks_run(), 1, "the core checked the changed configuration, and only that one");
     t.eq(logs, [], "writing the file is a step of the apply, which reports its outcome");
     stub.restore();
@@ -163,7 +163,7 @@ t.test("the written configuration leaves the memory limit to the core", () => {
     tools([ [ CHECK, {} ] ]);
     runtime.write_config(false);
     stub.restore();
-    t.eq(json(fs.readfile(dir + "/etc/sing-box/config.json")).experimental.debug, null);
+    t.eq(json(fs.readfile(dir + "/etc/loki-core/config.json")).experimental.debug, null);
 });
 
 t.test("a configuration the core refuses is reported by its first line and never written", () => {
@@ -172,9 +172,9 @@ t.test("a configuration the core refuses is reported by its first line and never
     tools([ [ CHECK, { status: 42, stdout: "\nFATAL[0000] route: missing outbound tag\nmore\n" } ] ]);
     let e = t.throws(() => runtime.write_config(true));
     stub.restore();
-    t.eq(e.message, "sing-box refused the generated configuration: FATAL[0000] route: missing outbound tag");
-    t.ok(fs.stat(dir + "/etc/sing-box/config.json") == null);
-    let prefix = "forkop-sing-box-check.";
+    t.eq(e.message, "loki-core refused the generated configuration: FATAL[0000] route: missing outbound tag");
+    t.ok(fs.stat(dir + "/etc/loki-core/config.json") == null);
+    let prefix = "loki-core-check.";
     t.eq(filter(fs.lsdir("/tmp"), (name) => substr(name, 0, length(prefix)) == prefix && index(name, ".json") > 0), [],
         "the file checked is removed");
 });
@@ -184,13 +184,13 @@ t.test("a changed configuration the core refuses leaves the file the running cor
     fixture.seed(configuration(dir));
     tools([ [ CHECK, {} ] ]);
     runtime.write_config(false);
-    let running = fs.readfile(dir + "/etc/sing-box/config.json");
+    let running = fs.readfile(dir + "/etc/loki-core/config.json");
     fixture.seed(configuration(dir, { log_level: "debug" }));
     tools([ [ CHECK, { status: 1, stdout: "FATAL[0000] initialize dns router: validate dns rule[9]\n" } ] ]);
     let e = t.throws(() => runtime.write_config(false));
     stub.restore();
-    t.eq(e.message, "sing-box refused the generated configuration: FATAL[0000] initialize dns router: validate dns rule[9]");
-    t.eq(fs.readfile(dir + "/etc/sing-box/config.json"), running);
+    t.eq(e.message, "loki-core refused the generated configuration: FATAL[0000] initialize dns router: validate dns rule[9]");
+    t.eq(fs.readfile(dir + "/etc/loki-core/config.json"), running);
 });
 
 t.test("a LAN without an IPv4 address is a warning of the configuration, not of whoever asks for the address", () => {
@@ -201,7 +201,7 @@ t.test("a LAN without an IPv4 address is a warning of the configuration, not of 
     t.eq(logs, [], "a diagnostics check asking for it");
     runtime.write_config(false);
     stub.restore();
-    t.eq(logs, [ "[warn] No IPv4 address found on the LAN, so the Clash API listens on 127.0.0.1 only; set forkop.settings.service_listen_address to choose one" ]);
+    t.eq(logs, [ "[warn] No IPv4 address found on the LAN, so the Clash API listens on 127.0.0.1 only; set loki.settings.service_listen_address to choose one" ]);
 });
 
 t.test("a checked configuration is checked even when it did not change", () => {
@@ -217,14 +217,14 @@ t.test("a checked configuration is checked even when it did not change", () => {
 t.test("the service runs the generated file as root, committed only when something changed", () => {
     let dir = stub.tmpdir();
     fixture.seed(configuration(dir));
-    uci.__seed("sing-box", [ { ".name": "main", ".type": "sing-box", enabled: "0", user: "sing-box", conffile: "/etc/sing-box/config.json" } ]);
+    uci.__seed("loki-core", [ { ".name": "main", ".type": "loki-core", enabled: "0", user: "loki-core", conffile: "/etc/loki-core/config.json" } ]);
     core_uci.reset();
     tools();
     runtime.configure_service();
     core_uci.reset();
-    t.eq([ core_uci.get("sing-box.main.enabled"), core_uci.get("sing-box.main.user"), core_uci.get("sing-box.main.conffile") ],
-        [ "1", "root", dir + "/etc/sing-box/config.json" ]);
-    t.eq(logs, [ "[info] Set up the sing-box service for LoKi: enabled=1, user=root, conffile=" + dir + "/etc/sing-box/config.json" ]);
+    t.eq([ core_uci.get("loki-core.main.enabled"), core_uci.get("loki-core.main.user"), core_uci.get("loki-core.main.conffile") ],
+        [ "1", "root", dir + "/etc/loki-core/config.json" ]);
+    t.eq(logs, [ "[info] Set up the loki-core service for LoKi: enabled=1, user=root, conffile=" + dir + "/etc/loki-core/config.json" ]);
     let commits = length(uci.__commits());
     runtime.configure_service();
     t.eq(length(uci.__commits()), commits, "a configured service is not committed again");
@@ -238,17 +238,17 @@ t.test("native UCI failures stop service setup before reporting success or disab
         let dir = stub.tmpdir();
         fixture.seed(configuration(dir));
         let previous = failure == "section" ? [] : [
-            { ".name": "main", ".type": "sing-box", enabled: "0", user: "sing-box", conffile: "/etc/sing-box/config.json" }
+            { ".name": "main", ".type": "loki-core", enabled: "0", user: "loki-core", conffile: "/etc/loki-core/config.json" }
         ];
-        uci.__seed("sing-box", previous);
-        previous = uci.__sections("sing-box");
+        uci.__seed("loki-core", previous);
+        previous = uci.__sections("loki-core");
         core_uci.reset();
         tools();
         uci.cursor = (...args) => {
             let c = real_cursor(...args);
             if (failure == "load") {
                 let real_load = c.load;
-                c.load = (name) => name == "sing-box" ? null : real_load(name);
+                c.load = (name) => name == "loki-core" ? null : real_load(name);
             }
             else {
                 c[failure == "section" ? "set" : failure] = () => null;
@@ -265,7 +265,7 @@ t.test("native UCI failures stop service setup before reporting success or disab
         t.ok(error != null, "native " + failure + " failure must abort service setup");
         t.matches(error.message, /^Failed to (create|set|save)/);
         t.eq(uci.__commits(), []);
-        t.eq(uci.__sections("sing-box"), previous);
+        t.eq(uci.__sections("loki-core"), previous);
         t.eq(logs, [], "failed setup cannot report completed settings");
         t.eq(commands, [], "failed setup cannot disable the core's autostart");
     }
@@ -276,8 +276,8 @@ t.test("the devices the core binds are the default interface and every bind_inte
     fixture.seed(configuration(dir));
     t.eq(runtime.bound_devices(), [], "no file yet");
     fs.mkdir(dir + "/etc");
-    fs.mkdir(dir + "/etc/sing-box");
-    fs.writefile(dir + "/etc/sing-box/config.json", sprintf("%J", {
+    fs.mkdir(dir + "/etc/loki-core");
+    fs.writefile(dir + "/etc/loki-core/config.json", sprintf("%J", {
         route: { default_interface: "eth1", final: "direct-out" },
         outbounds: [ { type: "direct", tag: "direct-out" }, { type: "direct", tag: "lte", bind_interface: "wwan0" },
             { type: "vless", tag: "json", bind_interface: "eth1", server: "a.example" } ],
@@ -289,7 +289,7 @@ t.test("the devices the core binds are the default interface and every bind_inte
 t.test("the core version is the package's, with the release spelling", () => {
     let dir = stub.tmpdir();
     packages.paths.opkg_status = dir + "/status";
-    fs.writefile(packages.paths.opkg_status, "Package: sing-box-forkop\nVersion: 1.13.14~extended~2.5.3~f1\nStatus: install ok installed\n");
+    fs.writefile(packages.paths.opkg_status, "Package: loki-core\nVersion: 1.13.14~extended~2.5.3~f1\nStatus: install ok installed\n");
     packages.paths.sing_box_version = dir + "/missing";
     stub.commands([ [ "sh -c command -v apk", { status: 1 } ] ]);
     t.eq(runtime.version(), "1.13.14-extended-2.5.3-f1");
@@ -305,7 +305,7 @@ t.test("LAN prefix discovery is limited to configured devices and refreshed on r
         return { stdout: argv[5] == "br-guest" ? "3: br-guest inet 203.0.114.190/25 scope global br-guest\n" : LAN_ADDRESSES };
     } ] ]);
     runtime.write_config(false);
-    let path = dir + "/etc/sing-box/config.json";
+    let path = dir + "/etc/loki-core/config.json";
     let first = json(fs.readfile(path));
     let ptr = filter(first.dns.rules, (r) => r.server == "dnsmasq-server" && r.query_type?.[0] == "PTR")[0];
     t.ok(ptr.domain_regex != null, "known LAN prefixes enable narrow PTR routing");
@@ -329,7 +329,7 @@ t.test("failed, empty, malformed or excessive address snapshots retain PTR local
         fixture.seed(configuration(dir));
         tools([ [ CHECK, {} ], [ "ip -o addr show dev", reply ] ]);
         runtime.write_config(false);
-        let config = json(fs.readfile(dir + "/etc/sing-box/config.json"));
+        let config = json(fs.readfile(dir + "/etc/loki-core/config.json"));
         let ptr = filter(config.dns.rules, (r) => r.server == "dnsmasq-server" && r.query_type?.[0] == "PTR")[0];
         t.eq(ptr.domain_regex, null);
         t.eq(logs, [ "[warn] Cannot determine LAN prefixes; keeping all PTR queries with the local DNS resolver" ]);
@@ -349,7 +349,7 @@ t.test("interface names stay in one quoted argument and a partial snapshot is no
     let commands = filter(stub.calls(), (entry) => entry.argv[0] == "ip");
     t.eq(commands[1].argv[5], device);
     t.contains(commands[1].command, "'guest;$(id)'");
-    let config = json(fs.readfile(dir + "/etc/sing-box/config.json"));
+    let config = json(fs.readfile(dir + "/etc/loki-core/config.json"));
     t.eq(filter(config.dns.rules, (r) => r.query_type?.[0] == "PTR")[0].domain_regex, null);
     t.eq(logs, [ "[warn] Cannot determine LAN prefixes; keeping all PTR queries with the local DNS resolver" ]);
     stub.restore();
@@ -368,7 +368,7 @@ t.test("address discovery bounds device and prefix counts and accepts an explici
         fixture.seed(configuration(dir, { source_network_interfaces: sample.devices }));
         tools([ [ CHECK, {} ], [ "ip -o addr show dev", { stdout: sample.output } ] ]);
         runtime.write_config(false);
-        let config = json(fs.readfile(dir + "/etc/sing-box/config.json"));
+        let config = json(fs.readfile(dir + "/etc/loki-core/config.json"));
         let ptr = filter(config.dns.rules, (r) => r.query_type?.[0] == "PTR")[0];
         t.eq(ptr.domain_regex != null, length(sample.devices) == 0);
         t.eq(length(logs), length(sample.devices) == 0 ? 0 : 1);
@@ -382,7 +382,7 @@ t.test("the runtime creates a private cache directory under the effective proces
     tools([ [ CHECK, {} ] ]);
     runtime.write_config(false);
     stub.restore();
-    t.eq(fs.stat(dir + "/tmp/sing-box").mode & 0777, 0700, "the directory cannot expose cached subscription bodies");
+    t.eq(fs.stat(dir + "/tmp/loki-core").mode & 0777, 0700, "the directory cannot expose cached subscription bodies");
 });
 
 t.test("an unsafe custom cache parent is refused without running the core or changing its mode", () => {
@@ -397,7 +397,7 @@ t.test("an unsafe custom cache parent is refused without running the core or cha
     t.ok(index(error.message, dir) < 0, "the reason does not expose the custom path");
     t.eq(commands, [], "unsafe storage is refused before command execution");
     t.eq(fs.stat(dir + "/public-cache").mode & 0777, 0755, "a selected directory is not chmodded");
-    t.eq(fs.stat(dir + "/etc/sing-box/config.json"), null);
+    t.eq(fs.stat(dir + "/etc/loki-core/config.json"), null);
 });
 
 t.done();

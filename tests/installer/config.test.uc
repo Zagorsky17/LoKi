@@ -9,19 +9,19 @@ const SOURCE = fs.readfile(repo.path("install.sh"));
 
 function isolated(action, options) {
     let dir = stub.tmpdir();
-    let config = dir + "/forkop";
+    let config = dir + "/loki";
     let foreign = dir + "/foreign-state";
     fs.writefile(config, "original synthetic-secret");
     fs.chmod(config, 0600);
     fs.writefile(foreign, "foreign data");
     let source = replace(SOURCE, /\nmain "\$@"\s*$/, "\n");
-    source = replace(source, /\/etc\/config\/forkop/g, config);
-    source = replace(source, /\/etc\/config\/sing-box/g, foreign);
-    source = replace(source, /\/etc\/sing-box/g, dir + "/foreign-directory");
+    source = replace(source, /\/etc\/config\/loki/g, config);
+    source = replace(source, /\/etc\/config\/loki-core/g, foreign);
+    source = replace(source, /\/etc\/loki-core/g, dir + "/foreign-directory");
     let script = dir + "/test.sh";
     fs.writefile(script, source + "\n" +
         "WORK='" + dir + "' LOG='" + dir + "/log' EVENTS='" + dir + "/events'\n" +
-        "NEED_FORKOP=1 EXT=apk FILE_FORKOP=fixture.apk\n" +
+        "NEED_LOKI=1 EXT=apk FILE_LOKI=fixture.apk\n" +
         "CHECK_STATUS=" + (options?.status ?? 0) + " PLAN='" + (options?.plan ?? "current") + "' EXTRACT_STATUS=" + (options?.extract_status ?? 0) + "\n" +
         "FOREIGN_CORES='' FOREIGN_CORE_FILES='' LEGACY_FILES='' REMOVE_FILES='' LEFTOVERS='" + foreign + "'\n" +
         "fail() { printf 'refused:%s\\n' \"$2\"; exit 17; }\n" +
@@ -30,11 +30,11 @@ function isolated(action, options) {
         "ucode() { echo checker >>\"$EVENTS\"; printf '{}'; return \"$CHECK_STATUS\"; }\n" +
         "jsonfilter() { case \"$2\" in '@.result') echo \"$PLAN\";; '@.from') echo 2.0.0;; '@.reason') echo foreign;; esac; }\n" +
         "refresh_db() { :; }\n" +
-        "pkg_version() { [ \"$1\" != forkop ] || echo 2.0.0; }\n" +
+        "pkg_version() { [ \"$1\" != loki ] || echo 2.0.0; }\n" +
         "pkg_url() { echo '" + (options?.owner ?? "https://github.com/Zagorsky17/LoKi") + "'; }\n" +
         "uci() { echo 2.0.0; }\n" +
         "file_owner() { :; }\n" +
-        "forkop_status() { echo service-status >>\"$EVENTS\"; }\n" +
+        "loki_status() { echo service-status >>\"$EVENTS\"; }\n" +
         action + "\necho accepted\n");
     let run = exec.combined([ "sh", script ]);
     return { ...run, config: fs.readfile(config), foreign: fs.readfile(foreign), events: fs.readfile(dir + "/events") ?? "", files: fs.lsdir(dir), dir };
@@ -79,7 +79,7 @@ t.test("legacy state is not deleted and an own backup copies rather than moves t
     t.eq(result.status, 0, result.output);
     t.eq(result.config, "original synthetic-secret");
     t.eq(result.foreign, "foreign data");
-    let copies = filter(result.files, (name) => match(name, /^forkop\./));
+    let copies = filter(result.files, (name) => match(name, /^loki\./));
     t.eq(length(copies), 1);
     t.eq(fs.readfile(result.dir + "/" + copies[0]), result.config);
     t.eq(fs.stat(result.dir + "/" + copies[0]).mode & 0777, 0600);
@@ -93,8 +93,8 @@ t.test("setup failures name LoKi and require review of a masked report before sh
             "logread() { :; }; start_again() { :; }; fail() { printf '%s\\n' \"$@\"; exit \"$1\"; }; check_installed 1");
         t.eq(result.status, 3, result.output);
         t.contains(result.output, "LoKi 2.0.0");
-        t.contains(result.output, "forkop report masked");
-        t.excludes(result.output, "Forkop");
+        t.contains(result.output, "loki report masked");
+        t.excludes(result.output, "Loki");
         t.excludes(result.output, "chat");
         t.excludes(result.output, "чат");
         t.excludes(result.output, "synthetic-secret");
@@ -104,15 +104,15 @@ t.test("setup failures name LoKi and require review of a masked report before sh
 });
 
 t.test("successful updates preserve unrelated conffile copies", () => {
-    let result = isolated("CONFFILE_COPIES=\"$LEFTOVERS\" FILE_FORKOP=''; clean_up_after");
+    let result = isolated("CONFFILE_COPIES=\"$LEFTOVERS\" FILE_LOKI=''; clean_up_after");
     t.eq(result.status, 0, result.output);
     t.eq(result.foreign, "foreign data");
     t.eq(result.config, "original synthetic-secret");
 });
 
-t.test("uninstall purge preserves generic sing-box settings owned by another application", () => {
+t.test("uninstall purge preserves generic loki-core settings owned by another application", () => {
     let result = isolated("PURGE=1; DB_PHASE=0; needed_by() { :; }; may_ask() { return 1; }; " +
-        "refresh_db() { DB_PHASE=$((DB_PHASE + 1)); }; pkg_version() { [ \"$DB_PHASE:$1\" != 1:forkop ] || echo 2.0.0; }; " +
+        "refresh_db() { DB_PHASE=$((DB_PHASE + 1)); }; pkg_version() { [ \"$DB_PHASE:$1\" != 1:loki ] || echo 2.0.0; }; " +
         "cleanup() { :; }; deadline() { :; }; perform() { :; }; find() { :; }; cp() { :; }; gone() { :; }; dropped() { :; }; uninstall");
     t.eq(result.status, 0, result.output);
     t.eq(result.foreign, "foreign data");

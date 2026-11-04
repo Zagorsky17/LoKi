@@ -1,7 +1,7 @@
 .idea
-fe-app-forkop/node_modules
-fe-app-forkop/.yarn/
-fe-app-forkop/.env
+fe-app-loki/node_modules
+fe-app-loki/.yarn/
+fe-app-loki/.env
 .DS_Store
 
 dist/

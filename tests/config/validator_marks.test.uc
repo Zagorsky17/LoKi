@@ -5,7 +5,7 @@ let constants = require("core.constants");
 
 const TAILSCALE_FWMARK_MASK = 0x00ff0000;
 
-t.test("the Forkop marks stay clear of the Tailscale fwmark mask and of each other", () => {
+t.test("the Loki marks stay clear of the Tailscale fwmark mask and of each other", () => {
     let fakeip = common.parse_number(constants.NFT_FAKEIP_MARK);
     let outbound = common.parse_number(constants.NFT_OUTBOUND_MARK);
     let router = common.parse_number(constants.NFT_ROUTER_MARK);

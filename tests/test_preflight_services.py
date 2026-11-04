@@ -71,7 +71,7 @@ sys.stdout.write(Path(os.environ['SERVICE_TEST_RESPONSE']).read_text())
         env = dict(os.environ, PATH=str(self.root / 'bin') + ':/usr/local/bin:/usr/bin:/bin',
                    SERVICE_TEST_RESPONSE=str(self.response), SERVICE_TEST_PID=str(self.pid), SERVICE_TEST_MODE=mode)
         started = time.monotonic()
-        result = subprocess.run([self.ucode, '-L', str(ROOT / 'forkop/files/usr/lib'), '-e', expression, str(self.root)],
+        result = subprocess.run([self.ucode, '-L', str(ROOT / 'loki/files/usr/lib'), '-e', expression, str(self.root)],
                                 env=env, capture_output=True, text=True, timeout=15)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stderr, '')

@@ -35,8 +35,8 @@ def entry(path, directory=False):
 
 
 def candidate():
-    return {"schema": 1, "components": [{"role": "backend", "package": "forkop", "version": "1.0.0",
-            "architecture": "all", "format": "ipk", "artifact": {"name": "forkop_1.0.0_all.ipk",
+    return {"schema": 1, "components": [{"role": "backend", "package": "loki", "version": "1.0.0",
+            "architecture": "all", "format": "ipk", "artifact": {"name": "loki_1.0.0_all.ipk",
             "size": 1, "sha256": "b" * 64}, "files": [entry("/", True), entry("/synthetic-candidate")]}]}
 
 
@@ -64,7 +64,7 @@ class ManifestHarness:
         expression = ('let p=require("service.preflight"); print(sprintf("%J",p.collect(ARGV[0],ARGV[1])));'
                       if collect else 'let p=require("service.preflight_manifest"); let fs=require("fs"); '
                       'print(sprintf("%J",p.parse(fs.readfile(ARGV[1]))));')
-        result = subprocess.run([self.binary, "-L", str(ROOT / "forkop/files/usr/lib"), "-e", expression,
+        result = subprocess.run([self.binary, "-L", str(ROOT / "loki/files/usr/lib"), "-e", expression,
                                  str(self.root), str(self.manifest)], capture_output=True, text=True, timeout=20)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stderr, "")
@@ -138,7 +138,7 @@ class ManifestBoundary(ManifestHarness, unittest.TestCase):
         self.assertEqual(self.invoke(canonical(value))["error"], "manifest-parent-missing-or-not-directory")
         value = candidate()
         second = copy.deepcopy(value["components"][0])
-        second.update(role="luci", package="luci-app-forkop")
+        second.update(role="luci", package="luci-app-loki")
         second["artifact"]["name"] = "luci.ipk"
         value["components"].append(second)
         self.assertEqual(self.invoke(canonical(value))["error"], "manifest-owner-ambiguous")
@@ -161,13 +161,13 @@ class ManifestBoundary(ManifestHarness, unittest.TestCase):
         self.write(self.root / "usr/lib/opkg/info/foreign.list", "".join(path + "\n" for path in paths))
 
     def test_consumer_adds_targets_without_hiding_constants_or_disclosing_paths(self):
-        self.opkg(["/synthetic-candidate", "/usr/bin/sing-box"])
+        self.opkg(["/synthetic-candidate", "/usr/bin/loki-core"])
         data = canonical(candidate())
         result = self.invoke(data, collect=True)
         self.assertFalse(result["install_allowed"])
         self.assertEqual(result["result"], "conflict")
         self.assertNotIn("synthetic-candidate", json.dumps(result))
-        self.assertTrue(any(item["object"] == "/usr/bin/sing-box" and item["state"] == "conflict"
+        self.assertTrue(any(item["object"] == "/usr/bin/loki-core" and item["state"] == "conflict"
                             for item in result["observations"]))
         self.assertTrue(any(item["object"].startswith("candidate-file-") and item["state"] == "conflict"
                             for item in result["observations"]))
@@ -175,7 +175,7 @@ class ManifestBoundary(ManifestHarness, unittest.TestCase):
         self.assertEqual(self.manifest.read_text(), data)
 
     def test_invalid_sidecar_keeps_original_conflict_and_masks_input(self):
-        self.opkg(["/usr/bin/sing-box"])
+        self.opkg(["/usr/bin/loki-core"])
         result = self.invoke('{"synthetic-secret":true}', collect=True)
         self.assertEqual(result["result"], "conflict")
         self.assertNotIn("synthetic-secret", json.dumps(result))
@@ -212,8 +212,8 @@ class ManifestBoundary(ManifestHarness, unittest.TestCase):
     def test_catalog_cannot_relabel_a_critical_file_as_a_shared_directory(self):
         value = candidate()
         value['components'][0]['files'] = [entry('/', True), entry('/usr', True), entry('/usr/bin', True),
-                                            entry('/usr/bin/forkop', True)]
-        path = self.root / 'usr/bin/forkop'
+                                            entry('/usr/bin/loki', True)]
+        path = self.root / 'usr/bin/loki'
         path.mkdir(parents=True)
         for parent in (path, path.parent, path.parent.parent):
             parent.chmod(0o755)
@@ -236,7 +236,7 @@ class ArtifactCatalog(ManifestHarness, unittest.TestCase):
         return subprocess.run(command, capture_output=True, text=True, cwd=self.root,
                               timeout=20, preexec_fn=self.outer_limits)
 
-    def package(self, members=None, package="forkop", name="synthetic.ipk", outer_extra=None):
+    def package(self, members=None, package="loki", name="synthetic.ipk", outer_extra=None):
         def archive(items):
             stream = io.BytesIO()
             with tarfile.open(fileobj=stream, mode="w:gz", format=tarfile.GNU_FORMAT) as target:
@@ -308,11 +308,11 @@ class ArtifactCatalog(ManifestHarness, unittest.TestCase):
 
     def test_apk_dump_members_reject_ambiguous_or_unrepresented_metadata(self):
         acl = {"mode": 493, "user": "root", "group": "root"}
-        data = {"info": {"name": "forkop", "version": "1.0-r0", "arch": "noarch"},
+        data = {"info": {"name": "loki", "version": "1.0-r0", "arch": "noarch"},
                 "paths": [{"acl": acl}, {"name": "etc", "acl": acl, "files": [
                     {"name": "synthetic", "acl": dict(acl, mode=420), "size": 1, "hash": "a" * 64}]}]}
         identity, entries = BUILDER.apk_entries(data)
-        self.assertEqual(identity["package"], "forkop")
+        self.assertEqual(identity["package"], "loki")
         self.assertEqual([e["path"] for e in entries], ["/", "/etc", "/etc/synthetic"])
         for field, value in (("target", "a000"), ("hash", "bad"), ("size", -1), ("unknown", True)):
             changed = copy.deepcopy(data)

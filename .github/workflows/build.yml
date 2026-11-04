@@ -3,7 +3,7 @@ name: Build packages
 # Run by hand (Actions, Build packages, Run workflow) from an X.Y.Z tag: it builds the release's
 # packages and drafts its GitHub release with them, install.sh, release.json and SHA256SUMS.
 # Publishing the draft by hand makes it the latest release, the one install.sh installs and every
-# Forkop's update check offers.
+# Loki's update check offers.
 on:
   workflow_dispatch:
     inputs:
@@ -54,7 +54,7 @@ jobs:
         env:
           TAG: ${{ github.ref_name }}
         run: |
-          export PATH="$HOME/.cache/forkop/openwrt-sdk/extracted/apk/staging_dir/host/bin:$PATH"
+          export PATH="$HOME/.cache/loki/openwrt-sdk/extracted/apk/staging_dir/host/bin:$PATH"
           for variant in tiny base full; do
             core/build.sh "$TAG" "$PWD/release" --variant "$variant"
           done

@@ -3,8 +3,8 @@ name: Backend CI
 on:
   pull_request:
     paths:
-      - 'forkop/files/**'
-      - 'forkop/Makefile'
+      - 'loki/files/**'
+      - 'loki/Makefile'
       - 'build.sh'
       - 'build_candidate_manifest.py'
       - 'tests/**'
@@ -13,15 +13,15 @@ on:
       - 'preflight.sh'
       - 'preflight.uc'
       # The packaging checks read the LuCI app's package scripts and bundle.
-      - 'luci-app-forkop/**'
+      - 'luci-app-loki/**'
       - '.github/workflows/build.yml'
       - '.github/workflows/backend-ci.yml'
   push:
     branches:
       - main
     paths:
-      - 'forkop/files/**'
-      - 'forkop/Makefile'
+      - 'loki/files/**'
+      - 'loki/Makefile'
       - 'build.sh'
       - 'build_candidate_manifest.py'
       - 'tests/**'
@@ -29,7 +29,7 @@ on:
       - 'install.sh'
       - 'preflight.sh'
       - 'preflight.uc'
-      - 'luci-app-forkop/**'
+      - 'luci-app-loki/**'
       - '.github/workflows/build.yml'
       - '.github/workflows/backend-ci.yml'
 
@@ -61,8 +61,8 @@ jobs:
       - name: Check ucode syntax
         shell: bash
         run: |
-          find forkop/files/usr/lib -name '*.uc' -print0 | xargs -0 -n1 ucode -c -o /dev/null
-          find forkop/files/usr/lib -name '*.uc' -print0 | xargs -0 -n1 ucode -S -c -o /dev/null
+          find loki/files/usr/lib -name '*.uc' -print0 | xargs -0 -n1 ucode -c -o /dev/null
+          find loki/files/usr/lib -name '*.uc' -print0 | xargs -0 -n1 ucode -S -c -o /dev/null
 
       - name: Run tests
         shell: bash

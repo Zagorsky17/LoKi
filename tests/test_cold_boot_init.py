@@ -12,7 +12,7 @@ import time
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-INIT = ROOT / "forkop/files/etc/init.d/forkop"
+INIT = ROOT / "loki/files/etc/init.d/loki"
 # Identical bytes in OpenWrt v24.10.8 and v25.12.6, package/base-files/files/etc/rc.common.
 RC_COMMON = ROOT / "tests/fixtures/openwrt/rc.common"
 RC_COMMON_SHA256 = "dd8ae95c78d10cccf78cb487874f163ace4c1ee14dace05fe28393b19ba639e4"
@@ -37,7 +37,7 @@ esac
                                TEST_QUERY_STATUS=str(query_status))
             harness = '''initscript="$TEST_INIT"
 . "$initscript"
-FORKOP_BIN="$TEST_BIN"
+LOKI_BIN="$TEST_BIN"
 procd_open_instance() { printf 'open:%s\\n' "$1"; }
 procd_set_param() { printf 'param'; printf ' <%s>' "$@"; printf '\\n'; }
 procd_close_instance() { printf 'close\\n'; }
@@ -100,7 +100,7 @@ esac
 }
 ''')
             (functions / "service.sh").write_text("")
-            (functions / "procd.sh").write_text('''FORKOP_BIN="$TEST_BIN"
+            (functions / "procd.sh").write_text('''LOKI_BIN="$TEST_BIN"
 record() { printf '%s\\n' "$*" >> "$TEST_TRACE"; }
 procd_lock() { record procd_lock; }
 procd_kill() { record "procd_kill $1"; }
@@ -121,19 +121,19 @@ procd_set_param() { record "procd_set_param $*"; }
         for status in (0, 1):
             result, trace = self.common("stop", status)
             self.assertEqual(result, status)
-            self.assertEqual(trace, ["procd_lock", "initd_stop", "procd_kill forkop"])
+            self.assertEqual(trace, ["procd_lock", "initd_stop", "procd_kill loki"])
 
     def test_pinned_rc_common_boot_registers_retry_even_when_initial_start_fails(self):
         result, trace = self.common("boot", 1)
         self.assertEqual(result, 1)
-        self.assertEqual(trace[0:3], ["procd_open_service forkop", "initd_start boot", "initd_retry_token"])
+        self.assertEqual(trace[0:3], ["procd_open_service loki", "initd_start boot", "initd_retry_token"])
         self.assertIn("procd_open_instance start-retry-12-34-1", trace)
         self.assertEqual(trace[-1], "procd_close_service add")
 
     def test_pinned_rc_common_manual_start_does_not_inherit_boot_policy(self):
         result, trace = self.common("start")
         self.assertEqual(result, 0)
-        self.assertEqual(trace, ["procd_open_service forkop", "initd_start ", "procd_close_service set"])
+        self.assertEqual(trace, ["procd_open_service loki", "initd_start ", "procd_close_service set"])
 
     def test_native_request_lock_orders_new_start_before_old_completion(self):
         binary = shutil.which("ucode")
@@ -145,7 +145,7 @@ let root = getenv("REQUEST_ROOT");
 request.paths.pending = root + "/pending";
 request.paths.lock = root + "/request.lock";
 '''
-        command = [binary, "-L", str(ROOT / "forkop/files/usr/lib"), "-e"]
+        command = [binary, "-L", str(ROOT / "loki/files/usr/lib"), "-e"]
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             environment = dict(os.environ, REQUEST_ROOT=directory)

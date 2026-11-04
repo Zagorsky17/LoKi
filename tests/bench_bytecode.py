@@ -12,7 +12,7 @@ import tempfile
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
-LIBRARY = ROOT / 'forkop/files/usr/lib'
+LIBRARY = ROOT / 'loki/files/usr/lib'
 RUNS = 10
 
 
@@ -26,15 +26,15 @@ def main() -> None:
         version = subprocess.run([tool, '--version'], capture_output=True, timeout=5)
         if version.returncode or b'GNU' not in version.stdout:
             raise SystemExit(f'This measurement requires the GNU implementation of {tool}')
-    env = {key: value for key, value in os.environ.items() if not key.startswith('FORKOP_')}
+    env = {key: value for key, value in os.environ.items() if not key.startswith('LOKI_')}
     with tempfile.TemporaryDirectory(prefix='loki-bytecode-bench-') as temporary:
         folder = Path(temporary)
-        env.update(FORKOP_SOURCE_LIB=str(LIBRARY), FORKOP_UCODE_BIN=ucode,
-                   FORKOP_BYTECODE_CACHE_DIR=str(folder / 'cache'))
+        env.update(LOKI_SOURCE_LIB=str(LIBRARY), LOKI_UCODE_BIN=ucode,
+                   LOKI_BYTECODE_CACHE_DIR=str(folder / 'cache'))
         probe = folder / 'generate.uc'
-        probe.write_text('''let source = getenv("FORKOP_SOURCE_LIB");
+        probe.write_text('''let source = getenv("LOKI_SOURCE_LIB");
 let library = loadfile(source + "/core/bytecode.uc")().refresh();
-if ((getenv("FORKOP_BYTECODE_CACHE") == "1") == (library == source))
+if ((getenv("LOKI_BYTECODE_CACHE") == "1") == (library == source))
     die("Unexpected source/cache mode");
 unshift(REQUIRE_SEARCH_PATH, library + "/*.uc");
 require("fixture").seed({ settings: { dns_server: [ "127.0.0.1" ], bootstrap_dns_server: [ "127.0.0.1" ] },
@@ -54,8 +54,8 @@ print(sprintf("%J", require("singbox.generator").build({ service_address: "127.0
                 result = subprocess.run([
                     '/usr/bin/timeout', '-s', 'KILL', '30', '/usr/bin/time', '-f', '%M', '-o', str(usage), ucode,
                     '-L', str(ROOT / 'tests/fakes'), '-L', str(ROOT / 'tests/lib'), str(probe)
-                ], env={**env, 'FORKOP_BYTECODE_CACHE': enabled,
-                        'FORKOP_BYTECODE_VALIDATION_TTL': ttl}, capture_output=True, timeout=35)
+                ], env={**env, 'LOKI_BYTECODE_CACHE': enabled,
+                        'LOKI_BYTECODE_VALIDATION_TTL': ttl}, capture_output=True, timeout=35)
                 elapsed_ms = (time.perf_counter() - started) * 1000
                 if result.returncode:
                     raise RuntimeError(f'{mode} exited {result.returncode}: {result.stderr.decode()}')
