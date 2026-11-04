@@ -10,12 +10,9 @@ export function addServiceOptions(section: CBISection) {
   };
 
   o = section.option(form.Value, 'cache_path', _('Cache File Path'));
-  o.value('/tmp/sing-box/cache.db', 'RAM (/tmp/sing-box/cache.db)');
-  o.value(
-    '/usr/share/sing-box/cache.db',
-    'Flash (/usr/share/sing-box/cache.db)',
-  );
-  o.default = '/tmp/sing-box/cache.db';
+  o.value('/tmp/loki/cache.db', 'RAM (/tmp/loki/cache.db)');
+  o.value('/etc/loki/cache/cache.db', 'Flash (/etc/loki/cache/cache.db)');
+  o.default = '/tmp/loki/cache.db';
   o.validate = function (_section_id: string, value: string) {
     return validateSingBoxPath(value, 'cache.db');
   };

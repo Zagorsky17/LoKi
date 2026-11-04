@@ -40,7 +40,7 @@ function reset(options) {
     fs.writefile(lifecycle.paths.sing_box_init, "#!/bin/sh\n");
     fs.chmod(lifecycle.paths.sing_box_init, 0755);
     fs.writefile(lifecycle.paths.config, "config forkop\n");
-    fixture.seed({ settings: { config_format: "loki", config_version: options?.config_version ?? "2.0.0" } });
+    fixture.seed({ settings: { config_format: "loki", config_version: options?.config_version ?? "2.0.0", cache_path: dir + "/private/cache.db" } });
 
     world = {
         dir,
@@ -216,6 +216,26 @@ function reloaded(options, reason) {
     let result = run(() => lifecycle.reload(reason ?? "on_config_change"));
     return result;
 }
+
+t.test("unsafe cache paths stop start and reload before migration or runtime changes", () => {
+    for (let active in [ false, true ]) {
+        if (active)
+            running();
+        else
+            reset();
+        fs.mkdir(world.dir + "/shared-cache", 0755);
+        fixture.seed({ settings: { config_format: "loki", config_version: "2.0.0", cache_path: world.dir + "/shared-cache/cache.db" } });
+        let result = run(() => active ? lifecycle.reload("manual") : lifecycle.start());
+        t.eq(result.result, 1);
+        t.eq(world.migration_checks ?? 0, 0);
+        t.eq(world.events, [], "the refusal neither reconfigures nor cleans up the runtime");
+        t.eq(world.pid, active ? 4242 : 0);
+        t.eq(world.network, active);
+        t.eq(fs.stat(world.dir + "/shared-cache").mode & 0777, 0755);
+        t.eq(fs.lstat(world.dir + "/shared-cache/cache.db"), null);
+        t.ok(index(sprintf("%J", world.logs), world.dir) < 0, "the refusal does not disclose a custom path");
+    }
+});
 
 t.test("a start answers only once sing-box is ready, then turns the table on, then the workers", () => {
     reset();

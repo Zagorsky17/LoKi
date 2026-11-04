@@ -1,3 +1,4 @@
+// Modified for LoKi on 2026-11-03: reject unsafe cache paths before stop/start.
 let t = require("t");
 let stub = require("stub");
 let fs = require("fs");
@@ -267,6 +268,25 @@ t.test("a restart is one action for whoever asked, with the stop and start insid
     t.eq(nested, [ "stop inside restart", "start inside restart" ]);
     t.eq(ui.active_action(), "");
     stub.restore();
+});
+
+t.test("restart refuses an unsafe cache path before stopping the running service", () => {
+    let dir = fresh();
+    fs.mkdir(dir + "/public-cache", 0755);
+    fixture.seed({ settings: { cache_path: dir + "/public-cache/cache.db" } });
+    let nested = [];
+    let logs = [];
+    stub.commands([ stub.logger(logs), [ "/etc/init.d/forkop", (argv) => {
+        push(nested, argv[1]);
+        return { status: 0 };
+    } ] ]);
+    let status = initd.restart();
+    stub.restore();
+    t.eq(nested, [], "the unsafe path must be rejected before stop or start");
+    t.eq(status, 1);
+    t.eq(ui.active_action(), "");
+    t.eq(fs.stat(dir + "/public-cache").mode & 0777, 0755);
+    t.ok(index(sprintf("%J", logs), dir) < 0, "the restart error masks the selected path");
 });
 
 t.done();

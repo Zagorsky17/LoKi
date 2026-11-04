@@ -1,3 +1,4 @@
+// Modified for LoKi on 2026-11-03: cover private cache creation and unsafe custom paths.
 // Modified for LoKi on 2026-11-01: cover LAN prefix discovery and conservative PTR fallback.
 let t = require("t");
 let stub = require("stub");
@@ -255,6 +256,29 @@ t.test("address discovery bounds device and prefix counts and accepts an explici
         t.eq(length(logs), length(sample.devices) == 0 ? 0 : 1);
         stub.restore();
     }
+});
+
+t.test("the runtime creates a private cache directory under the effective process owner", () => {
+    let dir = stub.tmpdir();
+    fixture.seed(configuration(dir));
+    tools([ [ CHECK, {} ] ]);
+    runtime.write_config(false);
+    stub.restore();
+    t.eq(fs.stat(dir + "/tmp/sing-box").mode & 0777, 0700, "the directory cannot expose cached subscription bodies");
+});
+
+t.test("an unsafe custom cache parent is refused without running the core or changing its mode", () => {
+    let dir = stub.tmpdir();
+    fs.mkdir(dir + "/public-cache", 0755);
+    fixture.seed(configuration(dir, { cache_path: dir + "/public-cache/cache.db" }));
+    tools([ [ CHECK, {} ] ]);
+    let error = t.throws(() => runtime.write_config(false));
+    let commands = stub.command_lines();
+    stub.restore();
+    t.ok(index(error.message, dir) < 0, "the reason does not expose the custom path");
+    t.eq(commands, [], "unsafe storage is refused before command execution");
+    t.eq(fs.stat(dir + "/public-cache").mode & 0777, 0755, "a selected directory is not chmodded");
+    t.eq(fs.stat(dir + "/etc/sing-box/config.json"), null);
 });
 
 t.done();
