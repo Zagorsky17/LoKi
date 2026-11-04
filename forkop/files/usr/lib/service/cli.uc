@@ -167,6 +167,8 @@ const COMMANDS = {
     initd_triggers: { run: () => { print(initd().triggers()); return 0; } },
     initd_wan_up: { run: () => initd().wan_up() },
     initd_retry_start: { run: () => initd().retry_start() },
+    initd_retry_token: { run: () => { print(initd().retry_token()); return 0; } },
+    initd_retry_monitor: { args: 1, run: (args) => initd().retry_monitor(args[0]) },
     sing_box_watch: { run: () => require("service.singbox_watch").monitor() },
     sync_rule_sets: { run: () => require("nft.ruleset_sync").worker() }
 };
