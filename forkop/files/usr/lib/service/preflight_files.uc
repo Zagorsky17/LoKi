@@ -98,4 +98,4 @@ function collect(root, targets) {
     return observations;
 }
 
-return { collect };
+return { collect, same_node };
