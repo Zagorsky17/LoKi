@@ -63,4 +63,5 @@ jobs:
           python3 -B core/tests/cascade_links.py "$RUNNER_TEMP/core-build/build/amd64/base/sing-box" "$RUNNER_TEMP/core-cascade-results"
           python3 -B core/tests/subscription_selection.py "$RUNNER_TEMP/core-build/build/amd64/base/sing-box" "$RUNNER_TEMP/core-subscription-results"
           python3 -B core/tests/subscription_profiles.py "$RUNNER_TEMP/core-build/build/amd64/base/sing-box" "$RUNNER_TEMP/core-profile-results"
+          python3 -B core/tests/ruleset_cache.py "$RUNNER_TEMP/core-build/build/amd64/base/sing-box" "$RUNNER_TEMP/core-ruleset-results"
           python3 -B core/tests/dns_timeout.py "$RUNNER_TEMP/core-build/build/amd64/base/sing-box" "$RUNNER_TEMP/core-timeout-results"

@@ -1,0 +1,1494 @@
+diff --git a/experimental/cachefile/cache.go b/experimental/cachefile/cache.go
+index ae067ef1ebad8089495d73feb41a281ce0a441fb..148e9f8118c20dcf88126f1a26c73890e173193c 100644
+--- a/experimental/cachefile/cache.go
++++ b/experimental/cachefile/cache.go
+@@ -33,40 +33,40 @@ var (
+ var _ adapter.CacheFile = (*CacheFile)(nil)
+ 
+ type CacheFile struct {
+-	ctx                      context.Context
+-	logger                   logger.Logger
+-	path                     string
+-	cacheID                  []byte
+-	cacheIDText              string
+-	storeFakeIP              bool
+-	storeRDRC                bool
+-	storeDNS                 bool
+-	storeWARPConfig          bool
+-	storeSubscriptions       bool
+-	disableExpire            bool
+-	rdrcTimeout              time.Duration
+-	optimisticTimeout        time.Duration
+-	DB                       *bbolt.DB
+-	storage                  *cacheStorage
+-	contentAccess            sync.RWMutex
+-	subscriptionState        sync.Mutex
+-	subscriptionCommitAccess sync.Mutex
+-	subscriptionUncertain    bool
+-	subscriptionClosing      bool
+-	pendingSubscriptions     map[string]*preparedSubscription
+-	dbAccess                 sync.RWMutex
+-	generation               atomic.Uint64 // counts resetDB: what was saved before is gone
+-	saveMetadataAccess       sync.Mutex
+-	saveMetadata             *adapter.FakeIPMetadata
+-	saveMetadataTimer        *time.Timer
+-	saveFakeIPAccess         sync.RWMutex
+-	saveDomain               map[netip.Addr]string
+-	saveAddress4             map[string]netip.Addr
+-	saveAddress6             map[string]netip.Addr
+-	saveRDRCAccess           sync.RWMutex
+-	saveRDRC                 map[saveCacheKey]bool
+-	saveDNSCacheAccess       sync.RWMutex
+-	saveDNSCache             map[saveCacheKey]saveDNSCacheEntry
++	ctx                  context.Context
++	logger               logger.Logger
++	path                 string
++	cacheID              []byte
++	cacheIDText          string
++	storeFakeIP          bool
++	storeRDRC            bool
++	storeDNS             bool
++	storeWARPConfig      bool
++	storeSubscriptions   bool
++	disableExpire        bool
++	rdrcTimeout          time.Duration
++	optimisticTimeout    time.Duration
++	DB                   *bbolt.DB
++	storage              *cacheStorage
++	contentAccess        sync.RWMutex
++	contentState         sync.Mutex
++	contentCommitAccess  sync.Mutex
++	contentUncertain     bool
++	contentClosing       bool
++	pendingSubscriptions map[string]*preparedSubscription
++	dbAccess             sync.RWMutex
++	generation           atomic.Uint64 // counts resetDB: what was saved before is gone
++	saveMetadataAccess   sync.Mutex
++	saveMetadata         *adapter.FakeIPMetadata
++	saveMetadataTimer    *time.Timer
++	saveFakeIPAccess     sync.RWMutex
++	saveDomain           map[netip.Addr]string
++	saveAddress4         map[string]netip.Addr
++	saveAddress6         map[string]netip.Addr
++	saveRDRCAccess       sync.RWMutex
++	saveRDRC             map[saveCacheKey]bool
++	saveDNSCacheAccess   sync.RWMutex
++	saveDNSCache         map[saveCacheKey]saveDNSCacheEntry
+ }
+ 
+ type saveCacheKey struct {
+@@ -160,9 +160,9 @@ func (c *CacheFile) Start(stage adapter.StartStage, scope *adapter.Scope) error
+ 			return err
+ 		}
+ 		scope.Add(func() error {
+-			c.subscriptionState.Lock()
+-			c.subscriptionClosing = true
+-			c.subscriptionState.Unlock()
++			c.contentState.Lock()
++			c.contentClosing = true
++			c.contentState.Unlock()
+ 			c.contentAccess.Lock()
+ 			defer c.contentAccess.Unlock()
+ 			c.dbAccess.Lock()
+@@ -196,9 +196,13 @@ func (c *CacheFile) startCacheCleanup() {
+ }
+ 
+ func (c *CacheFile) start() error {
+-	c.subscriptionState.Lock()
++	return c.startWithSync((*bbolt.DB).Sync)
++}
++
++func (c *CacheFile) startWithSync(syncDatabase func(*bbolt.DB) error) error {
++	c.contentState.Lock()
+ 	pending := len(c.pendingSubscriptions) != 0
+-	c.subscriptionState.Unlock()
++	c.contentState.Unlock()
+ 	if pending {
+ 		return errPrivateStorage
+ 	}
+@@ -206,10 +210,17 @@ func (c *CacheFile) start() error {
+ 	if err != nil {
+ 		return err
+ 	}
++	// Reopening alone does not make metadata left by an uncertain sync durable.
++	// No migration, compaction or orphan cleanup may precede this barrier.
++	if syncDatabase(db) != nil {
++		db.Close()
++		storage.close()
++		return errPrivateStorage
++	}
+ 	c.storage, c.DB = storage, db
+-	c.subscriptionState.Lock()
+-	c.subscriptionClosing, c.subscriptionUncertain = false, false
+-	c.subscriptionState.Unlock()
++	c.contentState.Lock()
++	c.contentClosing, c.contentUncertain = false, false
++	c.contentState.Unlock()
+ 	c.moveRuleSetsToFiles()
+ 	db, err = c.compactSparse(c.DB)
+ 	if err != nil {
+@@ -479,6 +490,9 @@ func (c *CacheFile) LoadRuleSet(tag string) *adapter.SavedBinary {
+ 	return c.loadRuleSet(tag)
+ }
+ func (c *CacheFile) loadRuleSet(tag string) *adapter.SavedBinary {
++	if saved, found := c.loadRuleSetPointer(tag); found {
++		return saved
++	}
+ 	if saved, found := c.loadRuleSetFile(tag); found {
+ 		return saved
+ 	}
+diff --git a/experimental/cachefile/rule_set_file.go b/experimental/cachefile/rule_set_file.go
+index 5ce9978910593b65eb65085c9408823189952033..8e440efb709d036328e98ac6daa6779ea704e4f7 100644
+--- a/experimental/cachefile/rule_set_file.go
++++ b/experimental/cachefile/rule_set_file.go
+@@ -131,78 +131,6 @@ func (c *CacheFile) loadRuleSetFile(tag string) (saved *adapter.SavedBinary, fou
+ 	return saved, true
+ }
+ 
+-// saveRuleSetFile writes the content of a rule set into its file, then its record; the
+-// record of an earlier version goes.
+-func (c *CacheFile) saveRuleSetFile(tag string, set *adapter.SavedBinary) error {
+-	if set == nil {
+-		return errPrivateStorage
+-	}
+-	c.contentAccess.Lock()
+-	defer c.contentAccess.Unlock()
+-	record, err := ruleSetRecord(set)
+-	if err != nil {
+-		return errPrivateStorage
+-	}
+-	directory, err := c.storage.child(c.storage.name+ruleSetFileSuffix, true)
+-	if err != nil {
+-		return err
+-	}
+-	defer directory.close()
+-	name := ruleSetFileName(c.cacheID, tag)
+-	// Refuse an unsafe existing destination before writing or replacing anything.
+-	var destination unix.Stat_t
+-	statErr := unix.Fstatat(int(directory.file.Fd()), name, &destination, unix.AT_SYMLINK_NOFOLLOW)
+-	if statErr != nil && statErr != unix.ENOENT {
+-		return errPrivateStorage
+-	}
+-	if statErr == nil {
+-		existing, err := directory.open(name, unix.O_RDONLY, false)
+-		if err != nil {
+-			return err
+-		}
+-		existing.Close()
+-	}
+-	file, writing, err := directory.randomFile(".loki-srs-" + c.storage.id + "-")
+-	if err != nil {
+-		return err
+-	}
+-	defer func() { _ = directory.remove(writing) }()
+-	_, err = file.Write(set.Content)
+-	if err == nil {
+-		err = file.Sync()
+-	}
+-	closeErr := file.Close()
+-	if err != nil || closeErr != nil {
+-		return errPrivateStorage
+-	}
+-	if statErr == nil {
+-		var current unix.Stat_t
+-		if unix.Fstatat(int(directory.file.Fd()), name, &current, unix.AT_SYMLINK_NOFOLLOW) != nil || current.Ino != destination.Ino || current.Dev != destination.Dev || current.Nlink != 1 {
+-			return errPrivateStorage
+-		}
+-	}
+-	flags := uint(0)
+-	if statErr == unix.ENOENT {
+-		flags = unix.RENAME_NOREPLACE
+-	}
+-	if unix.Renameat2(int(directory.file.Fd()), writing, int(directory.file.Fd()), name, flags) != nil || directory.sync() != nil {
+-		return errPrivateStorage
+-	}
+-	return c.batch(func(t *bbolt.Tx) error {
+-		bucket, err := c.createBucket(t, bucketRuleSetFile)
+-		if err != nil {
+-			return err
+-		}
+-		if err = bucket.Put([]byte(tag), record); err != nil {
+-			return err
+-		}
+-		if legacy := c.bucket(t, bucketRuleSet); legacy != nil {
+-			return legacy.Delete([]byte(tag))
+-		}
+-		return nil
+-	})
+-}
+-
+ // moveRuleSetsToFiles moves the rule sets an earlier version kept in the database into their files,
+ // one at a time; one that cannot be written stays and is read from there.
+ func (c *CacheFile) moveRuleSetsToFiles() {
+@@ -315,27 +243,38 @@ func (c *CacheFile) compactSparseWithClose(db *bbolt.DB, closeDatabase func() er
+ // pruneRuleSetFiles removes the files of the directory that no record names (of any cache
+ // ID), and files whose write was cut.
+ func (c *CacheFile) pruneRuleSetFiles(_ *bbolt.DB) {
+-	// The v1 format cannot prove ownership of arbitrary unreferenced names. Only our
+-	// store-specific random staging files may be removed; unknown entries remain untouched.
++	c.contentAccess.Lock()
++	defer c.contentAccess.Unlock()
++	named, err := c.ruleSetReferences()
++	if err != nil || !c.contentCleanupAllowed() {
++		return
++	}
+ 	directory, err := c.storage.child(c.storage.name+ruleSetFileSuffix, false)
+ 	if err != nil {
+ 		return
+ 	}
+ 	defer directory.close()
+-	entries, err := directory.file.ReadDir(256)
+-	if err != nil && err != io.EOF {
+-		return
+-	}
+ 	prefix := ".loki-srs-" + c.storage.id + "-"
+-	for _, entry := range entries {
+-		name := entry.Name()
+-		if strings.HasPrefix(name, prefix) && len(name) == len(prefix)+32 {
+-			suffix := strings.TrimPrefix(name, prefix)
+-			decoded, err := hex.DecodeString(suffix)
+-			if err == nil && len(decoded) == 16 && hex.EncodeToString(decoded) == suffix {
++	for {
++		entries, readErr := directory.file.ReadDir(256)
++		if readErr != nil && readErr != io.EOF {
++			return
++		}
++		for _, entry := range entries {
++			name := entry.Name()
++			staging := false
++			if strings.HasPrefix(name, prefix) && len(name) == len(prefix)+32 {
++				suffix := strings.TrimPrefix(name, prefix)
++				decoded, err := hex.DecodeString(suffix)
++				staging = err == nil && len(decoded) == 16 && hex.EncodeToString(decoded) == suffix
++			}
++			if (staging || c.ruleSetBodyName(name)) && !named[name] {
+ 				_ = directory.remove(name)
+ 			}
+ 		}
++		if readErr == io.EOF {
++			break
++		}
+ 	}
+ 	_ = directory.sync()
+ }
+diff --git a/experimental/cachefile/rule_set_file_test.go b/experimental/cachefile/rule_set_file_test.go
+index d1af7491d5bda69a2d326f903f2aa0dd779a2c3f..ccc713d3b27a2bb37fd03413d7fe1bc2022efc92 100644
+--- a/experimental/cachefile/rule_set_file_test.go
++++ b/experimental/cachefile/rule_set_file_test.go
+@@ -80,7 +80,7 @@ func TestRuleSetFileBroken(t *testing.T) {
+ 	cacheFile := openTestCacheFile(t, path)
+ 	require.NoError(t, cacheFile.SaveRuleSet("lists", &adapter.SavedBinary{Content: []byte("one.lab.example\ntwo.lab.example\n")}))
+ 	directory := path + ruleSetFileSuffix
+-	file := filepath.Join(directory, ruleSetFileName(nil, "lists"))
++	_, file := ruleSetFixture(t, cacheFile.CacheFile, "lists")
+ 	require.NoError(t, os.WriteFile(file, []byte("one.lab.example\n"), 0o644))
+ 	require.Nil(t, cacheFile.LoadRuleSet("lists"))
+ 	require.NoError(t, cacheFile.Close())
+@@ -89,6 +89,7 @@ func TestRuleSetFileBroken(t *testing.T) {
+ 	scope := adapter.NewScope(context.Background(), logger.NOP())
+ 	require.NoError(t, other.Start(adapter.StartStateInitialize, scope))
+ 	require.NoError(t, other.SaveRuleSet("lists", &adapter.SavedBinary{Content: []byte("three.lab.example\n")}))
++	_, otherFile := ruleSetFixture(t, other, "lists")
+ 	require.NoError(t, scope.Close())
+ 
+ 	require.NoError(t, os.WriteFile(filepath.Join(directory, "gone-01020304"), []byte("x"), 0o644))
+@@ -101,7 +102,7 @@ func TestRuleSetFileBroken(t *testing.T) {
+ 	for _, entry := range entries {
+ 		names = append(names, entry.Name())
+ 	}
+-	require.ElementsMatch(t, []string{ruleSetFileName(nil, "lists"), ruleSetFileName([]byte("\x00other"), "lists"), "gone-01020304", ruleSetFileName(nil, "lists") + ruleSetFileWriting}, names)
++	require.ElementsMatch(t, []string{filepath.Base(file), filepath.Base(otherFile), "gone-01020304", filepath.Base(file) + ruleSetFileWriting}, names)
+ }
+ 
+ // Subscriptions and WARP profiles share the bucket of the lists: the move at the start takes them
+diff --git a/experimental/cachefile/storage.go b/experimental/cachefile/storage.go
+index a806700b260a5e06131806813036ecaeb53ce964..c2f8533a39a2cbebbc3481e1ba678c93b98c43c9 100644
+--- a/experimental/cachefile/storage.go
++++ b/experimental/cachefile/storage.go
+@@ -17,7 +17,7 @@ import (
+ var errPrivateStorage = errors.New("private LoKi cache storage is unsafe or unavailable")
+ var bucketStore = []byte("loki_cache_store")
+ 
+-const storageSchema = "1"
++const storageSchema = "2"
+ 
+ type cacheDirectory struct{ file *os.File }
+ type cacheStorage struct {
+@@ -249,7 +249,7 @@ func readStoreID(db *bbolt.DB) (id string, err error) {
+ 	}()
+ 	err = db.View(func(tx *bbolt.Tx) error {
+ 		bucket := tx.Bucket(bucketStore)
+-		if bucket == nil || string(bucket.Get([]byte("schema"))) != storageSchema {
++		if bucket == nil || (string(bucket.Get([]byte("schema"))) != "1" && string(bucket.Get([]byte("schema"))) != storageSchema) {
+ 			return errPrivateStorage
+ 		}
+ 		id = string(bucket.Get([]byte("id")))
+diff --git a/experimental/cachefile/storage_io_linux_test.go b/experimental/cachefile/storage_io_linux_test.go
+index bda5ad25ee04f9236d3af85136532e6071b838a9..2154d64ed8b67d312fca5d9bc275b90389121210 100644
+--- a/experimental/cachefile/storage_io_linux_test.go
++++ b/experimental/cachefile/storage_io_linux_test.go
+@@ -25,6 +25,7 @@ func TestStorageBodyWriteFailureKeepsVerifiedPair(t *testing.T) {
+ 	defer cache.Close()
+ 	old := &adapter.SavedBinary{Content: []byte("old-password"), LastEtag: "old"}
+ 	require.NoError(t, cache.SaveSubscription("provider", old))
++	require.NoError(t, cache.SaveRuleSet("rules", old))
+ 	// A real kernel write limit applies only in this disposable test child.
+ 	signal.Ignore(syscall.SIGXFSZ)
+ 	var limit syscall.Rlimit
+@@ -39,6 +40,14 @@ func TestStorageBodyWriteFailureKeepsVerifiedPair(t *testing.T) {
+ 	entries, err := os.ReadDir(path + subscriptionSuffix)
+ 	require.NoError(t, err)
+ 	require.Len(t, entries, 1, "definite body-write failure leaves no new orphan")
++	require.Error(t, cache.SaveRuleSet("rules", &adapter.SavedBinary{Content: []byte("new-password"), LastEtag: "new"}))
++	actual = cache.LoadRuleSet("rules")
++	require.NotNil(t, actual)
++	require.Equal(t, old.Content, actual.Content)
++	require.Equal(t, old.LastEtag, actual.LastEtag)
++	entries, err = os.ReadDir(path + ruleSetFileSuffix)
++	require.NoError(t, err)
++	require.Len(t, entries, 1, "definite SRS body-write failure leaves no new orphan")
+ }
+ 
+ func TestStorageTightensOnlyOwnedMarkedFiles(t *testing.T) {
+diff --git a/experimental/cachefile/subscription_availability_test.go b/experimental/cachefile/subscription_availability_test.go
+index 1b1d69148b6274e8b06677079ef6c735fcebd8cf..5159614a1114ef85a83e28a1af2e609c465bf661 100644
+--- a/experimental/cachefile/subscription_availability_test.go
++++ b/experimental/cachefile/subscription_availability_test.go
+@@ -148,12 +148,12 @@ func TestSubscriptionBodySyncDoesNotBlockOldRouting(t *testing.T) {
+ 		release.Do(func() { close(wrapped.release) })
+ 		t.Fatal("bulk preparation held the GC/reader lock")
+ 	}
+-	cache.subscriptionState.Lock()
++	cache.contentState.Lock()
+ 	var pending string
+ 	for name := range cache.pendingSubscriptions {
+ 		pending = name
+ 	}
+-	cache.subscriptionState.Unlock()
++	cache.contentState.Unlock()
+ 	require.NotEmpty(t, pending)
+ 	require.FileExists(t, filepath.Join(cache.path+subscriptionSuffix, pending))
+ 	observed := make(chan string, 1)
+diff --git a/experimental/cachefile/subscription_file.go b/experimental/cachefile/subscription_file.go
+index e4c22ca7cbcde52559f69141e487986e8e0896d3..389dcd3ef112329d4d9cd627e122ce94850b3cf4 100644
+--- a/experimental/cachefile/subscription_file.go
++++ b/experimental/cachefile/subscription_file.go
+@@ -130,15 +130,25 @@ type preparedSubscription struct {
+ 	done        chan struct{}
+ }
+ 
+-func (c *CacheFile) subscriptionWritable() bool {
+-	c.subscriptionState.Lock()
+-	defer c.subscriptionState.Unlock()
+-	return !c.subscriptionClosing && !c.subscriptionUncertain
++func (c *CacheFile) contentWritable() bool {
++	c.contentState.Lock()
++	defer c.contentState.Unlock()
++	return !c.contentClosing && !c.contentUncertain
+ }
+-func (c *CacheFile) poisonSubscriptionWrites() {
+-	c.subscriptionState.Lock()
+-	c.subscriptionUncertain = true
+-	c.subscriptionState.Unlock()
++func (c *CacheFile) poisonContentWrites() {
++	c.contentState.Lock()
++	c.contentUncertain = true
++	c.contentState.Unlock()
++}
++
++// Call after collecting references while holding contentAccess exclusively.
++// A visible metadata write may still be waiting for its final sync outcome.
++// Release the commit mutex before filesystem cleanup: publication must never
++// wait for unlink or directory Sync while holding the outbound manager lock.
++func (c *CacheFile) contentCleanupAllowed() bool {
++	c.contentCommitAccess.Lock()
++	defer c.contentCommitAccess.Unlock()
++	return c.contentWritable()
+ }
+ 
+ func (c *CacheFile) PrepareSubscription(tag string, saved *adapter.SavedBinary) (adapter.PreparedSubscription, error) {
+@@ -151,12 +161,12 @@ func (c *CacheFile) PrepareSubscription(tag string, saved *adapter.SavedBinary)
+ 
+ // syncBody and forcedName keep actual syscall failure/collision controls in the same preparation path.
+ func (c *CacheFile) prepareSubscription(tag string, saved *adapter.SavedBinary, syncBody func(*os.File) error, forcedName string) (prepared *preparedSubscription, err error) {
+-	if saved == nil || !c.subscriptionWritable() {
++	if saved == nil || !c.contentWritable() {
+ 		return nil, errPrivateStorage
+ 	}
+ 	named, err := c.subscriptionReferences()
+ 	if err != nil {
+-		c.poisonSubscriptionWrites()
++		c.poisonContentWrites()
+ 		return nil, errPrivateStorage
+ 	}
+ 	prepared = &preparedSubscription{cache: c, done: make(chan struct{})}
+@@ -168,13 +178,13 @@ func (c *CacheFile) prepareSubscription(tag string, saved *adapter.SavedBinary,
+ 		return nil
+ 	})
+ 	if err != nil {
+-		c.poisonSubscriptionWrites()
++		c.poisonContentWrites()
+ 		return nil, errPrivateStorage
+ 	}
+ 	if prepared.expected != nil {
+ 		previous, _, err := c.parseSubscriptionRecord(prepared.expected)
+ 		if err != nil {
+-			c.poisonSubscriptionWrites()
++			c.poisonContentWrites()
+ 			return nil, errPrivateStorage
+ 		}
+ 		prepared.previous = previous.Body
+@@ -194,9 +204,9 @@ func (c *CacheFile) prepareSubscription(tag string, saved *adapter.SavedBinary,
+ 	// Registration is short and precedes exclusive create. GC's write lock prevents it
+ 	// from missing a newly registered body while enumerating/removing directory entries.
+ 	c.contentAccess.RLock()
+-	c.subscriptionState.Lock()
+-	if c.subscriptionClosing || c.subscriptionUncertain || c.pendingSubscriptions[name] != nil {
+-		c.subscriptionState.Unlock()
++	c.contentState.Lock()
++	if c.contentClosing || c.contentUncertain || c.pendingSubscriptions[name] != nil {
++		c.contentState.Unlock()
+ 		c.contentAccess.RUnlock()
+ 		return nil, errPrivateStorage
+ 	}
+@@ -205,7 +215,7 @@ func (c *CacheFile) prepareSubscription(tag string, saved *adapter.SavedBinary,
+ 	}
+ 	c.pendingSubscriptions[name] = prepared
+ 	prepared.registered = true
+-	c.subscriptionState.Unlock()
++	c.contentState.Unlock()
+ 	c.contentAccess.RUnlock()
+ 	complete := false
+ 	candidate := prepared
+@@ -260,16 +270,16 @@ func (p *preparedSubscription) commitWith(commit func(func(*bbolt.Tx) error) err
+ 		close(p.done)
+ 	}()
+ 	c := p.cache
+-	c.subscriptionCommitAccess.Lock()
+-	defer c.subscriptionCommitAccess.Unlock()
+-	if !c.subscriptionWritable() {
++	c.contentCommitAccess.Lock()
++	defer c.contentCommitAccess.Unlock()
++	if !c.contentWritable() {
+ 		return errPrivateStorage
+ 	}
+ 	err = commit(func(tx *bbolt.Tx) error {
+ 		if c.generation.Load() != p.generation {
+ 			return errStaleSubscription
+ 		}
+-		if !c.subscriptionWritable() {
++		if !c.contentWritable() {
+ 			return errPrivateStorage
+ 		}
+ 		var current []byte
+@@ -290,7 +300,7 @@ func (p *preparedSubscription) commitWith(commit func(func(*bbolt.Tx) error) err
+ 			return errStaleSubscription
+ 		}
+ 		// The final metadata sync can fail after publication. Do not guess the durable outcome.
+-		c.poisonSubscriptionWrites()
++		c.poisonContentWrites()
+ 		return errPrivateStorage
+ 	}
+ 	succeeded = true
+@@ -315,11 +325,11 @@ func (p *preparedSubscription) Close() error {
+ 	c.contentAccess.Lock()
+ 	defer c.contentAccess.Unlock()
+ 	defer func() {
+-		c.subscriptionState.Lock()
++		c.contentState.Lock()
+ 		if c.pendingSubscriptions[p.name] == p {
+ 			delete(c.pendingSubscriptions, p.name)
+ 		}
+-		c.subscriptionState.Unlock()
++		c.contentState.Unlock()
+ 	}()
+ 	var cleanupErr error
+ 	if p.directory != nil {
+@@ -327,7 +337,7 @@ func (p *preparedSubscription) Close() error {
+ 		// Registration alone is never authority to unlink an EEXIST collision.
+ 		if p.ownsFile {
+ 			named, err := c.subscriptionReferences()
+-			if err != nil {
++			if err != nil || !c.contentCleanupAllowed() {
+ 				cleanupErr = errPrivateStorage
+ 			} else {
+ 				for _, name := range []string{p.name, p.previous} {
+@@ -395,13 +405,13 @@ func (c *CacheFile) subscriptionReferenced(name string) (bool, error) {
+ 	return named[name], err
+ }
+ 
+-// A work budget bounds directory scanning, not accepted subscription or node sizes.
++// Scan in fixed-size batches without hiding orphans behind a permanent first page.
+ // Unknown files, malformed references and other owners are never cleanup targets.
+ func (c *CacheFile) pruneSubscriptionFiles() {
+ 	c.contentAccess.Lock()
+ 	defer c.contentAccess.Unlock()
+ 	named, err := c.subscriptionReferences()
+-	if err != nil {
++	if err != nil || !c.contentCleanupAllowed() {
+ 		return
+ 	}
+ 	directory, err := c.storage.child(c.storage.name+subscriptionSuffix, false)
+@@ -409,16 +419,21 @@ func (c *CacheFile) pruneSubscriptionFiles() {
+ 		return
+ 	}
+ 	defer directory.close()
+-	entries, err := directory.file.ReadDir(256)
+-	if err != nil && err != io.EOF {
+-		return
+-	}
+-	for _, entry := range entries {
+-		c.subscriptionState.Lock()
+-		pending := c.pendingSubscriptions[entry.Name()] != nil
+-		c.subscriptionState.Unlock()
+-		if c.subscriptionBodyName(entry.Name()) && !pending && !named[entry.Name()] {
+-			_ = directory.remove(entry.Name())
++	for {
++		entries, readErr := directory.file.ReadDir(256)
++		if readErr != nil && readErr != io.EOF {
++			return
++		}
++		for _, entry := range entries {
++			c.contentState.Lock()
++			pending := c.pendingSubscriptions[entry.Name()] != nil
++			c.contentState.Unlock()
++			if c.subscriptionBodyName(entry.Name()) && !pending && !named[entry.Name()] {
++				_ = directory.remove(entry.Name())
++			}
++		}
++		if readErr == io.EOF {
++			break
+ 		}
+ 	}
+ 	_ = directory.sync()
+diff --git a/experimental/cachefile/subscription_prepared_test.go b/experimental/cachefile/subscription_prepared_test.go
+index 8f3d65507523d60878653a71d2e0b7e2983a76ea..3c38baccafa589be9dd49dd5c87e0f769b7b49d9 100644
+--- a/experimental/cachefile/subscription_prepared_test.go
++++ b/experimental/cachefile/subscription_prepared_test.go
+@@ -44,9 +44,9 @@ func TestPreparedSubscriptionCollisionsNeverTakeOwnership(t *testing.T) {
+ 			after, err := os.ReadFile(path)
+ 			require.NoError(t, err)
+ 			require.Equal(t, before, after)
+-			cache.subscriptionState.Lock()
++			cache.contentState.Lock()
+ 			pending := cache.pendingSubscriptions[name]
+-			cache.subscriptionState.Unlock()
++			cache.contentState.Unlock()
+ 			if kind == "pending" {
+ 				require.Same(t, first, pending, "collision replaced another pending entry")
+ 				cache.pruneSubscriptionFiles()
+@@ -148,7 +148,7 @@ func TestPreparedRefusalReturnsNilWithoutStaging(t *testing.T) {
+ 		t.Fatal("refused preparation returned a non-nil interface")
+ 	}
+ 	require.NoDirExists(t, cache.path+subscriptionSuffix)
+-	cache.poisonSubscriptionWrites()
++	cache.poisonContentWrites()
+ 	prepared, err = cache.PrepareSubscription("failed", &adapter.SavedBinary{Content: []byte("keep out")})
+ 	require.Error(t, err)
+ 	if prepared != nil {
+diff --git a/experimental/cachefile/rule_set_pointer.go b/experimental/cachefile/rule_set_pointer.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..afee2cb9b22e449dd68e0eb89160cb81efc068de
+--- /dev/null
++++ b/experimental/cachefile/rule_set_pointer.go
+@@ -0,0 +1,252 @@
++// Modified for LoKi on 2026-11-04: commit immutable SRS bodies with their metadata.
++package cachefile
++
++import (
++	"bytes"
++	"crypto/sha256"
++	"encoding/hex"
++	"encoding/json"
++	"io"
++	"os"
++	"strings"
++
++	"github.com/sagernet/bbolt"
++	"github.com/sagernet/sing-box/adapter"
++	"golang.org/x/sys/unix"
++)
++
++var bucketRuleSetPointer = []byte("rule_set_file_v2")
++
++type ruleSetPointer struct {
++	Version  int    `json:"version"`
++	Body     string `json:"body"`
++	Size     int64  `json:"size"`
++	SHA256   string `json:"sha256"`
++	Metadata []byte `json:"metadata"`
++}
++
++func (c *CacheFile) ruleSetBodyName(name string) bool {
++	prefix := "r-" + c.storage.id + "-"
++	if !strings.HasPrefix(name, prefix) || len(name) != len(prefix)+32 {
++		return false
++	}
++	decoded, err := hex.DecodeString(strings.TrimPrefix(name, prefix))
++	return err == nil && len(decoded) == 16 && hex.EncodeToString(decoded) == strings.TrimPrefix(name, prefix)
++}
++
++func (c *CacheFile) parseRuleSetPointer(raw []byte) (*ruleSetPointer, *adapter.SavedBinary, error) {
++	var record ruleSetPointer
++	decoder := json.NewDecoder(bytes.NewReader(raw))
++	decoder.DisallowUnknownFields()
++	if decoder.Decode(&record) != nil || decoder.Decode(new(any)) != io.EOF || record.Version != 2 || record.Size < 0 || !c.ruleSetBodyName(record.Body) {
++		return nil, nil, errPrivateStorage
++	}
++	hash, err := hex.DecodeString(record.SHA256)
++	if err != nil || len(hash) != sha256.Size || hex.EncodeToString(hash) != record.SHA256 {
++		return nil, nil, errPrivateStorage
++	}
++	var saved adapter.SavedBinary
++	if len(record.Metadata) == 0 || record.Metadata[0] != 2 || saved.UnmarshalBinary(record.Metadata) != nil || len(saved.Content) != 0 {
++		return nil, nil, errPrivateStorage
++	}
++	return &record, &saved, nil
++}
++
++func (c *CacheFile) ruleSetPointer(tag string) (raw []byte, err error) {
++	err = c.view(func(tx *bbolt.Tx) error {
++		if bucket := c.bucket(tx, bucketRuleSetPointer); bucket != nil {
++			raw = bytes.Clone(bucket.Get([]byte(tag)))
++		}
++		return nil
++	})
++	return
++}
++
++func (c *CacheFile) loadRuleSetPointer(tag string) (*adapter.SavedBinary, bool) {
++	raw, err := c.ruleSetPointer(tag)
++	if err != nil {
++		return nil, true
++	}
++	if raw == nil {
++		return nil, false
++	}
++	record, saved, err := c.parseRuleSetPointer(raw)
++	if err != nil {
++		return nil, true
++	}
++	directory, err := c.storage.child(c.storage.name+ruleSetFileSuffix, false)
++	if err != nil {
++		return nil, true
++	}
++	defer directory.close()
++	file, err := directory.open(record.Body, unix.O_RDONLY, true)
++	if err != nil {
++		return nil, true
++	}
++	defer file.Close()
++	info, err := fileIdentity(file)
++	if err != nil || info.Size != record.Size {
++		return nil, true
++	}
++	content, err := io.ReadAll(file)
++	if err != nil || int64(len(content)) != record.Size {
++		return nil, true
++	}
++	hash := sha256.Sum256(content)
++	if hex.EncodeToString(hash[:]) != record.SHA256 {
++		return nil, true
++	}
++	saved.Content = content
++	return saved, true
++}
++
++func (c *CacheFile) saveRuleSetFile(tag string, saved *adapter.SavedBinary) error {
++	return c.saveRuleSetFileWith(tag, saved, c.update, (*os.File).Sync, "")
++}
++
++func (c *CacheFile) saveRuleSetFileWith(tag string, saved *adapter.SavedBinary, commit func(func(*bbolt.Tx) error) error, syncBody func(*os.File) error, forcedName string) error {
++	c.contentAccess.Lock()
++	defer c.contentAccess.Unlock()
++	if saved == nil || !c.contentWritable() {
++		return errPrivateStorage
++	}
++	named, err := c.ruleSetReferences()
++	if err != nil {
++		c.poisonContentWrites()
++		return errPrivateStorage
++	}
++	previous := ""
++	raw, err := c.ruleSetPointer(tag)
++	if err != nil {
++		c.poisonContentWrites()
++		return errPrivateStorage
++	}
++	if raw != nil {
++		record, _, err := c.parseRuleSetPointer(raw)
++		if err != nil {
++			c.poisonContentWrites()
++			return errPrivateStorage
++		}
++		previous = record.Body
++	}
++	metadata, err := (&adapter.SavedBinary{LastUpdated: saved.LastUpdated, LastEtag: saved.LastEtag, URLHash: bytes.Clone(saved.URLHash)}).MarshalBinary()
++	if err != nil {
++		return errPrivateStorage
++	}
++	name := forcedName
++	if name == "" {
++		name, err = randomCacheName("r-" + c.storage.id + "-")
++	}
++	if err != nil || !c.ruleSetBodyName(name) || named[name] {
++		return errPrivateStorage
++	}
++	directory, err := c.storage.child(c.storage.name+ruleSetFileSuffix, true)
++	if err != nil {
++		return errPrivateStorage
++	}
++	defer directory.close()
++	file, err := directory.open(name, unix.O_RDWR|unix.O_CREAT|unix.O_EXCL, true)
++	if err != nil {
++		return errPrivateStorage
++	}
++	// Only a successful O_EXCL grants ownership; collisions are never cleanup targets.
++	defer func() {
++		named, err := c.ruleSetReferences()
++		if err != nil || !c.contentCleanupAllowed() {
++			return
++		}
++		for _, candidate := range []string{name, previous} {
++			if candidate != "" && !named[candidate] {
++				_ = directory.remove(candidate)
++			}
++		}
++		_ = directory.sync()
++	}()
++	written, writeErr := file.Write(saved.Content)
++	if writeErr == nil && written != len(saved.Content) {
++		writeErr = io.ErrShortWrite
++	}
++	if writeErr == nil {
++		writeErr = syncBody(file)
++	}
++	closeErr := file.Close()
++	if writeErr != nil || closeErr != nil || directory.sync() != nil {
++		return errPrivateStorage
++	}
++	hash := sha256.Sum256(saved.Content)
++	record, err := json.Marshal(ruleSetPointer{Version: 2, Body: name, Size: int64(len(saved.Content)), SHA256: hex.EncodeToString(hash[:]), Metadata: metadata})
++	if err != nil {
++		return errPrivateStorage
++	}
++	c.contentCommitAccess.Lock()
++	if !c.contentWritable() {
++		c.contentCommitAccess.Unlock()
++		return errPrivateStorage
++	}
++	err = commit(func(tx *bbolt.Tx) error {
++		store := tx.Bucket(bucketStore)
++		if store == nil || string(store.Get([]byte("id"))) != c.storage.id {
++			return errPrivateStorage
++		}
++		schema := string(store.Get([]byte("schema")))
++		if schema != "1" && schema != storageSchema {
++			return errPrivateStorage
++		}
++		// Publish the downgrade guard atomically with the first new-format pointer.
++		if err := store.Put([]byte("schema"), []byte(storageSchema)); err != nil {
++			return err
++		}
++		bucket, err := c.createBucket(tx, bucketRuleSetPointer)
++		if err != nil {
++			return err
++		}
++		if err := bucket.Put([]byte(tag), record); err != nil {
++			return err
++		}
++		for _, name := range [][]byte{bucketRuleSetFile, bucketRuleSet} {
++			if legacy := c.bucket(tx, name); legacy != nil {
++				if err := legacy.Delete([]byte(tag)); err != nil {
++					return err
++				}
++			}
++		}
++		return nil
++	})
++	if err != nil {
++		c.poisonContentWrites()
++	}
++	c.contentCommitAccess.Unlock()
++	if err != nil {
++		return errPrivateStorage
++	}
++	return nil
++}
++
++func (c *CacheFile) ruleSetReferences() (map[string]bool, error) {
++	named := make(map[string]bool)
++	err := c.view(func(tx *bbolt.Tx) error {
++		collect := func(bucket *bbolt.Bucket) error {
++			if bucket == nil {
++				return nil
++			}
++			return bucket.ForEach(func(_ []byte, raw []byte) error {
++				record, _, err := c.parseRuleSetPointer(raw)
++				if err != nil {
++					return err
++				}
++				named[record.Body] = true
++				return nil
++			})
++		}
++		if err := collect(tx.Bucket(bucketRuleSetPointer)); err != nil {
++			return err
++		}
++		return tx.ForEach(func(name []byte, bucket *bbolt.Bucket) error {
++			if len(name) > 0 && name[0] == 0 {
++				return collect(bucket.Bucket(bucketRuleSetPointer))
++			}
++			return nil
++		})
++	})
++	return named, err
++}
+diff --git a/experimental/cachefile/rule_set_pointer_test.go b/experimental/cachefile/rule_set_pointer_test.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..26ec5c11d5c49052607672fece662e30e71fe6f6
+--- /dev/null
++++ b/experimental/cachefile/rule_set_pointer_test.go
+@@ -0,0 +1,259 @@
++// Modified for LoKi on 2026-11-04: retain both possible bodies after an uncertain commit.
++package cachefile
++
++import (
++	"bytes"
++	"context"
++	"encoding/json"
++	"errors"
++	"os"
++	"path/filepath"
++	"sync"
++	"testing"
++	"time"
++
++	"github.com/sagernet/bbolt"
++	"github.com/sagernet/sing-box/adapter"
++	"github.com/sagernet/sing-box/option"
++	"github.com/sagernet/sing/common/logger"
++	"github.com/stretchr/testify/require"
++)
++
++func TestSRSUncertainCommitKeepsBothRecoveryImages(t *testing.T) {
++	for _, restoreOldImage := range []bool{false, true} {
++		name := "new-image"
++		if restoreOldImage {
++			name = "old-image"
++		}
++		t.Run(name, func(t *testing.T) {
++			path := filepath.Join(privateTestDirectory(t), "cache.db")
++			cache := openTestCacheFile(t, path)
++			old := &adapter.SavedBinary{Content: []byte("old-password"), LastEtag: "old", LastUpdated: time.Unix(10, 0), URLHash: []byte{1}}
++			next := &adapter.SavedBinary{Content: []byte("new-password"), LastEtag: "new", LastUpdated: time.Unix(20, 0), URLHash: []byte{2}}
++			require.NoError(t, cache.SaveRuleSet("provider", old))
++			_, oldPath := ruleSetFixture(t, cache.CacheFile, "provider")
++			oldImage, err := os.ReadFile(path)
++			require.NoError(t, err)
++			require.Error(t, cache.saveRuleSetFileWith("provider", next, func(fn func(*bbolt.Tx) error) error {
++				require.NoError(t, cache.update(fn))
++				return errors.New("synthetic metadata sync ambiguity")
++			}, (*os.File).Sync, ""))
++			_, nextPath := ruleSetFixture(t, cache.CacheFile, "provider")
++			require.NotEqual(t, oldPath, nextPath)
++			require.FileExists(t, oldPath, "current View cannot prove that the old durable pointer was replaced")
++			require.FileExists(t, nextPath, "current View cannot prove that the new pointer was not committed")
++			cache.pruneRuleSetFiles(cache.DB)
++			require.FileExists(t, oldPath, "GC must not guess the durable outcome while writes are latched")
++			require.FileExists(t, nextPath)
++			require.Error(t, cache.SaveSubscription("other", old), "uncertainty blocks both namespaces")
++			require.Error(t, cache.SaveRuleSet("provider", old))
++			entries, err := os.ReadDir(path + ruleSetFileSuffix)
++			require.NoError(t, err)
++			require.Len(t, entries, 2, "latched writes must not create additional bodies")
++			require.NoError(t, cache.Close())
++			expected, unusedPath := next, oldPath
++			if restoreOldImage {
++				// Restore a complete pre-commit DB image to model the old durable outcome.
++				// This is a deterministic recovery control, not a physical power-loss test.
++				require.NoError(t, os.WriteFile(path, oldImage, 0o600))
++				expected, unusedPath = old, nextPath
++			}
++			cache = openTestCacheFile(t, path)
++			defer cache.Close()
++			actual := cache.LoadRuleSet("provider")
++			require.NotNil(t, actual)
++			require.Equal(t, expected.Content, actual.Content)
++			require.Equal(t, expected.LastEtag, actual.LastEtag)
++			require.True(t, expected.LastUpdated.Equal(actual.LastUpdated))
++			require.Equal(t, expected.URLHash, actual.URLHash)
++			require.NoFileExists(t, unusedPath, "only a verified restart may collect the unreferenced version")
++		})
++	}
++}
++
++func ruleSetFixture(t *testing.T, cache *CacheFile, tag string) (*ruleSetPointer, string) {
++	t.Helper()
++	raw, err := cache.ruleSetPointer(tag)
++	require.NoError(t, err)
++	record, _, err := cache.parseRuleSetPointer(raw)
++	require.NoError(t, err)
++	return record, filepath.Join(cache.path+ruleSetFileSuffix, record.Body)
++}
++
++func TestSRSBodyCollisionAndSyncFailurePreservePublishedPair(t *testing.T) {
++	for _, kind := range []string{"file", "symlink", "hardlink", "referenced", "sync"} {
++		t.Run(kind, func(t *testing.T) {
++			path := filepath.Join(privateTestDirectory(t), "cache.db")
++			cache := openTestCacheFile(t, path)
++			defer cache.Close()
++			old := &adapter.SavedBinary{Content: []byte("old.lab.example\n"), LastEtag: "old", URLHash: []byte{1}}
++			require.NoError(t, cache.SaveRuleSet("rules", old))
++			oldRecord, oldPath := ruleSetFixture(t, cache.CacheFile, "rules")
++			name := "r-" + cache.storage.id + "-00000000000000000000000000000001"
++			candidate := filepath.Join(path+ruleSetFileSuffix, name)
++			victim := filepath.Join(filepath.Dir(path), "unrelated")
++			require.NoError(t, os.WriteFile(victim, []byte("keep-victim"), 0o600))
++			syncBody := (*os.File).Sync
++			switch kind {
++			case "file":
++				require.NoError(t, os.WriteFile(candidate, []byte("keep-collision"), 0o600))
++			case "symlink":
++				require.NoError(t, os.Symlink(victim, candidate))
++			case "hardlink":
++				require.NoError(t, os.Link(victim, candidate))
++			case "referenced":
++				name, candidate = oldRecord.Body, oldPath
++			case "sync":
++				syncBody = func(*os.File) error { return errors.New("synthetic body sync failure") }
++			}
++			require.Error(t, cache.saveRuleSetFileWith("rules", &adapter.SavedBinary{Content: []byte("new.lab.example\n"), LastEtag: "new"}, cache.update, syncBody, name))
++			actual := cache.LoadRuleSet("rules")
++			require.NotNil(t, actual)
++			require.Equal(t, old.Content, actual.Content)
++			require.Equal(t, old.LastEtag, actual.LastEtag)
++			require.Equal(t, old.URLHash, actual.URLHash)
++			if kind == "sync" {
++				require.NoFileExists(t, candidate)
++			} else {
++				require.FileExists(t, candidate)
++			}
++			victimBytes, err := os.ReadFile(victim)
++			require.NoError(t, err)
++			require.Equal(t, []byte("keep-victim"), victimBytes)
++			if kind == "file" {
++				contents, err := os.ReadFile(candidate)
++				require.NoError(t, err)
++				require.Equal(t, []byte("keep-collision"), contents)
++			}
++		})
++	}
++}
++
++func TestSRSCorruptReferencesAndBodies(t *testing.T) {
++	for _, kind := range []string{"traversal", "absolute", "foreign-store", "size", "hash", "body", "symlink", "hardlink", "metadata", "version"} {
++		t.Run(kind, func(t *testing.T) {
++			path := filepath.Join(privateTestDirectory(t), "cache.db")
++			cache := openTestCacheFile(t, path)
++			defer cache.Close()
++			require.NoError(t, cache.SaveRuleSet("provider", &adapter.SavedBinary{Content: []byte("synthetic-private")}))
++			record, bodyPath := ruleSetFixture(t, cache.CacheFile, "provider")
++			// A valid older entry must never hide failure of the authoritative v2 record.
++			legacy, err := ruleSetRecord(&adapter.SavedBinary{Content: []byte("legacy-body")})
++			require.NoError(t, err)
++			require.NoError(t, os.WriteFile(filepath.Join(path+ruleSetFileSuffix, ruleSetFileName(nil, "provider")), []byte("legacy-body"), 0o600))
++			require.NoError(t, cache.update(func(tx *bbolt.Tx) error {
++				bucket, err := cache.createBucket(tx, bucketRuleSetFile)
++				if err != nil {
++					return err
++				}
++				return bucket.Put([]byte("provider"), legacy)
++			}))
++			victim := filepath.Join(filepath.Dir(path), "unrelated")
++			require.NoError(t, os.WriteFile(victim, []byte("keep"), 0o600))
++			switch kind {
++			case "metadata":
++				record.Metadata = []byte{1}
++			case "version":
++				record.Version = 999
++			case "traversal":
++				record.Body = "../../unrelated"
++			case "absolute":
++				record.Body = victim
++			case "foreign-store":
++				record.Body = "r-00000000000000000000000000000000-00000000000000000000000000000000"
++			case "size":
++				record.Size = 1 << 60
++			case "hash":
++				record.SHA256 = "0000000000000000000000000000000000000000000000000000000000000000"
++			case "body":
++				require.NoError(t, os.WriteFile(bodyPath, bytes.Repeat([]byte("x"), 17), 0o600))
++			case "symlink":
++				require.NoError(t, os.Remove(bodyPath))
++				require.NoError(t, os.Symlink(victim, bodyPath))
++			case "hardlink":
++				require.NoError(t, os.Link(bodyPath, victim+"-link"))
++			}
++			raw, err := json.Marshal(record)
++			require.NoError(t, err)
++			require.NoError(t, cache.update(func(tx *bbolt.Tx) error { return cache.bucket(tx, bucketRuleSetPointer).Put([]byte("provider"), raw) }))
++			require.Nil(t, cache.LoadRuleSet("provider"))
++			cache.pruneRuleSetFiles(cache.DB)
++			contents, err := os.ReadFile(victim)
++			require.NoError(t, err)
++			require.Equal(t, "keep", string(contents))
++		})
++	}
++}
++
++func TestSRSGCUsesOtherNamespaceReferences(t *testing.T) {
++	cache := openTestCacheFile(t, filepath.Join(privateTestDirectory(t), "cache.db"))
++	defer cache.Close()
++	require.NoError(t, cache.SaveRuleSet("node", &adapter.SavedBinary{Content: []byte("old")}))
++	_, oldPath := ruleSetFixture(t, cache.CacheFile, "node")
++	raw, err := cache.ruleSetPointer("node")
++	require.NoError(t, err)
++	require.NoError(t, cache.update(func(tx *bbolt.Tx) error {
++		other, err := tx.CreateBucketIfNotExists([]byte("\x00other"))
++		if err != nil {
++			return err
++		}
++		bucket, err := other.CreateBucketIfNotExists(bucketRuleSetPointer)
++		if err != nil {
++			return err
++		}
++		return bucket.Put([]byte("alias"), raw)
++	}))
++	require.NoError(t, cache.SaveRuleSet("node", &adapter.SavedBinary{Content: []byte("new")}))
++	cache.pruneRuleSetFiles(cache.DB)
++	require.FileExists(t, oldPath)
++	cache.contentAccess.Lock()
++	require.NoError(t, cache.update(func(tx *bbolt.Tx) error {
++		return tx.Bucket([]byte("\x00other")).Bucket(bucketRuleSetPointer).Delete([]byte("alias"))
++	}))
++	cache.contentAccess.Unlock()
++	cache.pruneRuleSetFiles(cache.DB)
++	require.NoFileExists(t, oldPath)
++	require.Equal(t, "new", string(cache.LoadRuleSet("node").Content))
++}
++
++func TestSRSConcurrentReadersAndNamespaces(t *testing.T) {
++	path := filepath.Join(privateTestDirectory(t), "cache.db")
++	cache := openTestCacheFile(t, path)
++	defer func() { _ = cache.Close() }()
++	require.NoError(t, cache.SaveRuleSet("provider", &adapter.SavedBinary{Content: bytes.Repeat([]byte{0}, 8192), LastEtag: string([]byte{0})}))
++	var workers sync.WaitGroup
++	for worker := range 4 {
++		workers.Go(func() {
++			for round := range 12 {
++				if worker == 0 {
++					content := bytes.Repeat([]byte{byte(round)}, 8192)
++					if err := cache.SaveRuleSet("provider", &adapter.SavedBinary{Content: content, LastEtag: string([]byte{byte(round)})}); err != nil {
++						t.Error(err)
++					}
++				} else {
++					actual := cache.LoadRuleSet("provider")
++					if actual == nil || (len(actual.LastEtag) != 1 || len(actual.Content) != 8192 || !bytes.Equal(actual.Content, bytes.Repeat([]byte(actual.LastEtag), 8192))) {
++						t.Error("reader observed mixed metadata/body")
++					}
++				}
++			}
++		})
++	}
++	workers.Wait()
++	require.NoError(t, cache.Close())
++	other := New(context.Background(), logger.NOP(), option.CacheFileOptions{Enabled: true, Path: path, CacheID: "other"})
++	otherScope := adapter.NewScope(context.Background(), logger.NOP())
++	require.NoError(t, other.Start(adapter.StartStateInitialize, otherScope))
++	require.NoError(t, other.SaveRuleSet("provider", &adapter.SavedBinary{Content: []byte("other")}))
++	require.Equal(t, "other", string(other.LoadRuleSet("provider").Content))
++	require.NoError(t, otherScope.Close())
++	cache = openTestCacheFile(t, path)
++	require.Len(t, cache.LoadRuleSet("provider").Content, 8192)
++	require.NoError(t, cache.Close())
++	require.NoError(t, other.Start(adapter.StartStateInitialize, adapter.NewScope(context.Background(), logger.NOP())))
++	require.Equal(t, "other", string(other.LoadRuleSet("provider").Content))
++	require.NoError(t, other.DB.Close())
++	require.NoError(t, other.storage.close())
++	cache = openTestCacheFile(t, path)
++
++}
+diff --git a/experimental/cachefile/srs_atomicity_test.go b/experimental/cachefile/srs_atomicity_test.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..ea0fc02503e177c585dce000680e356d089b2a37
+--- /dev/null
++++ b/experimental/cachefile/srs_atomicity_test.go
+@@ -0,0 +1,96 @@
++// Modified for LoKi on 2026-11-04: preserve SRS pairs and exhaust private cache cleanup.
++package cachefile
++
++import (
++	"fmt"
++	"os"
++	"path/filepath"
++	"testing"
++	"time"
++
++	"github.com/sagernet/sing-box/adapter"
++	"github.com/stretchr/testify/require"
++)
++
++func TestSRSClosedDBSameSizeCoherence(t *testing.T) {
++	path := filepath.Join(privateTestDirectory(t), "cache.db")
++	cache := openTestCacheFile(t, path)
++	before := &adapter.SavedBinary{Content: []byte("old.lab.example\n"), LastEtag: "old-etag", LastUpdated: time.Unix(10, 0), URLHash: []byte{1}}
++	next := &adapter.SavedBinary{Content: []byte("new.lab.example\n"), LastEtag: "new-etag", LastUpdated: time.Unix(20, 0), URLHash: []byte{2}}
++	require.Equal(t, len(before.Content), len(next.Content))
++	require.NoError(t, cache.SaveRuleSet("rules", before))
++	require.NoError(t, cache.DB.Close())
++	require.Error(t, cache.SaveRuleSet("rules", next))
++	_ = cache.Close()
++	cache = openTestCacheFile(t, path)
++	defer cache.Close()
++	actual := cache.LoadRuleSet("rules")
++	require.NotNil(t, actual)
++	require.Equal(t, before.Content, actual.Content, "failed metadata commit replaced the previously committed SRS body")
++	require.Equal(t, before.LastEtag, actual.LastEtag)
++	require.True(t, before.LastUpdated.Equal(actual.LastUpdated))
++	require.Equal(t, before.URLHash, actual.URLHash)
++}
++
++func TestPrivateCacheGCPassesPermanentFirstPage(t *testing.T) {
++	for _, namespace := range []string{"subscriptions", "rules"} {
++		t.Run(namespace, func(t *testing.T) {
++			path := filepath.Join(privateTestDirectory(t), "cache.db")
++			cache := openTestCacheFile(t, path)
++			defer cache.Close()
++			suffix, prefix := subscriptionSuffix, "s-"+cache.storage.id+"-"
++			if namespace == "rules" {
++				suffix, prefix = ruleSetFileSuffix, ".loki-srs-"+cache.storage.id+"-"
++			}
++			directory := path + suffix
++			require.NoError(t, os.Mkdir(directory, 0o700))
++			for index := 0; index < 768; index++ {
++				name := fmt.Sprintf("%s%032x", prefix, index)
++				require.NoError(t, os.WriteFile(filepath.Join(directory, name), []byte("synthetic-orphan"), 0o600))
++			}
++			foreign := filepath.Join(directory, "unrelated-file")
++			require.NoError(t, os.WriteFile(foreign, []byte("keep-foreign"), 0o600))
++			file, err := os.Open(directory)
++			require.NoError(t, err)
++			ordered, err := file.ReadDir(-1)
++			require.NoError(t, err)
++			require.NoError(t, file.Close())
++			require.Greater(t, len(ordered), 256)
++			// Protect the actual first page, independent of filesystem enumeration order.
++			// Link targets are outside the scanned directory, so its ordering does not change.
++			protected := make(map[string]bool)
++			for index, entry := range ordered[:256] {
++				protected[entry.Name()] = true
++				require.NoError(t, os.Link(filepath.Join(directory, entry.Name()), filepath.Join(filepath.Dir(path), fmt.Sprintf("keep-%d", index))))
++			}
++			file, err = os.Open(directory)
++			require.NoError(t, err)
++			first, err := file.ReadDir(256)
++			require.NoError(t, err)
++			require.NoError(t, file.Close())
++			for _, entry := range first {
++				require.True(t, protected[entry.Name()], "fixture must keep every entry in the first page")
++			}
++			prune := func() {
++				if namespace == "rules" {
++					cache.pruneRuleSetFiles(cache.DB)
++				} else {
++					cache.pruneSubscriptionFiles()
++				}
++			}
++			prune()
++			for _, entry := range ordered {
++				name := filepath.Join(directory, entry.Name())
++				if protected[entry.Name()] || entry.Name() == "unrelated-file" {
++					require.FileExists(t, name, "GC removed protected data")
++				} else {
++					require.NoFileExists(t, name, "permanent first page hid a later owned orphan")
++				}
++			}
++			prune()
++			actual, err := os.ReadFile(foreign)
++			require.NoError(t, err)
++			require.Equal(t, []byte("keep-foreign"), actual)
++		})
++	}
++}
+diff --git a/experimental/cachefile/storage_recovery_test.go b/experimental/cachefile/storage_recovery_test.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..f726b672eef0d34923ecc565ab5bd6fd888764fd
+--- /dev/null
++++ b/experimental/cachefile/storage_recovery_test.go
+@@ -0,0 +1,149 @@
++// Modified for LoKi on 2026-11-04: establish durability before orphan cleanup.
++package cachefile
++
++import (
++	"context"
++	"errors"
++	"os"
++	"path/filepath"
++	"testing"
++	"time"
++
++	"github.com/sagernet/bbolt"
++	"github.com/sagernet/sing-box/adapter"
++	"github.com/sagernet/sing-box/option"
++	"github.com/sagernet/sing/common/logger"
++	"github.com/stretchr/testify/require"
++)
++
++func storeSchemaForTest(t *testing.T, cache *CacheFile) string {
++	t.Helper()
++	var schema string
++	require.NoError(t, cache.view(func(tx *bbolt.Tx) error {
++		schema = string(tx.Bucket(bucketStore).Get([]byte("schema")))
++		return nil
++	}))
++	return schema
++}
++
++func TestSRSOwnV1ReadAndAtomicSchemaUpgrade(t *testing.T) {
++	path := filepath.Join(privateTestDirectory(t), "cache.db")
++	cache := openTestCacheFile(t, path)
++	old := &adapter.SavedBinary{Content: []byte("old.lab.example\n"), LastEtag: "old", LastUpdated: time.Unix(10, 0), URLHash: []byte{1}}
++	legacyRecord, err := ruleSetRecord(old)
++	require.NoError(t, err)
++	require.NoError(t, os.Mkdir(path+ruleSetFileSuffix, 0o700))
++	legacyPath := filepath.Join(path+ruleSetFileSuffix, ruleSetFileName(nil, "rules"))
++	require.NoError(t, os.WriteFile(legacyPath, old.Content, 0o600))
++	require.NoError(t, cache.update(func(tx *bbolt.Tx) error {
++		if err := tx.Bucket(bucketStore).Put([]byte("schema"), []byte("1")); err != nil {
++			return err
++		}
++		bucket, err := cache.createBucket(tx, bucketRuleSetFile)
++		if err != nil {
++			return err
++		}
++		return bucket.Put([]byte("rules"), legacyRecord)
++	}))
++	require.NoError(t, cache.SaveSubscription("provider", &adapter.SavedBinary{Content: []byte("subscription")}))
++	require.Equal(t, "1", storeSchemaForTest(t, cache.CacheFile), "subscription writes do not require the new SRS format")
++	require.NoError(t, cache.Close())
++	cache = openTestCacheFile(t, path)
++	defer cache.Close()
++	actual := cache.LoadRuleSet("rules")
++	require.NotNil(t, actual)
++	require.Equal(t, old.Content, actual.Content)
++	require.Equal(t, old.LastEtag, actual.LastEtag)
++	require.Equal(t, old.URLHash, actual.URLHash)
++	require.True(t, old.LastUpdated.Equal(actual.LastUpdated))
++	require.Equal(t, "1", storeSchemaForTest(t, cache.CacheFile))
++	next := &adapter.SavedBinary{Content: []byte("new.lab.example\n"), LastEtag: "new", LastUpdated: time.Unix(20, 0), URLHash: []byte{2}}
++	require.Error(t, cache.saveRuleSetFileWith("rules", next, func(fn func(*bbolt.Tx) error) error {
++		return cache.update(func(tx *bbolt.Tx) error {
++			if err := fn(tx); err != nil {
++				return err
++			}
++			return errors.New("synthetic rollback after schema and pointer writes")
++		})
++	}, (*os.File).Sync, ""))
++	require.Equal(t, "1", storeSchemaForTest(t, cache.CacheFile), "schema guard must roll back with the pointer")
++	raw, err := cache.ruleSetPointer("rules")
++	require.NoError(t, err)
++	require.Nil(t, raw)
++	require.Equal(t, old.Content, cache.LoadRuleSet("rules").Content)
++	require.NoError(t, cache.Close())
++	cache = openTestCacheFile(t, path)
++	defer cache.Close()
++	require.NoError(t, cache.SaveRuleSet("rules", next))
++	require.Equal(t, "2", storeSchemaForTest(t, cache.CacheFile), "r5's strict schema1 reader must refuse the upgraded store")
++	record, _ := ruleSetFixture(t, cache.CacheFile, "rules")
++	require.Equal(t, 2, record.Version)
++	require.NoError(t, cache.view(func(tx *bbolt.Tx) error {
++		require.Nil(t, cache.bucket(tx, bucketRuleSetFile).Get([]byte("rules")))
++		return nil
++	}))
++	legacyBody, err := os.ReadFile(legacyPath)
++	require.NoError(t, err)
++	require.Equal(t, old.Content, legacyBody, "unversioned legacy filenames are not automatic cleanup targets")
++	require.Equal(t, next.Content, cache.LoadRuleSet("rules").Content)
++	require.Equal(t, []byte("subscription"), cache.LoadSubscription("provider").Content)
++}
++
++func TestCacheStartupSyncFailurePreservesRecoveryBodies(t *testing.T) {
++	path := filepath.Join(privateTestDirectory(t), "cache.db")
++	cache := openTestCacheFile(t, path)
++	require.NoError(t, cache.SaveSubscription("provider", &adapter.SavedBinary{Content: []byte("keep-subscription")}))
++	require.NoError(t, cache.SaveRuleSet("rules", &adapter.SavedBinary{Content: []byte("keep-rule")}))
++	_, subscriptionPath := subscriptionFixture(t, cache.CacheFile, "provider")
++	_, rulePath := ruleSetFixture(t, cache.CacheFile, "rules")
++	orphans := []string{filepath.Join(path+subscriptionSuffix, "s-"+cache.storage.id+"-00000000000000000000000000000001"), filepath.Join(path+ruleSetFileSuffix, ".loki-srs-"+cache.storage.id+"-00000000000000000000000000000002")}
++	for _, name := range orphans {
++		require.NoError(t, os.WriteFile(name, []byte("preserve-until-sync"), 0o600))
++	}
++	require.NoError(t, cache.Close())
++	before, err := os.ReadFile(path)
++	require.NoError(t, err)
++	candidate := New(context.Background(), logger.NOP(), option.CacheFileOptions{Enabled: true, Path: path})
++	called := false
++	require.Error(t, candidate.startWithSync(func(*bbolt.DB) error {
++		called = true
++		for _, name := range orphans {
++			require.FileExists(t, name)
++		}
++		return errors.New("synthetic startup sync failure")
++	}))
++	require.True(t, called, "startup must establish durability before any cleanup")
++	after, err := os.ReadFile(path)
++	require.NoError(t, err)
++	require.Equal(t, before, after, "startup failure must not migrate or compact")
++	for _, name := range append(orphans, subscriptionPath, rulePath) {
++		require.FileExists(t, name)
++	}
++	cache = openTestCacheFile(t, path)
++	defer cache.Close()
++	for _, name := range orphans {
++		require.NoFileExists(t, name)
++	}
++	require.NotNil(t, cache.LoadSubscription("provider"))
++	require.NotNil(t, cache.LoadRuleSet("rules"))
++}
++
++func TestStorageRejectFutureSchemaBeforeMutation(t *testing.T) {
++	path := filepath.Join(privateTestDirectory(t), "cache.db")
++	cache := openTestCacheFile(t, path)
++	require.NoError(t, cache.update(func(tx *bbolt.Tx) error { return tx.Bucket(bucketStore).Put([]byte("schema"), []byte("999")) }))
++	require.NoError(t, cache.Close())
++	require.NoError(t, os.Chmod(path, 0o644))
++	before, err := os.ReadFile(path)
++	require.NoError(t, err)
++	candidate := New(context.Background(), logger.NOP(), option.CacheFileOptions{Enabled: true, Path: path})
++	called := false
++	require.Error(t, candidate.startWithSync(func(*bbolt.DB) error { called = true; return nil }))
++	require.False(t, called, "unknown format must fail at the read-only ownership boundary")
++	after, err := os.ReadFile(path)
++	require.NoError(t, err)
++	require.Equal(t, before, after)
++	info, err := os.Stat(path)
++	require.NoError(t, err)
++	require.Equal(t, os.FileMode(0o644), info.Mode().Perm())
++}
+diff --git a/experimental/cachefile/subscription_uncertain_recovery_test.go b/experimental/cachefile/subscription_uncertain_recovery_test.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..b89f59e2f717f589deac0010cba03c8e909f8e83
+--- /dev/null
++++ b/experimental/cachefile/subscription_uncertain_recovery_test.go
+@@ -0,0 +1,120 @@
++// Modified for LoKi on 2026-11-04: retain both possible bodies after an uncertain commit.
++package cachefile
++
++import (
++	"errors"
++	"os"
++	"path/filepath"
++	"sync"
++	"testing"
++	"time"
++
++	"github.com/sagernet/bbolt"
++	"github.com/sagernet/sing-box/adapter"
++	"github.com/stretchr/testify/require"
++)
++
++func TestSubscriptionUncertainCommitKeepsBothRecoveryImages(t *testing.T) {
++	for _, restoreOldImage := range []bool{false, true} {
++		name := "new-image"
++		if restoreOldImage {
++			name = "old-image"
++		}
++		t.Run(name, func(t *testing.T) {
++			path := filepath.Join(privateTestDirectory(t), "cache.db")
++			cache := openTestCacheFile(t, path)
++			old := &adapter.SavedBinary{Content: []byte("old-password"), LastEtag: "old", LastUpdated: time.Unix(10, 0), URLHash: []byte{1}}
++			next := &adapter.SavedBinary{Content: []byte("new-password"), LastEtag: "new", LastUpdated: time.Unix(20, 0), URLHash: []byte{2}}
++			require.NoError(t, cache.SaveSubscription("provider", old))
++			_, oldPath := subscriptionFixture(t, cache.CacheFile, "provider")
++			oldImage, err := os.ReadFile(path)
++			require.NoError(t, err)
++			require.Error(t, cache.saveSubscriptionWithCommit("provider", next, func(fn func(*bbolt.Tx) error) error {
++				require.NoError(t, cache.update(fn))
++				return errors.New("synthetic metadata sync ambiguity")
++			}))
++			_, nextPath := subscriptionFixture(t, cache.CacheFile, "provider")
++			require.NotEqual(t, oldPath, nextPath)
++			require.FileExists(t, oldPath, "current View cannot prove that the old durable pointer was replaced")
++			require.FileExists(t, nextPath, "current View cannot prove that the new pointer was not committed")
++			cache.pruneSubscriptionFiles()
++			require.FileExists(t, oldPath, "GC must not guess the durable outcome while writes are latched")
++			require.FileExists(t, nextPath)
++			require.Error(t, cache.SaveRuleSet("rules", old), "subscription uncertainty blocks SRS staging too")
++			require.NoDirExists(t, path+ruleSetFileSuffix)
++			require.NoError(t, cache.Close())
++			expected, unusedPath := next, oldPath
++			if restoreOldImage {
++				// Restore a complete pre-commit DB image to model the old durable outcome.
++				// This is a deterministic recovery control, not a physical power-loss test.
++				require.NoError(t, os.WriteFile(path, oldImage, 0o600))
++				expected, unusedPath = old, nextPath
++			}
++			cache = openTestCacheFile(t, path)
++			defer cache.Close()
++			actual := cache.LoadSubscription("provider")
++			require.NotNil(t, actual)
++			require.Equal(t, expected.Content, actual.Content)
++			require.Equal(t, expected.LastEtag, actual.LastEtag)
++			require.True(t, expected.LastUpdated.Equal(actual.LastUpdated))
++			require.Equal(t, expected.URLHash, actual.URLHash)
++			require.NoFileExists(t, unusedPath, "only a verified restart may collect the unreferenced version")
++		})
++	}
++}
++
++func TestSubscriptionGCWaitsForCommitOutcome(t *testing.T) {
++	path := filepath.Join(privateTestDirectory(t), "cache.db")
++	cache := openTestCacheFile(t, path)
++	defer cache.Close()
++	old := &adapter.SavedBinary{Content: []byte("old-password"), LastEtag: "old"}
++	next := &adapter.SavedBinary{Content: []byte("new-password"), LastEtag: "new"}
++	require.NoError(t, cache.SaveSubscription("provider", old))
++	_, oldPath := subscriptionFixture(t, cache.CacheFile, "provider")
++	visible, release, committed := make(chan struct{}), make(chan struct{}), make(chan error, 1)
++	var once sync.Once
++	releaseCommit := func() { once.Do(func() { close(release) }) }
++	defer releaseCommit()
++	go func() {
++		committed <- cache.saveSubscriptionWithCommit("provider", next, func(fn func(*bbolt.Tx) error) error {
++			if err := cache.update(fn); err != nil {
++				return err
++			}
++			close(visible)
++			<-release
++			return errors.New("synthetic delayed metadata sync failure")
++		})
++	}()
++	select {
++	case <-visible:
++	case <-time.After(5 * time.Second):
++		t.Fatal("candidate metadata was not published")
++	}
++	started, collected := make(chan struct{}), make(chan struct{})
++	go func() { close(started); cache.pruneSubscriptionFiles(); close(collected) }()
++	<-started
++	premature := false
++	select {
++	case <-collected:
++		premature = true
++	case <-time.After(100 * time.Millisecond):
++	}
++	releaseCommit()
++	select {
++	case err := <-committed:
++		require.Error(t, err)
++	case <-time.After(5 * time.Second):
++		t.Fatal("uncertain commit did not return")
++	}
++	if !premature {
++		select {
++		case <-collected:
++		case <-time.After(5 * time.Second):
++			t.Fatal("cleanup did not observe the commit outcome")
++		}
++	}
++	require.False(t, premature, "GC treated visible metadata as durable before its sync outcome")
++	require.FileExists(t, oldPath, "a paused failing commit still requires its previous durable body")
++	_, nextPath := subscriptionFixture(t, cache.CacheFile, "provider")
++	require.FileExists(t, nextPath)
++}
