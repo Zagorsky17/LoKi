@@ -62,6 +62,7 @@ function reset(options) {
         slept: 0,
         // What the core does on its own between two looks of a wait.
         on_sleep: null,
+        watcher: false,
         ...(options ?? {})
     };
 
@@ -92,6 +93,8 @@ function reset(options) {
             die("nft refused the ruleset: Error: broken");
         event("nft applied");
         world.network = true;
+        if (world.on_apply != null)
+            world.on_apply();
     };
     runtime.bound_devices = () => world.bound ?? [];
     nft.route_bound_devices = (devices) => {
@@ -120,8 +123,19 @@ function reset(options) {
     health.forkop_runtime_network_configured = () => world.network && world.capture && !world.routing_lost;
     health.sing_box_service_running = () => world.pid > 0;
     health.forkop_running = () => world.pid > 0 && world.ports && world.network && world.capture && !world.routing_lost;
-    watch.start_worker = () => { event("watcher started"); return !world.watcher_fails; };
-    watch.stop_worker = () => { event("watcher stopped"); return true; };
+    watch.start_worker = () => {
+        event("watcher started");
+        world.watcher = !world.watcher_fails;
+        if (world.on_watch != null)
+            world.on_watch();
+        return world.watcher;
+    };
+    watch.stop_worker = () => { event("watcher stopped"); world.watcher = false; return true; };
+    watch.worker_current = () => {
+        if (world.on_watch_check != null)
+            world.on_watch_check();
+        return world.watcher;
+    };
     rulesets.start_worker = () => { event("rule-set worker started"); return !world.ruleset_fails; };
     rulesets.stop_worker = () => { event("rule-set worker stopped"); return true; };
     rulesets.worker_current = () => !world.worker_stale;
@@ -204,6 +218,7 @@ function started() {
 
 function running(options) {
     reset(options);
+    world.watcher = !options?.watcher_missing;
     world.registered = true;
     world.pid = 4242;
     world.ticks = 100;
@@ -220,6 +235,37 @@ function reloaded(options, reason) {
     running(options);
     let result = run(() => lifecycle.reload(reason ?? "on_config_change"));
     return result;
+}
+
+// The Python harness kills this real interpreter at the first interception. Router effects
+// remain isolated fakes, but no exception handler or failed-start cleanup can run afterward.
+let fatal_snapshot = getenv("FORKOP_TEST_FATAL_SNAPSHOT");
+let recover_snapshot = getenv("FORKOP_TEST_RECOVER_SNAPSHOT");
+if (recover_snapshot != null) {
+    let interrupted = json(fs.readfile(recover_snapshot));
+    reset();
+    lifecycle.paths.lock = interrupted.dir + "/start.lock";
+    lifecycle.paths.planned_stop = interrupted.dir + "/planned-stop";
+    world.network = true;
+    lifecycle.crash_pause("4242");
+    print(sprintf("%J", { capture: world.capture, events: world.events }));
+    exit(0);
+}
+if (fatal_snapshot != null) {
+    reset();
+    fs.writefile(lifecycle.paths.planned_stop, "previous stop\n");
+    world.on_apply = () => {
+        require("core.common").write_file_atomic(fatal_snapshot, sprintf("%J", {
+            dir: world.dir,
+            watcher: world.watcher,
+            planned_stop: fs.stat(lifecycle.paths.planned_stop) != null,
+            network: world.network,
+            events: world.events
+        }));
+        real_sleep(30000);
+    };
+    lifecycle.start();
+    exit(2);
 }
 
 t.test("unsafe cache paths stop start and reload before migration or runtime changes", () => {
@@ -242,11 +288,11 @@ t.test("unsafe cache paths stop start and reload before migration or runtime cha
     }
 });
 
-t.test("a start answers only once sing-box is ready, then turns the table on, then the workers", () => {
+t.test("a start waits for sing-box and arms the crash watcher before turning the table on", () => {
     reset();
     let result = run(() => lifecycle.start());
     t.eq(result.result, 0);
-    t.eq(world.events, [ "config checked", "sing-box started", "nft applied", "watcher started", "rule-set worker started" ]);
+    t.eq(world.events, [ "config checked", "sing-box started", "watcher started", "nft applied", "rule-set worker started" ]);
     t.eq(fs.readfile(lifecycle.paths.applied_nft), world.script, "the applied table is recorded");
     t.eq(world.logs, [ "[info] Starting LoKi", "[info] LoKi started" ]);
     t.eq(result.stdout, "", "a start prints nothing");
@@ -255,7 +301,7 @@ t.test("a start answers only once sing-box is ready, then turns the table on, th
 t.test("what the core sends bound to a device is routed from before it starts until it stops", () => {
     reset({ bound: [ "eth1", "wwan0" ] });
     t.eq(run(() => lifecycle.start()).result, 0);
-    t.eq(world.events, [ "config checked", "bound to eth1 wwan0", "sing-box started", "nft applied", "watcher started",
+    t.eq(world.events, [ "config checked", "bound to eth1 wwan0", "sing-box started", "watcher started", "nft applied",
         "rule-set worker started" ]);
     run(() => lifecycle.stop());
     t.contains(world.events, "bound to nothing");
@@ -294,6 +340,133 @@ t.test("a start of a running Forkop does nothing", () => {
     let result = run(() => lifecycle.start());
     t.eq([ result.result, world.events ], [ 0, [] ]);
     t.contains(world.logs, "[info] LoKi is already running");
+});
+
+t.test("the crash watcher is armed at the first interception even if the starter cannot finish", () => {
+    reset();
+    fs.writefile(lifecycle.paths.planned_stop, "previous stop\n");
+    let intercepted;
+    world.on_apply = () => {
+        intercepted = { watcher: world.watcher, planned_stop: fs.stat(lifecycle.paths.planned_stop) != null };
+    };
+    t.eq(run(() => lifecycle.start()).result, 0);
+    t.eq(intercepted, { watcher: true, planned_stop: false });
+});
+
+t.test("Start repairs only the missing watcher under the lifecycle lock without reading new UCI", () => {
+    running({ watcher_missing: true, invalid: true, config_fails: true, build_fails: true });
+    let held = false;
+    world.on_watch = () => { held = lock.held(lifecycle.paths.lock); };
+    let result = stub.capture(() => lifecycle.start());
+    t.eq(result.result, 0);
+    t.ok(held);
+    t.eq(world.events, [ "watcher started" ]);
+    t.eq(world.migration_checks ?? 0, 0);
+    t.eq([ world.pid, world.network ], [ 4242, true ]);
+    t.eq(stub.capture(() => lifecycle.start()).result, 0);
+    t.eq(world.events, [ "watcher started" ], "a repeated Start keeps the repaired watcher");
+    finish();
+});
+
+t.test("failed watcher repair reports failure while preserving the applied runtime", () => {
+    running({ watcher_missing: true, watcher_fails: true });
+    t.eq(run(() => lifecycle.start()).result, 1);
+    t.eq(world.events, [ "watcher started" ]);
+    t.eq([ world.pid, world.network ], [ 4242, true ]);
+});
+
+t.test("a planned stop prevents a healthy runtime from being silently rearmed", () => {
+    running({ watcher_missing: true });
+    fs.writefile(lifecycle.paths.planned_stop, "1\n");
+    t.eq(run(() => lifecycle.start()).result, 1);
+    t.eq(world.events, []);
+    t.ok(fs.stat(lifecycle.paths.planned_stop) != null);
+});
+
+t.test("cancelled repair cannot register a watcher after waiting for the lifecycle lock", () => {
+    running({ watcher_missing: true });
+    t.eq(run(() => lifecycle.start(() => !lock.held(lifecycle.paths.lock))).result, 0);
+    t.eq(world.events, []);
+    t.ok(!world.watcher);
+});
+
+t.test("cancellation during the procd health query prevents watcher registration", () => {
+    running({ watcher_missing: true });
+    let token = start_request.begin();
+    world.on_watch_check = () => start_request.cancel(token);
+    t.eq(run(() => lifecycle.start(() => start_request.current(token))).result, 0);
+    t.eq(world.events, []);
+    t.ok(!world.watcher);
+});
+
+t.test("a core that dies during watcher repair is not reported as already running", () => {
+    running({ watcher_missing: true });
+    world.on_watch = () => { world.pid = 0; world.ports = false; };
+    t.eq(run(() => lifecycle.start()).result, 1);
+    t.eq(world.events, [ "watcher started" ]);
+});
+
+t.test("manual repair works with autostart disabled and a following Stop removes the watcher", () => {
+    running({ watcher_missing: true });
+    t.ok(!start_request.enabled());
+    t.eq(stub.capture(() => lifecycle.start()).result, 0);
+    t.ok(world.watcher);
+    t.eq(run(() => lifecycle.stop()).result, 0);
+    t.eq([ world.pid, world.watcher, world.network ], [ 0, false, false ]);
+    t.ok(fs.stat(lifecycle.paths.planned_stop) != null);
+});
+
+t.test("WAN restoration repairs the watcher through shared Start without applying newly saved UCI", () => {
+    let initd = require("service.initd");
+    let ui = require("service.ui");
+    let begin = ui.begin;
+    ui.begin = () => ({ job_id: "" });
+    for (let failure in [ false, true ]) {
+        running({ routing_lost: true, watcher_missing: true, watcher_fails: failure,
+            invalid: true, config_fails: true, build_fails: true });
+        health.forkop_stably_running = () => health.forkop_running();
+        fs.mkdir(world.dir + "/rc.d");
+        fs.symlink("../init.d/forkop", start_request.paths.autostart);
+        let token = start_request.begin();
+        let result = stub.capture(() => initd.wan_up());
+        t.eq(result.result, failure ? 1 : 0);
+        t.eq(world.events, [ "routing restored", "watcher started" ]);
+        t.eq([ world.pid, world.network, world.routing_lost ], [ 4242, true, false ]);
+        t.eq(world.migration_checks ?? 0, 0);
+        t.eq(start_request.token(), failure ? token : "");
+        if (!failure) {
+            start_request.begin();
+            t.eq(stub.capture(() => initd.wan_up()).result, 0);
+            t.eq(world.events, [ "routing restored", "watcher started" ], "repeat keeps the repaired watcher");
+        }
+        finish();
+    }
+    ui.begin = begin;
+});
+
+t.test("cancellation while registering the watcher removes it before any interception", () => {
+    reset();
+    let token = start_request.begin();
+    world.on_watch = () => start_request.cancel(token);
+    t.eq(run(() => lifecycle.start(() => start_request.current(token))).result, 1);
+    t.ok(index(world.events, "nft applied") < 0);
+    t.eq([ world.pid, world.watcher, world.network ], [ 0, false, false ]);
+});
+
+t.test("failure to remove the planned-stop guard refuses interception and cleans up", () => {
+    reset();
+    fs.mkdir(lifecycle.paths.planned_stop);
+    t.eq(run(() => lifecycle.start()).result, 1);
+    t.ok(index(world.events, "nft applied") < 0);
+    t.eq([ world.pid, world.watcher, world.network ], [ 0, false, false ]);
+});
+
+t.test("readiness lost during watcher registration prevents interception", () => {
+    reset();
+    world.on_watch = () => { world.ports = false; };
+    t.eq(run(() => lifecycle.start()).result, 1);
+    t.ok(index(world.events, "nft applied") < 0);
+    t.eq([ world.pid, world.watcher, world.network ], [ 0, false, false ]);
 });
 
 t.test("a start with nothing to run warns once, runs nothing and succeeds", () => {

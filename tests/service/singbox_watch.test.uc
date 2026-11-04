@@ -145,4 +145,26 @@ t.test("stopping the watcher never signals a pid that is not the watcher", () =>
     stub.restore();
 });
 
+t.test("watcher readiness requires its recorded process and its own procd registration", () => {
+    let me = common.own_pid();
+    let readfile = fs.readfile;
+    fs.writefile(watch.paths.pid, me + "\n");
+    for (let candidate in [
+        [ { "forkop-singbox-watch": { instances: { watch: {} } } }, true, true ],
+        [ {}, true, false ],
+        [ { "forkop-singbox-watch": { instances: { other: {} } } }, true, false ],
+        [ { "forkop-singbox-watch": { instances: { watch: {} } } }, false, false ],
+        [ null, true, false ]
+    ]) {
+        fs.readfile = (path) => path == "/proc/" + me + "/cmdline"
+            ? (candidate[1] ? "ucode\0/usr/bin/forkop\0sing_box_watch\0" : "other\0") : readfile(path);
+        stub.commands([ [ "ubus call service list", { stdout: sprintf("%J", candidate[0]) } ] ]);
+        let current = watch.worker_current();
+        fs.readfile = readfile;
+        stub.restore();
+        t.eq(current, candidate[2]);
+    }
+    fs.unlink(watch.paths.pid);
+});
+
 t.done();

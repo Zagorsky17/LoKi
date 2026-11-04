@@ -308,7 +308,24 @@ function start_runtime(guard) {
         return false;
     }
 
-    // Only once sing-box answers does the table start sending it traffic.
+    // A killed starter cannot finish arming the watcher after interception has begun.
+    // The worker announces only after subscribing; remove the planned-stop guard before nft.
+    if (guard != null && !guard())
+        return false;
+    if (!watch.start_worker()) {
+        log("error", "Failed to start the sing-box crash watcher");
+        return false;
+    }
+    fs.unlink(paths.planned_stop);
+    if (fs.stat(paths.planned_stop) != null) {
+        log("error", "Failed to arm the sing-box crash watcher");
+        return false;
+    }
+    if (!wait_ready(0, 0, false, guard)) {
+        log("error", guard != null && !guard() ? "LoKi start was cancelled" : not_ready("started"));
+        return false;
+    }
+    // Registration can wait; check readiness and cancellation again before interception.
     if (guard != null && !guard())
         return false;
     try {
@@ -324,20 +341,11 @@ function start_runtime(guard) {
         log("error", NOT_CAPTURING);
         return false;
     }
-    if (!watch.start_worker()) {
-        log("error", "Failed to start the sing-box crash watcher");
-        return false;
-    }
     if (!rulesets.start_worker()) {
         log("error", "Failed to start the rule-set sync worker");
         return false;
     }
 
-    fs.unlink(paths.planned_stop);
-    if (fs.stat(paths.planned_stop) != null) {
-        log("error", "Failed to arm the sing-box crash watcher");
-        return false;
-    }
     return guard == null || guard();
 }
 
@@ -359,14 +367,30 @@ function forkop_running() {
 function start(guard) {
     if (guard != null && !guard())
         return 0;
-    if (forkop_running()) {
-        log("info", "LoKi is already running");
-        return 0;
-    }
     return locked(function() {
         if (guard != null && !guard())
             return 0;
         if (forkop_running()) {
+            // A partial Stop owns this state until it completes. Repair must neither clear
+            // its marker nor regenerate configuration from UCI for the still-running core.
+            if (fs.stat(paths.planned_stop) != null) {
+                log("error", "LoKi has an unfinished planned stop; stop it before starting again");
+                return 1;
+            }
+            if (!watch.worker_current()) {
+                if (guard != null && !guard())
+                    return 0;
+                if (!watch.start_worker()) {
+                    log("error", "Failed to start the sing-box crash watcher");
+                    return 1;
+                }
+            }
+            if (guard != null && !guard())
+                return 0;
+            if (!forkop_running()) {
+                log("error", "LoKi stopped running while its crash watcher was being restored");
+                return 1;
+            }
             log("info", "LoKi is already running");
             return 0;
         }

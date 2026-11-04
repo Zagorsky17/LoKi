@@ -179,7 +179,7 @@ function retry_start(token) {
     token = token ?? start_request.token();
     if (!start_request.current(token))
         return 0;
-    if (!start_request.enabled() || runtime_running())
+    if (!start_request.enabled())
         return start_request.cancel(token) ? 0 : 1;
     exec.log("info", "Retrying the failed LoKi start");
     return attempt(token, true);
@@ -242,6 +242,12 @@ function wan_up() {
     let token = start_request.token();
     if (!runtime_running() && !routing_restored())
         return retry_start(token);
+    // A live core does not prove the failed start finished registering its watcher.
+    if (start_request.current(token)) {
+        let status = retry_start(token);
+        if (status != 0)
+            return status;
+    }
     if (!start_request.cancel(token))
         return 1;
     if (!monitored("wan"))
