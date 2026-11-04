@@ -1,0 +1,94 @@
+diff --git a/common/dialer/resolve_test.go b/common/dialer/resolve_test.go
+--- a/common/dialer/resolve_test.go
++++ b/common/dialer/resolve_test.go
+@@ -1,3 +1,4 @@
++// Modified for LoKi on 2026-11-04: isolate the fallback timing regression from scheduler latency.
+ // Modified for LoKi on 2026-11-01: connect without waiting for the other DNS family.
+ package dialer
+ 
+@@ -8,6 +9,7 @@
+ 	"net/netip"
+ 	"sync/atomic"
+ 	"testing"
++	"testing/synctest"
+ 	"time"
+ 
+ 	"github.com/sagernet/sing-box/adapter"
+@@ -393,42 +395,46 @@
+ }
+ 
+ func TestResolveFallbackDelayStartsWithPreferredConnection(t *testing.T) {
+-	started := make(chan struct{})
+-	var dialTime time.Time
+-	router := &lookupRouter{strategy: C.DomainStrategyPreferIPv4, lookup: func(ctx context.Context, family C.DomainStrategy) ([]netip.Addr, error) {
+-		if family == C.DomainStrategyIPv4Only {
++	// Scheduler latency between timer.Reset and the callback is not fallback time.
++	// A bubble advances time only once every participating goroutine is blocked.
++	synctest.Test(t, func(t *testing.T) {
++		started := make(chan struct{})
++		var dialTime time.Time
++		router := &lookupRouter{strategy: C.DomainStrategyPreferIPv4, lookup: func(ctx context.Context, family C.DomainStrategy) ([]netip.Addr, error) {
++			if family == C.DomainStrategyIPv4Only {
++				select {
++				case <-time.After(40 * time.Millisecond):
++					return []netip.Addr{netip.MustParseAddr("127.0.0.1")}, nil
++				case <-ctx.Done():
++					return nil, ctx.Err()
++				}
++			}
+ 			select {
+-			case <-time.After(40 * time.Millisecond):
+-				return []netip.Addr{netip.MustParseAddr("127.0.0.1")}, nil
++			case <-started:
++				return []netip.Addr{netip.IPv6Loopback()}, nil
+ 			case <-ctx.Done():
+ 				return nil, ctx.Err()
+ 			}
+-		}
+-		select {
+-		case <-started:
+-			return []netip.Addr{netip.IPv6Loopback()}, nil
+-		case <-ctx.Done():
+-			return nil, ctx.Err()
+-		}
+-	}}
+-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+-	defer cancel()
+-	conn, err := resolveAndConnect(ctx, router, "proxy.test", adapter.DNSQueryOptions{Transport: &lookupTransport{}}, true, 20*time.Millisecond, func(ctx context.Context, addresses []netip.Addr) (net.Conn, error) {
+-		if addresses[0].Is4() {
+-			dialTime = time.Now()
+-			close(started)
+-			<-ctx.Done()
+-			return nil, ctx.Err()
+-		}
+-		if time.Since(dialTime) < 20*time.Millisecond {
+-			t.Error("DNS time consumed the connection fallback delay")
+-		}
+-		return &trackedConnection{}, nil
++		}}
++		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
++		defer cancel()
++		conn, err := resolveAndConnect(ctx, router, "proxy.test", adapter.DNSQueryOptions{Transport: &lookupTransport{}}, true, 20*time.Millisecond, func(ctx context.Context, addresses []netip.Addr) (net.Conn, error) {
++			if addresses[0].Is4() {
++				dialTime = time.Now()
++				close(started)
++				<-ctx.Done()
++				return nil, ctx.Err()
++			}
++			if time.Since(dialTime) < 20*time.Millisecond {
++				t.Error("DNS time consumed the connection fallback delay")
++			}
++			return &trackedConnection{}, nil
++		})
++		if err != nil {
++			t.Fatal(err)
++		}
++		conn.Close()
+ 	})
+-	if err != nil {
+-		t.Fatal(err)
+-	}
+-	conn.Close()
+ }
+ 
+ func TestResolveSerialModeDoesNotRaceConnections(t *testing.T) {
