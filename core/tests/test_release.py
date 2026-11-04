@@ -106,7 +106,7 @@ chmod +x "$1/build.sh"
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual({p.name for p in output.iterdir()},
                 {'core.ipk', 'core.apk', 'core-release.json', 'SHA256SUMS',
-                 'core-source-1.14.4-r5.tar.gz'})
+                 'core-source-1.14.4-r6.tar.gz'})
             self.assertEqual(json.loads((output / 'core-release.json').read_text())['tag'], '2.0.0')
             subprocess.run(['sha256sum', '--check', 'SHA256SUMS'], cwd=output, check=True, capture_output=True)
 
@@ -120,7 +120,7 @@ chmod +x "$1/build.sh"
         with tempfile.TemporaryDirectory() as work:
             work = Path(work)
             manifest = {'schema': 1, 'name': 'sing-box-forkop' if core else 'forkop',
-                        'version': '1.14.4-r5', 'tag': '2.0.0', 'requires': {'forkop': '2.0.0'}}
+                        'version': '1.14.4-r6', 'tag': '2.0.0', 'requires': {'forkop': '2.0.0'}}
             (work / 'manifest.json').write_text(json.dumps(manifest))
             digest = hashlib.sha256((work / 'manifest.json').read_bytes()).hexdigest()
             (work / 'sums').write_text(('0' * 64 if bad_digest else digest) + '  core-release.json\n')
@@ -188,7 +188,7 @@ printf '%s %s %s\n' "$C_VERSION" "$C_TAG" "$C_FORKOP_MIN"
             with self.subTest(mirror=mirror):
                 result = self.manifest_case(mirror=mirror)
                 self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertEqual(result.stdout.strip(), '1.14.4-r5 2.0.0 2.0.0')
+                self.assertEqual(result.stdout.strip(), '1.14.4-r6 2.0.0 2.0.0')
 
     def test_application_manifest_is_not_accepted_as_a_core_manifest(self):
         self.assertNotEqual(self.manifest_case(core=False).returncode, 0)

@@ -19,6 +19,6 @@ if [[ -n "$unformatted" ]]; then
     exit 1
 fi
 tags=$(./build.sh --print-tags --variant base amd64)
-packages=(./common/dialer ./dns/... ./log ./adapter/provider ./adapter/outbound ./provider/remote ./protocol/group ./experimental/cachefile ./experimental/clashapi)
+packages=(./common/dialer ./dns/... ./log ./adapter/provider ./adapter/outbound ./provider/remote ./protocol/group ./experimental/cachefile ./experimental/clashapi ./route/rule)
 go vet -tags "$tags" "${packages[@]}"
 go test -tags "$tags" -ldflags="$(tr '\n' ' ' < release/LDFLAGS)" "${packages[@]}" "$@"
