@@ -80,6 +80,9 @@ jobs:
       - name: Check bounded listener discovery
         run: python3 -B tests/test_preflight_listeners.py
 
+      - name: Check bounded process discovery
+        run: python3 -B tests/test_preflight_processes.py
+
       - name: Check candidate manifest boundaries
         run: python3 -B tests/test_preflight_manifest.py
 
