@@ -20,6 +20,8 @@ LuCI commands use fixed server RPC methods instead of browser-controlled `file.e
 
 Monitoring and Logs remain available. Monitoring keeps active/closed connections, device and route filters, search, refresh, sorting and counters; closing one or all connections requires write access through RPC. Read sessions poll fixed snapshots without receiving the controller secret. Logs retain viewing, refresh and cursor recovery when the resident service restarts. A busy or oversized RPC snapshot returns an explicit error.
 
+The local HTTP transport accepts at most 64 KiB of response headers and 4 MiB of buffered body data; larger replies fail without returning a partial snapshot. Streaming rule-provider snapshots retain their existing decoder. These input limits do not bound total process memory.
+
 The source still uses the technical names `forkop`, `luci-app-forkop` and `/etc/config/forkop`. Their coordinated replacement is planned. LoKi targets clean installation with its own configuration; migration from Forkop, Podkop or other applications is not supported. Migrations from Forkop 1.0.x and automatic takeover of another project’s packages/configuration have been removed. The required standalone pre-install conflict check is not implemented yet; installation is not ready for production use.
 
 ## Planned scope

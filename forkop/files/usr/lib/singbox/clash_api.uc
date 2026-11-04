@@ -1,3 +1,4 @@
+// Modified for LoKi on 2026-11-03: bound headers and buffered controller responses.
 // The Clash API transport the pages fall back to when the browser cannot reach the controller.
 // It is called every couple of seconds, so it loads nothing beyond core, the constants and socket.
 
@@ -8,6 +9,8 @@ let uci = require("core.uci");
 
 const CONFIG_NAME = "forkop";
 const DEFAULT_PORT = singbox_constants.CLASH_API_CONTROLLER_PORT;
+const MAX_HEADER_BYTES = 65536;
+const MAX_BUFFERED_BODY_BYTES = 4 * 1024 * 1024;
 
 function endpoint(address) {
     if (address == "")
@@ -141,6 +144,10 @@ function exchange(api, method, path, options) {
                 break;
             received += chunk;
             end = index(received, "\r\n\r\n");
+            if ((end < 0 ? length(received) : end + 4) > MAX_HEADER_BYTES) {
+                conn.close();
+                return null;
+            }
         }
         let status = end < 0 ? null : match(received, /^HTTP\/1\.[01] ([1-5][0-9][0-9])[ \r]/)?.[1];
         let rest = end < 0 ? "" : substr(received, end + 4);
@@ -154,9 +161,20 @@ function exchange(api, method, path, options) {
             reply = { status: int(status), value };
         }
         else if (status != null) {
+            let bytes = length(rest);
+            if (bytes > MAX_BUFFERED_BODY_BYTES) {
+                conn.close();
+                return null;
+            }
             push(parts, rest);
-            for (let chunk = reader.read(); chunk != ""; chunk = reader.read())
+            for (let chunk = reader.read(); chunk != ""; chunk = reader.read()) {
+                bytes += length(chunk);
+                if (bytes > MAX_BUFFERED_BODY_BYTES) {
+                    conn.close();
+                    return null;
+                }
                 push(parts, chunk);
+            }
             reply = { status: int(status), body: join("", parts) };
         }
     }

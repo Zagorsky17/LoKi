@@ -195,4 +195,54 @@ t.test("the transport loads nothing beyond core, the constants and socket", () =
         index([ "fs", "socket", "singbox.constants", "singbox.clash_api" ], name) < 0), []);
 });
 
+t.test("controller headers are bounded before body decoding, including an unterminated header", () => {
+    let api = { endpoint: controller.endpoint, secret: "" };
+    let limit = 65536;
+    let prefix = "HTTP/1.0 200 OK\r\nX-Padding: ";
+    let suffix = "\r\n\r\n";
+    let header = prefix + sprintf("%" + (limit - length(prefix) - length(suffix)) + "s", "") + suffix;
+    t.eq(length(header), limit);
+    controller.reply({ raw: header + "{}" });
+    t.eq(clash.exchange(api, "GET", "/proxies", { seconds: 5 }), { status: 200, body: "{}" });
+    for (let ending in [ suffix, "" ]) {
+        let decoded = false;
+        controller.reply({ raw: prefix + sprintf("%65536s", "") + ending + "{}" });
+        let result = clash.exchange(api, "GET", "/providers/rules", { seconds: 5,
+            decode: () => { decoded = true; return {}; } });
+        t.ok(result == null, "oversized headers must fail without an apparent HTTP success");
+        t.ok(!decoded, "body decoder must not run after a failed header check");
+    }
+    received();
+});
+
+t.test("buffered controller bodies have an actual byte limit and the next request still works", () => {
+    let api = { endpoint: controller.endpoint, secret: "" };
+    let limit = 4 * 1024 * 1024;
+    let body = sprintf("%" + limit + "s", "");
+    t.eq(length(body), limit);
+    controller.reply({ status: 200, body });
+    let boundary = clash.exchange(api, "GET", "/connections", { seconds: 5 });
+    t.eq([ boundary?.status, length(boundary?.body ?? "") ], [ 200, limit ]);
+    controller.reply({ raw: "HTTP/1.0 200 OK\r\nContent-Length: 1\r\n\r\n" + body + "x" });
+    t.ok(clash.exchange(api, "GET", "/connections", { seconds: 5 }) == null,
+        "actual body bytes must be bounded even when Content-Length understates them");
+    controller.reply({ status: 200, body: "{\"connections\":[]}" });
+    t.eq(clash.exchange(api, "GET", "/connections", { seconds: 5 }), { status: 200, body: "{\"connections\":[]}" });
+    received();
+});
+
+t.test("the buffered-body bound does not truncate a rule-provider decoder stream", () => {
+    let api = { endpoint: controller.endpoint, secret: "" };
+    let bytes = 4 * 1024 * 1024 + 1;
+    controller.reply({ status: 200, body: sprintf("%" + bytes + "s", "") });
+    let reply = clash.exchange(api, "GET", "/providers/rules", { seconds: 5, decode: (reader) => {
+        let total = 0;
+        for (let chunk = reader.read(); chunk != ""; chunk = reader.read())
+            total += length(chunk);
+        return total;
+    } });
+    t.eq(reply, { status: 200, value: bytes });
+    received();
+});
+
 t.done();

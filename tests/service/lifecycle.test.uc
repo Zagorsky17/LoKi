@@ -731,6 +731,154 @@ t.test("autostart is the rc.d link and nothing else", () => {
     fs.symlink("../init.d/forkop", lifecycle.paths.rc_dir + "/K99forkop");
     t.eq(lifecycle.disable(), 0);
     t.ok(fs.lstat(lifecycle.paths.rc_dir + "/S99forkop") == null && fs.lstat(lifecycle.paths.rc_dir + "/K99forkop") == null);
+    t.eq(lifecycle.disable(), 0, "disabling twice");
+});
+
+t.test("re-enabling autostart keeps its existing entry when a new symlink cannot be created", () => {
+    reset();
+    finish();
+    t.eq(lifecycle.enable(), 0);
+    let link = lifecycle.paths.rc_dir + "/S99forkop";
+    let before = fs.lstat(link);
+    t.ok(type(before.inode) == "int" && before.inode > 0, "native inode is available");
+    let symlink = fs.symlink;
+    let attempts = 0;
+    let status;
+    try {
+        fs.symlink = () => { attempts++; return null; };
+        status = lifecycle.enable();
+    }
+    catch (e) {
+        fs.symlink = symlink;
+        die(e);
+    }
+    fs.symlink = symlink;
+    t.eq(status, 0);
+    t.eq(attempts, 0, "an already enabled service needs no replacement");
+    t.eq(fs.readlink(link), "../init.d/forkop");
+    t.eq(fs.lstat(link)?.inode, before.inode, "the durable entry was not replaced");
+});
+
+t.test("unexpected autostart objects are refused without deleting their data", () => {
+    for (let kind in [ "file", "directory", "link", "dangling", "hardlink" ]) {
+        reset();
+        finish();
+        fs.mkdir(lifecycle.paths.rc_dir, 0755);
+        let link = lifecycle.paths.rc_dir + "/S99forkop";
+        let victim = world.dir + "/victim";
+        fs.writefile(victim, "preserved synthetic data");
+        if (kind == "directory") {
+            fs.mkdir(link, 0700);
+            fs.writefile(link + "/keep", "preserved");
+        }
+        else if (kind == "file")
+            fs.writefile(link, "preserved");
+        else if (kind == "hardlink")
+            t.eq(require("core.exec").status([ "ln", victim, link ]), 0);
+        else
+            fs.symlink(kind == "dangling" ? world.dir + "/missing" : victim, link);
+        let before = fs.lstat(link);
+        t.ok(type(before.inode) == "int" && before.inode > 0, "native inode is available");
+        t.eq(lifecycle.enable(), 1, kind);
+        t.eq(fs.lstat(link)?.inode, before.inode, kind);
+        t.eq(fs.readfile(victim), "preserved synthetic data", kind);
+        if (kind == "file") t.eq(fs.readfile(link), "preserved");
+        if (kind == "directory") t.eq(fs.readfile(link + "/keep"), "preserved");
+        if (kind == "hardlink") t.eq(fs.lstat(victim).nlink, 2);
+        if (kind == "link" || kind == "dangling") t.ok(fs.readlink(link) != null);
+    }
+});
+
+t.test("disabling autostart preserves an unexpected entry, including a dangling link", () => {
+    for (let prefix in [ "S", "K" ]) {
+        for (let kind in [ "file", "directory", "link", "dangling", "hardlink" ]) {
+            reset();
+            finish();
+            fs.mkdir(lifecycle.paths.rc_dir, 0755);
+            let link = lifecycle.paths.rc_dir + "/" + prefix + "99forkop";
+            let victim = world.dir + "/victim";
+            fs.writefile(victim, "preserved synthetic data");
+            if (kind == "directory")
+                fs.mkdir(link, 0700);
+            else if (kind == "file")
+                fs.writefile(link, "preserved");
+            else if (kind == "hardlink")
+                t.eq(require("core.exec").status([ "ln", victim, link ]), 0);
+            else
+                fs.symlink(kind == "dangling" ? world.dir + "/missing" : victim, link);
+            let before = fs.lstat(link);
+            t.ok(type(before.inode) == "int" && before.inode > 0, "native inode is available");
+            t.eq(lifecycle.disable(), 1, prefix + ":" + kind);
+            t.eq(fs.lstat(link)?.inode, before.inode, prefix + ":" + kind);
+            t.eq(fs.readfile(victim), "preserved synthetic data");
+        }
+    }
+});
+
+t.test("autostart creation errors keep the service disabled and an unavailable parent is untouched", () => {
+    reset();
+    finish();
+    let link = lifecycle.paths.rc_dir + "/S99forkop";
+    let symlink = fs.symlink;
+    fs.symlink = () => null;
+    let status = lifecycle.enable();
+    fs.symlink = symlink;
+    t.eq(status, 1);
+    t.ok(fs.lstat(link) == null);
+    fs.rmdir(lifecycle.paths.rc_dir);
+    fs.writefile(lifecycle.paths.rc_dir, "preserved parent");
+    t.eq(lifecycle.enable(), 1);
+    t.eq(fs.readfile(lifecycle.paths.rc_dir), "preserved parent");
+});
+
+t.test("concurrent enable accepts the correct link created by the other call", () => {
+    reset();
+    finish();
+    let symlink = fs.symlink;
+    fs.symlink = (target, link) => {
+        symlink(target, link);
+        return null;
+    };
+    let status = lifecycle.enable();
+    fs.symlink = symlink;
+    t.eq(status, 0);
+    t.eq(fs.readlink(lifecycle.paths.rc_dir + "/S99forkop"), "../init.d/forkop");
+});
+
+t.test("disable refuses foreign entries before removing any own link and reports unlink failure", () => {
+    reset();
+    finish();
+    t.eq(lifecycle.enable(), 0);
+    let start = lifecycle.paths.rc_dir + "/S99forkop";
+    let stop = lifecycle.paths.rc_dir + "/K99forkop";
+    fs.writefile(stop, "preserved foreign entry");
+    t.eq(lifecycle.disable(), 1);
+    t.eq(fs.readlink(start), "../init.d/forkop");
+    t.eq(fs.readfile(stop), "preserved foreign entry");
+    fs.unlink(stop);
+    let unlink = fs.unlink;
+    fs.unlink = () => null;
+    let status = lifecycle.disable();
+    fs.unlink = unlink;
+    t.eq(status, 1);
+    t.eq(fs.readlink(start), "../init.d/forkop");
+});
+
+t.test("disable reports an incomplete filesystem check instead of claiming the service is disabled", () => {
+    reset();
+    finish();
+    let lstat = fs.lstat;
+    let error = fs.error;
+    let failed = false;
+    fs.lstat = (path) => {
+        failed = path == lifecycle.paths.rc_dir + "/S99forkop";
+        return failed ? null : lstat(path);
+    };
+    fs.error = () => failed ? "synthetic input/output error" : error();
+    let status = lifecycle.disable();
+    fs.lstat = lstat;
+    fs.error = error;
+    t.eq(status, 1);
 });
 
 t.test("repeated service cycles cannot prepare retired servers or tunnels", () => {
