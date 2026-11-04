@@ -67,7 +67,7 @@ try:
 except (ValueError,KeyError,TypeError,AttributeError):sys.exit(1)
 ''')
             shim.chmod(0o755)
-            for case in ['current-apk', 'current-opkg', 'available', 'custom', 'incompatible', 'unsupported-arch', 'bad-manifest', 'nul-manifest', 'bad-checksum', 'duplicate-checksum', 'missing', 'tls', 'http-source', 'busy', 'memory', 'oversized']:
+            for case in ['current-apk', 'current-opkg', 'available', 'custom', 'incompatible', 'unsupported-arch', 'bad-manifest', 'nul-manifest', 'bad-core-tag', 'stock-core-version', 'bad-checksum', 'duplicate-checksum', 'missing', 'tls', 'http-source', 'busy', 'memory', 'oversized']:
                 work = root / case
                 work.mkdir()
                 events = work / 'events'
@@ -77,15 +77,17 @@ except (ValueError,KeyError,TypeError,AttributeError):sys.exit(1)
                 (work / 'variant').write_text('custom' if case == 'custom' else 'base')
                 app_version = '2.0.1' if case in ['available', 'custom'] else '2.0.0'
                 core_version = '1.14.4-r4' if case == 'available' else '1.14.4-r3'
-                app = {'schema': 1, 'name': 'forkop', 'version': app_version, 'tag': app_version, 'requires': {'sing-box-forkop': '9.0.0' if case == 'incompatible' else '1.14.4-r3'}}
+                app = {'schema': 1, 'name': 'loki', 'version': app_version, 'tag': app_version, 'requires': {'loki-core': '9.0.0-r1' if case == 'incompatible' else '1.14.4-r3'}}
                 if case == 'bad-manifest': app['version'] = '../synthetic-secret'
                 if case == 'nul-manifest': app['version'] = '2.0.0\0evil'
-                core = {'schema': 1, 'name': 'sing-box-forkop', 'version': core_version, 'tag': 'v' + core_version, 'requires': {'forkop': '2.0.0'}}
+                core = {'schema': 1, 'name': 'loki-core', 'version': core_version, 'tag': app_version, 'requires': {'loki': '2.0.0'}}
+                if case == 'bad-core-tag': core['tag'] = 'v' + core_version
+                if case == 'stock-core-version': core['version'] = '1.14.4'
                 ext = 'ipk' if case == 'current-opkg' else 'apk'
                 assets.clear()
                 assets['release.json'] = json.dumps(app).encode()
                 assets['core-release.json'] = json.dumps(core).encode()
-                names = ['release.json', 'core-release.json', f'forkop_{app_version}_all.{ext}', f'luci-app-forkop_{app_version}_all.{ext}', f'sing-box-forkop_{core_version}_base_x86_64.{ext}']
+                names = ['release.json', 'core-release.json', f'loki_{app_version}_all.{ext}', f'luci-app-loki_{app_version}_all.{ext}', f'loki-core_{core_version}_base_x86_64.{ext}']
                 sums = ''.join(f'{hashlib.sha256(assets.get(n, b"package")).hexdigest()}  {n}\n' for n in names)
                 if case == 'bad-checksum': sums = sums.replace(hashlib.sha256(assets['release.json']).hexdigest(), '0' * 64)
                 if case == 'duplicate-checksum': sums += sums.splitlines()[0] + '\n'
@@ -96,27 +98,27 @@ except (ValueError,KeyError,TypeError,AttributeError):sys.exit(1)
                 pm = 'opkg' if ext == 'ipk' else 'apk'
                 mirror = f'https://127.0.0.1:{server.server_port}'
                 if case == 'http-source': mirror = mirror.replace('https:', 'http:')
-                script = SOURCE.replace('/etc/openwrt_release', str(work / 'openwrt_release')).replace('/usr/share/sing-box-forkop/variant', str(work / 'variant'))
+                script = SOURCE.replace('/etc/openwrt_release', str(work / 'openwrt_release')).replace('/usr/share/loki-core/variant', str(work / 'variant'))
                 overrides = f'''
 LOG={q(str(log))} MIRROR={q(mirror)} FOREIGN_CORES='' FOREIGN_CORE_FILES=''
 id() {{ echo 0; }}
-uci() {{ [ "$3" != forkop.settings.config_version ] || echo 2.0.0; }}
+uci() {{ [ "$3" != loki.settings.config_version ] || echo 2.0.0; }}
 detect_package_manager() {{ PM={pm}; EXT={ext}; }}
 identify_system() {{ RELEASE=24.10; ARCH={'missing_arch' if case == 'unsupported-arch' else 'x86_64'}; }}
 refresh_db() {{ :; }}
-pkg_version() {{ case "$1" in forkop|luci-app-forkop) echo 2.0.0;; sing-box-forkop) echo 1.14.4-r3;; esac; }}
+pkg_version() {{ case "$1" in loki|luci-app-loki) echo 2.0.0;; loki-core) echo 1.14.4-r3;; esac; }}
 pkg_url() {{ echo https://github.com/Zagorsky17/LoKi; }}
 file_owner() {{ :; }}
 in_world() {{ return 1; }}
 free_kb() {{ echo 1048576; }}
 mem_available_kb() {{ echo {1024 if case == 'memory' else 1048576}; }}
-date() {{ [ "$1" != +%Y ] || {{ echo 2024; return; }}; command date "$@"; }}
+date() {{ [ "${{1:-}}" != +%Y ] || {{ echo 2024; return; }}; command date "$@"; }}
 pidof() {{ return {0 if case == 'busy' else 1}; }}
 compare() {{ command python3 -c 'import re,sys; a,b=[tuple(map(int,re.findall(r"[0-9]+",s))) for s in sys.argv[1:]]; print("<" if a<b else ">" if a>b else "=")' "$1" "$2"; }}
 apk() {{ [ "$*" != info ] || return 0; [ "$1 $2" != 'version -t' ] || {{ compare "$3" "$4"; return; }}; echo forbidden-apk >>{q(str(events))}; return 99; }}
 opkg() {{ [ "$*" != list-installed ] || return 0; [ "$1" != compare-versions ] || {{ local order; order=$(compare "$2" "$4"); case "$3:$order" in =:= | '<<:<') return 0;; *) return 1;; esac; }}; echo forbidden-opkg >>{q(str(events))}; return 99; }}
 ntpd() {{ echo forbidden-clock >>{q(str(events))}; return 99; }}
-forkop_status() {{ echo forbidden-service >>{q(str(events))}; return 99; }}
+loki_status() {{ echo forbidden-service >>{q(str(events))}; return 99; }}
 lock() {{ echo forbidden-lock >>{q(str(events))}; return 99; }}
 apply() {{ echo forbidden-apply >>{q(str(events))}; return 99; }}
 download_packages() {{ echo forbidden-packages >>{q(str(events))}; return 99; }}
@@ -134,7 +136,7 @@ main --check --lang en
                 records = [json.loads(line) for line in run.stdout.splitlines() if line.startswith('{')]
                 assert len(records) == 1, (case, run.returncode, run.stdout, run.stderr)
                 result = records[0]
-                failures = {'incompatible': 'incompatible', 'unsupported-arch': 'unsupported_arch', 'bad-manifest': 'release', 'nul-manifest': 'release', 'bad-checksum': 'checksum', 'duplicate-checksum': 'checksum', 'missing': 'release', 'tls': 'network', 'http-source': 'source', 'busy': 'locked', 'memory': 'no_memory', 'oversized': 'network'}
+                failures = {'incompatible': 'incompatible', 'unsupported-arch': 'unsupported_arch', 'bad-manifest': 'release', 'nul-manifest': 'release', 'bad-core-tag': 'release', 'stock-core-version': 'release', 'bad-checksum': 'checksum', 'duplicate-checksum': 'checksum', 'missing': 'release', 'tls': 'network', 'http-source': 'source', 'busy': 'locked', 'memory': 'no_memory', 'oversized': 'network'}
                 if case in failures:
                     assert run.returncode != 0 and result['success'] is False and result['reason'] == failures[case], (case, result, run.stderr)
                 else:
@@ -149,7 +151,7 @@ main --check --lang en
         finally:
             server.shutdown()
             server.server_close()
-    print('16 isolated metadata-only HTTPS checks passed')
+    print('18 isolated metadata-only HTTPS checks passed')
 
 
 if __name__ == '__main__':

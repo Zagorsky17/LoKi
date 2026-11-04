@@ -22,7 +22,7 @@ function providers_config() {
             { ".name": "source_auto", section: "proxy", url: "https://example.com/auto", tag: "sub2", header: [ "X-HWID: configured-hwid" ] },
             { ".name": "source_without_hwid", section: "proxy", url: "https://example.com/no-hwid", tag: "sub3" },
             {
-                ".name": "source_local", section: "proxy", url: "/etc/forkop/local-subscription.txt",
+                ".name": "source_local", section: "proxy", url: "/etc/loki/local-subscription.txt",
                 subscription_update_enabled: "1", subscription_update_interval: "invalid",
                 download_via_proxy_enabled: "1", download_via_proxy_section: "proxy",
                 header: [ "Broken Header" ], show_dashboard_metadata: "1",
@@ -64,7 +64,7 @@ t.test("remote subscriptions become providers carrying their own request profile
 
 t.test("a local subscription is read from its path with remote-only options left out", () => {
     let local = q.provider(providers_config(), "proxy/local");
-    t.eq([ local.type, local.path ], [ "local", "/etc/forkop/local-subscription.txt" ]);
+    t.eq([ local.type, local.path ], [ "local", "/etc/loki/local-subscription.txt" ]);
     t.eq([ local.url, local.headers, local.update_interval, local.download_detour ], [ null, null, null, null ]);
     t.eq([ local.override.detour, local.include, local.exclude ], [ "hop", "(?:(?:^Local))", "(?:(?:Expired))" ]);
 });

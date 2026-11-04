@@ -8,7 +8,7 @@ let migration = require("config.migration");
 let imports = require("config.import");
 
 const SESSION = "0123456789abcdef0123456789abcdef";
-const FILE = stub.tmpdir() + "/forkop-import.conf";
+const FILE = stub.tmpdir() + "/loki-import.conf";
 
 function copy(value) {
     return json(sprintf("%J", value));
@@ -75,7 +75,7 @@ function rpcd(committed, unsaved) {
 }
 
 function setup(file, committed, unsaved) {
-    migration.paths.config = stub.tmpdir() + "/forkop";
+    migration.paths.config = stub.tmpdir() + "/loki";
     fs.writefile(migration.paths.config, "committed configuration");
     fs.unlink(FILE);
     if (file != null)
@@ -83,8 +83,8 @@ function setup(file, committed, unsaved) {
     uci.__reset();
     ubus.__reset();
     if (file != null)
-        uci.__seed("forkop-import.conf", file);
-    uci.__seed("forkop", committed);
+        uci.__seed("loki-import.conf", file);
+    uci.__seed("loki", committed);
     return rpcd(committed, unsaved);
 }
 
@@ -126,7 +126,7 @@ t.test("an own LoKi backup is staged in its file order without a foreign convers
     t.eq(imports.check(FILE, SESSION).changed, false, "the same file again has nothing to change");
 });
 
-t.test("the session's unsaved changes to Forkop give way to the file", () => {
+t.test("the session's unsaved changes to Loki give way to the file", () => {
     let unsaved = current();
     unsaved[1].label = "Edited";
     let session = setup(current(), current(), unsaved);
@@ -200,10 +200,10 @@ t.test("without the page's session the check reads the committed configuration a
 
 t.test("the command line takes the session from the environment, never from its arguments", () => {
     let session = setup(restored(), current());
-    stub.env({ FORKOP_RPC_SESSION: SESSION });
+    stub.env({ LOKI_RPC_SESSION: SESSION });
     let check = stub.capture(() => cli.main([ "import_config_check", FILE ], "/lib"));
     let staged = stub.capture(() => cli.main([ "import_config", FILE ], "/lib"));
-    stub.env({ FORKOP_RPC_SESSION: "" });
+    stub.env({ LOKI_RPC_SESSION: "" });
     let refused = stub.capture(() => cli.main([ "import_config", FILE ], "/lib"));
     stub.restore();
     t.eq([ check.result, json(check.stdout).changed ], [ 0, true ]);
@@ -236,7 +236,7 @@ t.test("removed records are refused and the same client backup without them keep
     let commands = stub.command_lines();
     stub.restore();
     t.eq(commands, [], "staging cannot run server commands");
-    uci.__seed("forkop", session.staged);
+    uci.__seed("loki", session.staged);
     require("core.uci").reset();
     let generator = require("singbox.generator");
     let config = generator.build({ service_address: "127.0.0.1" });

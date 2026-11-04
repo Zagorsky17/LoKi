@@ -4,7 +4,7 @@ let uci = require("uci");
 let stub = require("stub");
 let migration = require("config.migration");
 
-t.test("a Forkop 2.0.0 configuration cannot become a LoKi configuration by its version", () => {
+t.test("a Loki 2.0.0 configuration cannot become a LoKi configuration by its version", () => {
     let decision = migration.decide({ sections: [
         { ".name": "settings", ".type": "settings", config_version: "2.0.0" }
     ] });
@@ -14,11 +14,11 @@ t.test("a Forkop 2.0.0 configuration cannot become a LoKi configuration by its v
 
 t.test("installing the current LoKi schema never cleans another application's state", () => {
     let dir = stub.tmpdir();
-    migration.paths.config = dir + "/forkop";
+    migration.paths.config = dir + "/loki";
     migration.paths.internal_change = dir + "/internal-change";
     fs.writefile(migration.paths.config, "current LoKi configuration");
     uci.__reset();
-    uci.__seed("forkop", [
+    uci.__seed("loki", [
         { ".name": "settings", ".type": "settings", config_format: "loki", config_version: "2.0.0" }
     ]);
     let commands = [];

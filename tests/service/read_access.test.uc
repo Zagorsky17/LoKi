@@ -6,18 +6,18 @@ let cli = require("service.cli");
 let rpc = require("service.rpc");
 
 t.test("RPC ACL grants explicit operations without an executable or raw UCI grant", () => {
-    let acl = json(fs.readfile(repo.path("luci-app-forkop/root/usr/share/rpcd/acl.d/luci-app-forkop.json")))["luci-app-forkop"];
+    let acl = json(fs.readfile(repo.path("luci-app-loki/root/usr/share/rpcd/acl.d/luci-app-loki.json")))["luci-app-loki"];
     t.eq(acl.read.file, null);
-    t.eq(acl.write.file["/usr/bin/forkop"], null);
-    t.contains(acl.read.ubus.forkop, "rpc_read");
-    t.excludes(acl.read.ubus.forkop, "rpc_write");
-    t.excludes(acl.read.ubus.forkop, "config_private");
-    t.contains(acl.write.ubus.forkop, "rpc_write");
-    t.contains(acl.write.ubus.forkop, "config_private");
-    t.excludes(acl.read.uci, "forkop");
-    t.eq(acl.write.uci.forkop, [ "read", "write" ]);
-    t.eq(acl.read.ubus["forkop.installer"], [ "read" ]);
-    t.eq(acl.write.ubus["forkop.installer"], [ "input", "stop" ]);
+    t.eq(acl.write.file["/usr/bin/loki"], null);
+    t.contains(acl.read.ubus.loki, "rpc_read");
+    t.excludes(acl.read.ubus.loki, "rpc_write");
+    t.excludes(acl.read.ubus.loki, "config_private");
+    t.contains(acl.write.ubus.loki, "rpc_write");
+    t.contains(acl.write.ubus.loki, "config_private");
+    t.excludes(acl.read.uci, "loki");
+    t.eq(acl.write.uci.loki, [ "read", "write" ]);
+    t.eq(acl.read.ubus["loki.installer"], [ "read" ]);
+    t.eq(acl.write.ubus["loki.installer"], [ "input", "stop" ]);
 });
 
 t.test("the reader refuses writes, raw exports and malformed argument forms before dispatch", () => {

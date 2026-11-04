@@ -140,7 +140,7 @@ def generated(strategy, bootstrap, proxy_port, dns_port, protocol):
                        'server': 'proxy.test', 'server_port': proxy_port})]}]}
     env = dict(os.environ, DNS_FIXTURE=json.dumps(fixture))
     result = subprocess.run(['ucode', '-L', 'tests/fakes', '-L', 'tests/lib', '-L',
-        'forkop/files/usr/lib', str(WORK / 'generate.uc')], cwd=ROOT, env=env,
+        'loki/files/usr/lib', str(WORK / 'generate.uc')], cwd=ROOT, env=env,
         capture_output=True, text=True, check=True)
     product = json.loads(result.stdout)
     assert product['route']['default_domain_resolver'] == 'bootstrap-dns-server'

@@ -22,7 +22,7 @@ t.test("a connection section without a single source does not count as usable", 
     }), "no usable sections");
 });
 
-t.test("sing-box has something to run in a section that needs no source, or one with a source", () => {
+t.test("loki-core has something to run in a section that needs no source, or one with a source", () => {
     let runnable = (data) => {
         fixture.seed({ settings: fixture.settings(), ...data });
         return generator.runnable();

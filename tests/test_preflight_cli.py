@@ -34,14 +34,14 @@ class PreflightCLI(unittest.TestCase):
                                 f"PATH={Path(binary).parent}:/usr/sbin:/usr/bin:/sbin:/bin\n", 1)
         (tree / "preflight.sh").write_text(script)
         (tree / "preflight.uc").write_text(entry if entry is not None else (ROOT / "preflight.uc").read_text())
-        (tree / "forkop/files").mkdir(parents=True)
-        (tree / "forkop/files/usr").symlink_to(ROOT / "forkop/files/usr", target_is_directory=True)
+        (tree / "loki/files").mkdir(parents=True)
+        (tree / "loki/files/usr").symlink_to(ROOT / "loki/files/usr", target_is_directory=True)
         return ["/bin/sh", str(tree / "preflight.sh")]
 
     def test_original_native_entry(self):
         binary = shutil.which("ucode")
         self.assertIsNotNone(binary, "ucode is required; do not skip the native check")
-        command = [binary, "-L", str(ROOT / "forkop/files/usr/lib"), str(ROOT / "preflight.uc")]
+        command = [binary, "-L", str(ROOT / "loki/files/usr/lib"), str(ROOT / "preflight.uc")]
         first = self.run_check(command)
         self.assertEqual(self.run_check(command), first)
         pending = {item["kind"] for item in first["observations"] if item["reason"] == "not-implemented"}

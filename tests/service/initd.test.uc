@@ -23,21 +23,21 @@ function fresh(settings) {
     let dir = stub.tmpdir();
     ui.paths.service_actions = dir + "/service-actions";
     ui.paths.service_action_lock = dir + "/service-actions.lock";
-    ui.paths.reload_lock = dir + "/forkop.reload.lock";
+    ui.paths.reload_lock = dir + "/loki.reload.lock";
     ui.paths.pending_reload = dir + "/reload.pending";
-    initd.paths.config = dir + "/forkop.config";
+    initd.paths.config = dir + "/loki.config";
     start_request.paths.pending = dir + "/start.retry";
     start_request.paths.lock = dir + "/start-request.lock";
     initd.paths.internal_change = dir + "/internal-config-change";
-    start_request.paths.autostart = dir + "/S99forkop";
-    fs.writefile(initd.paths.config, "config forkop\n");
+    start_request.paths.autostart = dir + "/S99loki";
+    fs.writefile(initd.paths.config, "config loki\n");
     fixture.seed({ settings: settings ?? {} });
     calls = [];
     running = false;
     table = false;
     restored = false;
     lifecycle_status = 0;
-    health.forkop_stably_running = () => running;
+    health.loki_stably_running = () => running;
     nft_state.table_present = () => table;
     lifecycle.restore_routing = () => {
         push(calls, "lifecycle restore routing");
@@ -61,7 +61,7 @@ function fresh(settings) {
 function hooks(registered, extra) {
     stub.commands([
         [ "logger", {} ],
-        [ "ubus call service list", registered == null ? { status: 4 } : { stdout: registered ? "{\"forkop\":{}}" : "{}" } ],
+        [ "ubus call service list", registered == null ? { status: 4 } : { stdout: registered ? "{\"loki\":{}}" : "{}" } ],
         ...(extra ?? [])
     ]);
 }
@@ -80,7 +80,7 @@ function guard(age, config_hash) {
 t.test("a reload the configuration change of a known writer triggered is skipped once", () => {
     fresh();
     running = true;
-    stub.commands([ [ "md5sum", { stdout: "abc  " + initd.paths.config + "\n" } ], [ "ubus call service list", { stdout: "{\"forkop\":{}}" } ], [ "logger", {} ] ]);
+    stub.commands([ [ "md5sum", { stdout: "abc  " + initd.paths.config + "\n" } ], [ "ubus call service list", { stdout: "{\"loki\":{}}" } ], [ "logger", {} ] ]);
     guard(0, "abc");
     t.eq(initd.reload("on_config_change"), { status: 0, sync: false });
     t.eq(calls, []);
@@ -155,7 +155,7 @@ t.test("a reload that finds the reload lock taken queues itself", () => {
 
 t.test("a failed enabled start leaves its generation for retry and a good one clears it", () => {
     fresh();
-    fs.symlink("../init.d/forkop", start_request.paths.autostart);
+    fs.symlink("../init.d/loki", start_request.paths.autostart);
     hooks(true);
     lifecycle_status = 1;
     t.eq(stub.capture(() => initd.start("boot")).result, 1);
@@ -172,11 +172,11 @@ t.test("a failed enabled start leaves its generation for retry and a good one cl
 t.test("failed manual starts describe only the retry that is actually armed", () => {
     fresh();
     let logs = [];
-    stub.commands([ stub.logger(logs), [ "ubus call service list", { stdout: "{\"forkop\":{}}" } ] ]);
+    stub.commands([ stub.logger(logs), [ "ubus call service list", { stdout: "{\"loki\":{}}" } ] ]);
     lifecycle_status = 1;
     stub.capture(() => initd.start(""));
     t.eq(start_request.token(), "", "enabling later must not resurrect a failed disabled start");
-    fs.symlink("../init.d/forkop", start_request.paths.autostart);
+    fs.symlink("../init.d/loki", start_request.paths.autostart);
     stub.capture(() => initd.start(""));
     stub.restore();
     t.eq(logs, [ "[warn] LoKi did not start", "[warn] LoKi did not start; it retries while autostart remains enabled" ]);
@@ -201,7 +201,7 @@ t.test("a retry needs a pending generation and our exact autostart link", () => 
         t.eq(start_request.token(), "");
         fs.unlink(start_request.paths.autostart);
     }
-    fs.symlink("../init.d/forkop", start_request.paths.autostart);
+    fs.symlink("../init.d/loki", start_request.paths.autostart);
     initd.retry_start();
     t.eq(calls, [], "an explicit stop stays stopped");
     start_request.begin();
@@ -212,7 +212,7 @@ t.test("a retry needs a pending generation and our exact autostart link", () => 
 
 t.test("a retry with a healthy core still reaches shared watcher repair before clearing intent", () => {
     fresh();
-    fs.symlink("../init.d/forkop", start_request.paths.autostart);
+    fs.symlink("../init.d/loki", start_request.paths.autostart);
     hooks(true);
     running = true;
     let token = start_request.begin();
@@ -228,7 +228,7 @@ t.test("a retry with a healthy core still reaches shared watcher repair before c
 
 t.test("a healthy WAN event cannot discard failed watcher repair or skip its eventual retry", () => {
     fresh();
-    fs.symlink("../init.d/forkop", start_request.paths.autostart);
+    fs.symlink("../init.d/loki", start_request.paths.autostart);
     hooks(true);
     running = true;
     let token = start_request.begin();
@@ -246,7 +246,7 @@ t.test("a healthy WAN event cannot discard failed watcher repair or skip its eve
 t.test("a monitored WAN coming back reapplies a running configuration", () => {
     fresh({ enable_badwan_interface_monitoring: "1", badwan_monitored_interfaces: "wan wwan" });
     let reloads = [];
-    hooks(true, [ [ "/etc/init.d/forkop reload", (argv) => { push(reloads, argv[2]); return {}; } ] ]);
+    hooks(true, [ [ "/etc/init.d/loki reload", (argv) => { push(reloads, argv[2]); return {}; } ] ]);
     running = true;
     initd.wan_up();
     t.eq(reloads, [ "interface_up:wan" ]);
@@ -261,8 +261,8 @@ t.test("a monitored WAN coming back reapplies a running configuration", () => {
 t.test("a WAN coming up after a network restart puts back the routing under a table that is still there", () => {
     fresh({ enable_badwan_interface_monitoring: "1", badwan_monitored_interfaces: "wan" });
     let commands = [];
-    hooks(true, [ [ "/etc/init.d/forkop", (argv) => { push(commands, argv[1] + " " + argv[2]); return {}; } ] ]);
-    fs.symlink("../init.d/forkop", start_request.paths.autostart);
+    hooks(true, [ [ "/etc/init.d/loki", (argv) => { push(commands, argv[1] + " " + argv[2]); return {}; } ] ]);
+    fs.symlink("../init.d/loki", start_request.paths.autostart);
     start_request.begin();
     table = true;
     restored = true;
@@ -291,10 +291,10 @@ t.test("the triggers reload on a config change and on the monitored interfaces",
     fresh({ enable_badwan_interface_monitoring: "1", badwan_monitored_interfaces: "wan wwan lte", badwan_reload_delay: "5000" });
     t.eq(split(initd.triggers(), "\n"), [
         "delay\t5000",
-        "config\tconfig.change\tforkop\t/etc/init.d/forkop\treload\ton_config_change",
-        "interface\tinterface.*.up\twan\t/etc/init.d/forkop\thandle_wan_up\t",
-        "interface\tinterface.*.up\twwan\t/etc/init.d/forkop\treload\tinterface_up:wwan",
-        "interface\tinterface.*.up\tlte\t/etc/init.d/forkop\treload\tinterface_up:lte",
+        "config\tconfig.change\tloki\t/etc/init.d/loki\treload\ton_config_change",
+        "interface\tinterface.*.up\twan\t/etc/init.d/loki\thandle_wan_up\t",
+        "interface\tinterface.*.up\twwan\t/etc/init.d/loki\treload\tinterface_up:wwan",
+        "interface\tinterface.*.up\tlte\t/etc/init.d/loki\treload\tinterface_up:lte",
         ""
     ]);
     fresh({});
@@ -308,7 +308,7 @@ t.test("the triggers reload on a config change and on the monitored interfaces",
 t.test("a restart is one action for whoever asked, with the stop and start inside it", () => {
     fresh();
     let nested = [];
-    hooks(true, [ [ "/etc/init.d/forkop", (argv) => {
+    hooks(true, [ [ "/etc/init.d/loki", (argv) => {
         push(nested, argv[1] + (ui.active_action() == "restart" ? " inside restart" : ""));
         return { status: argv[1] == "start" ? 7 : 0 };
     } ] ]);
@@ -324,7 +324,7 @@ t.test("restart refuses an unsafe cache path before stopping the running service
     fixture.seed({ settings: { cache_path: dir + "/public-cache/cache.db" } });
     let nested = [];
     let logs = [];
-    stub.commands([ stub.logger(logs), [ "/etc/init.d/forkop", (argv) => {
+    stub.commands([ stub.logger(logs), [ "/etc/init.d/loki", (argv) => {
         push(nested, argv[1]);
         return { status: 0 };
     } ] ]);
@@ -351,7 +351,7 @@ t.test("boot refuses a disabled service but an explicit manual Start remains all
 t.test("an initial failed start cannot recreate a request cancelled while it ran", () => {
     fresh();
     hooks(true);
-    fs.symlink("../init.d/forkop", start_request.paths.autostart);
+    fs.symlink("../init.d/loki", start_request.paths.autostart);
     lifecycle.start = (guard) => {
         t.ok(start_request.token() != "", "intent exists before lifecycle mutates anything");
         t.eq(lock.held(start_request.paths.lock), false);
@@ -368,7 +368,7 @@ t.test("an initial failed start cannot recreate a request cancelled while it ran
 t.test("old successful completion and queued retry leave a new Start generation alone", () => {
     fresh();
     hooks(true);
-    fs.symlink("../init.d/forkop", start_request.paths.autostart);
+    fs.symlink("../init.d/loki", start_request.paths.autostart);
     let old;
     let next;
     lifecycle.start = () => {
@@ -404,7 +404,7 @@ t.test("an intent write failure refuses before lifecycle and a clear failure rem
 t.test("late readiness retries on the timer without any WAN event and retires its own instance", () => {
     fresh();
     hooks(true);
-    fs.symlink("../init.d/forkop", start_request.paths.autostart);
+    fs.symlink("../init.d/loki", start_request.paths.autostart);
     let token = start_request.begin();
     let uloop = require("uloop");
     let ubus = require("ubus");
@@ -423,7 +423,7 @@ t.test("late readiness retries on the timer without any WAN event and retires it
     t.eq(initd.retry_monitor(token), 0);
     t.eq(calls, [ "lifecycle start", "lifecycle start" ]);
     t.eq(ubus.__calls(), [ { object: "service", method: "delete", args: {
-        name: "forkop", instance: "start-retry-" + token
+        name: "loki", instance: "start-retry-" + token
     } } ]);
     t.eq(start_request.token(), "");
     stub.restore();
@@ -432,7 +432,7 @@ t.test("late readiness retries on the timer without any WAN event and retires it
 t.test("timer cancellation and a newer generation cannot delete the newer instance", () => {
     fresh();
     hooks(true);
-    fs.symlink("../init.d/forkop", start_request.paths.autostart);
+    fs.symlink("../init.d/loki", start_request.paths.autostart);
     let old = start_request.begin();
     let next;
     let uloop = require("uloop");
@@ -448,14 +448,14 @@ t.test("timer cancellation and a newer generation cannot delete the newer instan
     t.eq(initd.retry_monitor(old), 0);
     t.eq(calls, []);
     t.eq(start_request.token(), next);
-    t.eq(ubus.__calls()[0].args, { name: "forkop", instance: "start-retry-" + old });
+    t.eq(ubus.__calls()[0].args, { name: "loki", instance: "start-retry-" + old });
     stub.restore();
 });
 
 t.test("external rc.common Disable cancels a timer without invoking lifecycle", () => {
     fresh();
     hooks(true);
-    fs.symlink("../init.d/forkop", start_request.paths.autostart);
+    fs.symlink("../init.d/loki", start_request.paths.autostart);
     let token = start_request.begin();
     let uloop = require("uloop");
     let ubus = require("ubus");
@@ -469,7 +469,7 @@ t.test("external rc.common Disable cancels a timer without invoking lifecycle", 
     t.eq(initd.retry_monitor(token), 0);
     t.eq(calls, []);
     t.eq(start_request.token(), "");
-    fs.symlink("../init.d/forkop", start_request.paths.autostart);
+    fs.symlink("../init.d/loki", start_request.paths.autostart);
     initd.retry_start();
     t.eq(calls, [], "Enable alone must not revive the cancelled retry");
     stub.restore();
@@ -486,20 +486,20 @@ t.test("monitor errors and malformed generation never delete the whole service",
     t.eq(ubus.__calls(), []);
     ubus.__on("service.delete", ubus.__failure("temporary failure"));
     t.eq(initd.retry_monitor("1-2-3"), 1);
-    t.eq(ubus.__calls()[0].args, { name: "forkop", instance: "start-retry-1-2-3" });
+    t.eq(ubus.__calls()[0].args, { name: "loki", instance: "start-retry-1-2-3" });
 });
 
 t.test("a persistent retry sees committed UCI changes before lifecycle validation", () => {
     fresh({ cache_path: "first" });
     hooks(true);
-    fs.symlink("../init.d/forkop", start_request.paths.autostart);
+    fs.symlink("../init.d/loki", start_request.paths.autostart);
     let uci = require("core.uci");
     let seen = [];
-    lifecycle.start = () => { push(seen, uci.get("forkop.settings.cache_path")); return 1; };
+    lifecycle.start = () => { push(seen, uci.get("loki.settings.cache_path")); return 1; };
     initd.start("boot");
     let editor = require("uci").cursor();
-    editor.set("forkop", "settings", "cache_path", "second");
-    editor.commit("forkop");
+    editor.set("loki", "settings", "cache_path", "second");
+    editor.commit("loki");
     initd.retry_start();
     t.eq(seen, [ "first", "second" ]);
     stub.restore();
@@ -508,7 +508,7 @@ t.test("a persistent retry sees committed UCI changes before lifecycle validatio
 t.test("Stop cancellation during a timer callback retires without a retry child", () => {
     fresh();
     hooks(true);
-    fs.symlink("../init.d/forkop", start_request.paths.autostart);
+    fs.symlink("../init.d/loki", start_request.paths.autostart);
     let token = start_request.begin();
     let uloop = require("uloop");
     let ubus = require("ubus");

@@ -80,16 +80,16 @@ function write_config(config) {
     fs.writefile(dir + "/config.json", sprintf("%J", config));
 }
 
-t.test("the reason Forkop is down is the first error of the last action, not what its cleanup ran into", () => {
-    let line = (level, message) => "Mon Oct 19 16:51:18 2026 user." + level + " forkop: [" + level + "] " + message;
-    t.eq(checks.last_error(join("\n", [ line("info", "Starting LoKi"), line("error", "Another sing-box process is running outside LoKi"),
-        line("error", "sing-box is still running after it was stopped"), line("warn", "LoKi did not start") ])),
-        "Another sing-box process is running outside LoKi");
+t.test("the reason Loki is down is the first error of the last action, not what its cleanup ran into", () => {
+    let line = (level, message) => "Mon Oct 19 16:51:18 2026 user." + level + " loki: [" + level + "] " + message;
+    t.eq(checks.last_error(join("\n", [ line("info", "Starting LoKi"), line("error", "Another loki-core process is running outside LoKi"),
+        line("error", "loki-core is still running after it was stopped"), line("warn", "LoKi did not start") ])),
+        "Another loki-core process is running outside LoKi");
     t.eq(checks.last_error(join("\n", [ line("error", "An old failure"), line("info", "LoKi started"), line("info", "Stopping LoKi"),
         line("info", "LoKi stopped") ])), "", "a stop the user asked for left no error");
     t.eq(checks.last_error(join("\n", [ line("info", "Starting LoKi"), line("error", "first try"), line("info", "Starting LoKi"),
         line("error", "second try") ])), "second try", "the last attempt, not an earlier one");
-    t.eq(checks.last_error("Mon Oct 19 16:51:18 2026 daemon.err sing-box[1]: FATAL[0000] start service"), "", "the core's own lines are not LoKi's");
+    t.eq(checks.last_error("Mon Oct 19 16:51:18 2026 daemon.err loki-core[1]: FATAL[0000] start service"), "", "the core's own lines are not LoKi's");
     t.eq(checks.last_error(join("\n", [ line("info", "Starting LoKi"), line("error", "an earlier failure"), line("info", "Starting LoKi"),
         line("warn", "LoKi has nothing to run") ])), "LoKi has nothing to run", "an action that did not fail, by its last warning");
 });
@@ -103,10 +103,10 @@ t.test("list overlap facts include only enabled sections and fixed list identifi
     fixture.seed({});
 });
 
-t.test("the service check finds running cores other than Forkop's, and nothing Forkop runs for a moment", () => {
+t.test("the service check finds running cores other than Loki's, and nothing Loki runs for a moment", () => {
     let proc = dir + "/proc";
-    for (let process in [ [ "100", [ "/usr/bin/sing-box", "run", "-c", "/etc/sing-box/config.json" ] ],
-        [ "200", [ "/usr/bin/sing-box", "run", "-c", "/tmp/probe.json" ] ], [ "300", [ "sing-box", "check", "-c", "x" ] ], [ "400", [ "/sbin/procd" ] ] ]) {
+    for (let process in [ [ "100", [ "/usr/bin/loki-core", "run", "-c", "/etc/loki-core/config.json" ] ],
+        [ "200", [ "/usr/bin/loki-core", "run", "-c", "/tmp/probe.json" ] ], [ "300", [ "loki-core", "check", "-c", "x" ] ], [ "400", [ "/sbin/procd" ] ] ]) {
         fs.mkdir(proc);
         fs.mkdir(proc + "/" + process[0]);
         fs.writefile(proc + "/" + process[0] + "/cmdline", join("\u0000", process[1]) + "\u0000");
@@ -116,18 +116,18 @@ t.test("the service check finds running cores other than Forkop's, and nothing F
     checks.paths.uptime = dir + "/uptime";
     fs.writefile(checks.paths.meminfo, "MemTotal:         239540 kB\nMemFree:           26652 kB\nMemAvailable:      45536 kB\n");
     fs.writefile(checks.paths.uptime, "100700.12 300000.00\n");
-    health.forkop_stably_running = () => false;
+    health.loki_stably_running = () => false;
     health.sing_box_service_pid_runtime = () => 100;
     health.pid_is_sing_box = (pid) => index([ "100", "200", "300" ], "" + pid) >= 0;
     health.process_age_seconds = () => 42;
     stub.commands([
-        [ /'logread'/, { stdout: "Mon Oct 19 16:51:18 2026 user.info forkop: [info] Starting LoKi\nMon Oct 19 16:51:18 2026 user.err forkop: [error] Clash API address 192.168.1.1:9090 is already in use by another process\n" } ],
+        [ /'logread'/, { stdout: "Mon Oct 19 16:51:18 2026 user.info loki: [info] Starting LoKi\nMon Oct 19 16:51:18 2026 user.err loki: [error] Clash API address 192.168.1.1:9090 is already in use by another process\n" } ],
         [ /'nft' '-t' 'list' 'ruleset'/, { stdout: "table inet other {\n\tchain c {\n\t\ttype filter hook prerouting priority mangle; policy accept;\n\t\tmeta l4proto tcp tproxy ip to :7893\n\t}\n}\n" } ]
     ]);
     let packages = require("core.packages");
     packages.paths.sing_box_version = dir + "/no-such-version";
     packages.paths.sing_box_variant = dir + "/no-such-variant";
-    require("singbox.features").paths.binary = dir + "/no-such-sing-box";
+    require("singbox.features").paths.binary = dir + "/no-such-loki-core";
     let value = checks.service();
     stub.restore();
     t.eq([ value.running, value.uptime, value.foreign_sing_box ], [ false, 42, [ 200 ] ]);
@@ -144,7 +144,7 @@ t.test("the core check names the version the binary reports, and the package's v
     let features = require("singbox.features");
     packages.paths.sing_box_version = dir + "/version";
     packages.paths.sing_box_variant = dir + "/variant";
-    features.paths.binary = dir + "/sing-box";
+    features.paths.binary = dir + "/loki-core";
     let required = require("core.constants").SB_REQUIRED_VERSION;
     fs.writefile(packages.paths.sing_box_version, required + "
 ");
@@ -173,11 +173,12 @@ CGO: disabled
     t.eq(core_of("1.14.5-r1", tags).variant, "", "a binary of another build copied over the package's");
 
     let foreign = core_of("1.12.22", tags);
-    t.eq([ foreign.binary, foreign.version, foreign.variant, foreign.outdated ], [ "1.12.22", "", "", false ], "not sing-box-forkop");
+    t.eq([ foreign.binary, foreign.version, foreign.variant, foreign.outdated ], [ "1.12.22", "", "", false ], "not loki-core");
     let old = core_of("1.13.18-extended-2.6.5-f165", tags);
-    t.eq([ old.version, old.outdated ], [ "1.13.18-extended-2.6.5-f165", true ], "sing-box-forkop older than LoKi needs");
+    t.eq([ old.version, old.outdated ], [ "", false ], "an unrelated fork is not classified as an outdated own build");
+    t.eq(old.binary, "1.13.18-extended-2.6.5-f165", "diagnostics retain the actual unsupported binary version");
 
-    t.contains(core_of("1.14.4-r1", "with_utls,with_quic").problem, "sing-box was built without with_clash_api");
+    t.contains(core_of("1.14.4-r1", "with_utls,with_quic").problem, "loki-core was built without with_clash_api");
     t.eq(core_of("1.14.4-r1", "with_clash_api,with_wireguard,with_openvpn").problem, "");
 });
 
@@ -204,7 +205,7 @@ t.test("the main DNS is asked through the core for a name no cache holds; bootst
     stub.restore();
     t.eq(value.main, { servers: "77.88.8.8", answered: true, status: "NOERROR", ms: 12 });
     t.eq([ value.bootstrap, value.local.answered ], [ null, true ]);
-    t.matches(asked[0].names[0], /^forkop-[0-9a-f]+\.example\.com$/);
+    t.matches(asked[0].names[0], /^loki-[0-9a-f]+\.example\.com$/);
     t.eq([ asked[0].options.type, asked[0].options.timeout, asked[0].options.retries ], [ [ "A" ], 4000, 1 ], "one attempt, as a page waits for it");
 });
 

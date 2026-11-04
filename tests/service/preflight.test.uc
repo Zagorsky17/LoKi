@@ -43,9 +43,9 @@ t.test("status parser rejects duplicate, traversing and secret-bearing identifie
 });
 
 t.test("ownership parser uses exact paths and refuses incomplete grammar", () => {
-    t.eq(preflight.target_paths("/etc/config/forkop.backup\n/etc/config/podkop\n/usr/bin/sing-box\n"), [ "/usr/bin/sing-box" ]);
-    for (let data in [ "", "/usr/bin/sing-box", "/etc/../usr/bin/sing-box\n", "//usr/bin/sing-box\n",
-        "/usr/bin/sing-box\n/usr/bin/sing-box\n", "/etc/secret\u0000x\n", "/etc/a\r\n" ])
+    t.eq(preflight.target_paths("/etc/config/loki.backup\n/etc/config/podkop\n/usr/bin/loki-core\n"), [ "/usr/bin/loki-core" ]);
+    for (let data in [ "", "/usr/bin/loki-core", "/etc/../usr/bin/loki-core\n", "//usr/bin/loki-core\n",
+        "/usr/bin/loki-core\n/usr/bin/loki-core\n", "/etc/secret\u0000x\n", "/etc/a\r\n" ])
         t.eq(preflight.target_paths(data), null);
 });
 
@@ -114,7 +114,7 @@ t.test("foreign installed owners block planned paths without reading their conte
     let root = fixture();
     write(root + "/usr/lib/opkg/status", stanza("other-core") + stanza("another-core"));
     for (let name in [ "other-core", "another-core" ])
-        write(root + "/usr/lib/opkg/info/" + name + ".list", "/usr/bin/sing-box\n");
+        write(root + "/usr/lib/opkg/info/" + name + ".list", "/usr/bin/loki-core\n");
     let result = preflight.collect(root);
     t.eq(result.result, "conflict");
     t.eq(length(filter(result.observations, (item) => item.state == "conflict")), 1);
@@ -125,8 +125,8 @@ t.test("foreign installed owners block planned paths without reading their conte
 
 t.test("matching package names do not prove our provenance", () => {
     let root = fixture();
-    write(root + "/usr/lib/opkg/status", stanza("forkop"));
-    write(root + "/usr/lib/opkg/info/forkop.list", "/etc/config/forkop\n");
+    write(root + "/usr/lib/opkg/status", stanza("loki"));
+    write(root + "/usr/lib/opkg/info/loki.list", "/etc/config/loki\n");
     let result = preflight.collect(root);
     t.eq(result.result, "incomplete");
     t.ok(has(result, "incomplete", "package-name-does-not-prove-own-origin"));
@@ -134,7 +134,7 @@ t.test("matching package names do not prove our provenance", () => {
 
 t.test("missing and corrupt ownership data cannot become empty coverage", () => {
     let root = fixture();
-    for (let data in [ "", "/etc/banner", "/etc/../usr/bin/sing-box\n" ]) {
+    for (let data in [ "", "/etc/banner", "/etc/../usr/bin/loki-core\n" ]) {
         write(root + "/usr/lib/opkg/info/base-files.list", data);
         t.ok(has(preflight.collect(root), "incomplete", "ownership-list-invalid"));
     }
@@ -145,7 +145,7 @@ t.test("missing and corrupt ownership data cannot become empty coverage", () => 
 t.test("proven conflicts survive other incomplete observations", () => {
     let root = fixture();
     write(root + "/usr/lib/opkg/status", stanza("base-files") + stanza("missing"));
-    write(root + "/usr/lib/opkg/info/base-files.list", "/etc/config/forkop\n");
+    write(root + "/usr/lib/opkg/info/base-files.list", "/etc/config/loki\n");
     let result = preflight.collect(root);
     t.eq(result.result, "conflict");
     t.ok(has(result, "incomplete", "ownership-list-unavailable"));
@@ -202,7 +202,7 @@ t.test("status and ownership-list size limits have distinct reasons", () => {
 
 t.test("a directory at a critical file target is a conflict even without a package owner", () => {
     let root = fixture();
-    stub.real.system("umask 022; mkdir -p '" + root + "/usr/bin/forkop'");
+    stub.real.system("umask 022; mkdir -p '" + root + "/usr/bin/loki'");
     let result = preflight.collect(root);
     t.eq(result.result, "conflict");
     t.ok(has(result, "conflict", "candidate-target-type-conflict"));
@@ -214,11 +214,11 @@ t.test("a candidate symlink never opens or reports its private target", () => {
     stub.real.system("umask 022; mkdir -p '" + root + "/usr/bin'");
     let secret = root + "/synthetic-private-target";
     write(secret, "synthetic-secret-must-stay-private");
-    fs.symlink(secret, root + "/usr/bin/forkop");
+    fs.symlink(secret, root + "/usr/bin/loki");
     let open = fs.open;
     let opened = false;
     fs.open = (path, mode) => {
-        if (path == secret || path == root + "/usr/bin/forkop") opened = true;
+        if (path == secret || path == root + "/usr/bin/loki") opened = true;
         return open(path, mode);
     };
     let result = preflight.collect(root);
@@ -248,7 +248,7 @@ t.test("symlink and writable parent paths cannot become checked absence", () => 
 t.test("unowned regular files are origin unverified and are not read or removed", () => {
     let root = fixture();
     stub.real.system("umask 022; mkdir -p '" + root + "/usr/bin'");
-    let path = root + "/usr/bin/forkop";
+    let path = root + "/usr/bin/loki";
     write(path, "synthetic-private-existing-file");
     let result = preflight.collect(root);
     t.ok(has(result, "incomplete", "candidate-existing-file-origin-unverified"));

@@ -5,7 +5,7 @@ t.test("a missing QUIC feature never exposes a private DNS path or query token",
     for (let server in [ "h3://dns.example/dns-query/synthetic-account", "quic://synthetic-account.dns.nextdns.io" ]) {
         let result = v.run({ section: [ { ".name": "dns", enabled: "1", action: "dns", dns_server: [ server ], destinations: "example.org" } ] },
             { core_tags: [ "with_clash_api", "with_utls" ] });
-        t.contains(result.error, "this sing-box build lacks QUIC");
+        t.contains(result.error, "this loki-core build lacks QUIC");
         t.excludes(result.error, "synthetic-account");
         t.excludes(result.error, "synthetic-secret");
         t.excludes(result.error, server);

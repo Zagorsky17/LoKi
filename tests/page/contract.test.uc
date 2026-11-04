@@ -1,5 +1,5 @@
 // The page carries its own copy of a few backend tables; tests/fixtures/page_contract.json holds
-// both copies: this file checks the backend, fe-app-forkop/tests/pageContract.test.js the page.
+// both copies: this file checks the backend, fe-app-loki/tests/pageContract.test.js the page.
 
 let t = require("t");
 let fs = require("fs");
@@ -18,7 +18,7 @@ let stub = require("stub");
 
 let contract = json(fs.readfile(repo.path("tests/fixtures/page_contract.json")));
 
-t.test("the reserved ports are every port Forkop's own inbounds bind", () => {
+t.test("the reserved ports are every port Loki's own inbounds bind", () => {
     let ports = [ constants.CLASH_API_CONTROLLER_PORT ];
     for (let name in keys(constants))
         if (match(name, /_INBOUND_PORT$/))
@@ -26,7 +26,7 @@ t.test("the reserved ports are every port Forkop's own inbounds bind", () => {
     t.eq(sort(uniq(ports), (a, b) => a - b), contract.reserved_ports);
 });
 
-t.test("the reserved tags are the ones Forkop gives its own listeners", () => {
+t.test("the reserved tags are the ones Loki gives its own listeners", () => {
     t.eq(sort(keys(constants.RESERVED_TAGS)), contract.reserved_tags);
 });
 
@@ -64,8 +64,8 @@ t.test("an unset group option means what the dashboard says it means", () => {
     t.eq(connections.urltest_expected_status(section, "fast"), urltest.expected_status);
     t.eq(connections.urltest_check_interval(section, "fast"), urltest.check_interval);
     t.eq(int(connections.urltest_tolerance(section, "fast")), urltest.tolerance);
-    t.eq(connections.urltest_idle_timeout(section, "fast"), "", "left to sing-box");
-    t.eq(constants.URLTEST_DEFAULT_IDLE_TIMEOUT, urltest.idle_timeout, "what sing-box applies");
+    t.eq(connections.urltest_idle_timeout(section, "fast"), "", "left to loki-core");
+    t.eq(constants.URLTEST_DEFAULT_IDLE_TIMEOUT, urltest.idle_timeout, "what loki-core applies");
     t.eq(connections.urltest_interrupt_exist_connections(section, "fast"), urltest.interrupt_exist_connections);
 
     let fallback = contract.fallback_defaults;
@@ -84,14 +84,14 @@ t.test("the state service parks a request as long as the page expects", () => {
 
 // The read snapshot and controlled commands cannot share the private writer grant.
 t.test("the page may call every method the state service publishes", () => {
-    let acl = json(fs.readfile(repo.path("luci-app-forkop/root/usr/share/rpcd/acl.d/luci-app-forkop.json")))["luci-app-forkop"];
-    t.eq(sort([ ...acl.read.ubus.forkop, ...acl.write.ubus.forkop ]), sort(keys(state_service.object_methods())));
-    t.eq(acl.write.ubus.forkop, [ "rpc_write", "rpc_write_prepare", "rpc_write_result", "config_private", "import_config" ]);
+    let acl = json(fs.readfile(repo.path("luci-app-loki/root/usr/share/rpcd/acl.d/luci-app-loki.json")))["luci-app-loki"];
+    t.eq(sort([ ...acl.read.ubus.loki, ...acl.write.ubus.loki ]), sort(keys(state_service.object_methods())));
+    t.eq(acl.write.ubus.loki, [ "rpc_write", "rpc_write_prepare", "rpc_write_result", "config_private", "import_config" ]);
 });
 
 t.test("the option every password field is stored in is masked in diagnostics", () => {
     for (let field, stored in { ...contract.password_fields, ...contract.retired_password_fields }) {
-        let masked = mask.forkop_config("config tunnel 'probe'\n\toption " + stored + " 'secret-value'\n");
+        let masked = mask.loki_config("config tunnel 'probe'\n\toption " + stored + " 'secret-value'\n");
         t.excludes(masked, "secret-value", field);
     }
 });

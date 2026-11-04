@@ -65,9 +65,9 @@ t.test("shared UCI operations preserve creation order, references, lists and del
         delete: (...args) => { push(calls, args); return true; }
     };
     t.eq(migration.apply(cursor, ops), null);
-    t.eq(calls[0], [ "forkop", "cfg1", "links", [ "cfg2", "kept" ] ]);
-    t.eq(calls[1], [ "forkop", "cfg2", "section", "cfg1" ]);
-    t.eq(calls[length(calls) - 1], [ "forkop", "old" ]);
+    t.eq(calls[0], [ "loki", "cfg1", "links", [ "cfg2", "kept" ] ]);
+    t.eq(calls[1], [ "loki", "cfg2", "section", "cfg1" ]);
+    t.eq(calls[length(calls) - 1], [ "loki", "old" ]);
     cursor.set = () => false;
     t.contains(migration.apply(cursor, [ { op: "set", section: "main", option: "enabled", value: "1" } ]), "could not set");
     t.eq(migration.changes(before, before), []);
@@ -85,9 +85,9 @@ t.test("named creation, retyping, option removal and write failures keep their U
         delete: (...args) => { push(calls, args); return true; }
     };
     t.eq(migration.apply(cursor, ops), null);
-    t.eq(calls[0], [ "forkop", "added", "section" ]);
-    t.eq(calls[1], [ "forkop", "main", "urltest" ]);
-    t.eq(calls[2], [ "forkop", "main", "obsolete" ]);
+    t.eq(calls[0], [ "loki", "added", "section" ]);
+    t.eq(calls[1], [ "loki", "main", "urltest" ]);
+    t.eq(calls[2], [ "loki", "main", "obsolete" ]);
     t.contains(migration.apply(cursor, [ { op: "add", section: ".new-1", type: "section" } ]), "could not add");
     cursor.delete = () => false;
     t.contains(migration.apply(cursor, [ { op: "unset", section: "main", option: "enabled" } ]), "could not unset");

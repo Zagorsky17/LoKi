@@ -31,7 +31,7 @@ t.test("the default request carries the Happ/Remnawave set and nothing else", ()
 t.test("the User-Agent names the upstream sing-box version of the installed core", () => {
     for (let installed in [ "1.13.18-extended-2.6.5-f70", "1.13.18-forkop.4" ]) {
         let module = headers_module(null, write("version", installed + "\n"));
-        t.eq(module.default_user_agent(), "sing-box/1.13.18", installed);
+        t.eq(module.default_user_agent(), "sing-box", "an unrelated fork is not a supported installed version");
     }
     for (let installed in [ "1.14.4-r1", "1.14.4-r0+12" ]) {
         let module = headers_module(null, write("version", installed + "\n"));

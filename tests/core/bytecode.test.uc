@@ -29,9 +29,9 @@ function new_library() {
 // Validation is reused for a few seconds by default; the checks of full validation turn that off.
 function bytecode(where, fn, env) {
     stub.env({
-        FORKOP_SOURCE_LIB: where.library,
-        FORKOP_BYTECODE_CACHE_DIR: where.cache,
-        FORKOP_BYTECODE_VALIDATION_TTL: "0",
+        LOKI_SOURCE_LIB: where.library,
+        LOKI_BYTECODE_CACHE_DIR: where.cache,
+        LOKI_BYTECODE_VALIDATION_TTL: "0",
         ...(env ?? {})
     });
     let result, failure = null;
@@ -131,12 +131,12 @@ t.test("a different interpreter invalidates the cache", () => {
     let wrapper = stub.tmpdir() + "/ucode";
     fs.writefile(wrapper, "#!/bin/sh\nexec ucode \"$@\"\n");
     stub.real.system("chmod +x '" + wrapper + "'");
-    t.eq(resolved(where, { FORKOP_UCODE_BIN: wrapper }), where.library);
+    t.eq(resolved(where, { LOKI_UCODE_BIN: wrapper }), where.library);
 });
 
 t.test("with the cache switched off the sources are used and nothing is written", () => {
     let where = new_library();
-    t.eq(refresh(where, { FORKOP_BYTECODE_CACHE: "0" }), where.library);
+    t.eq(refresh(where, { LOKI_BYTECODE_CACHE: "0" }), where.library);
     t.eq(fs.stat(where.cache), null);
 });
 
@@ -156,7 +156,7 @@ t.test("the manifest records the directories its file list was read against", ()
 
 t.test("validation is reused within its window, and not past it or an install", () => {
     let where = new_library();
-    let window = { FORKOP_BYTECODE_VALIDATION_TTL: "30" };
+    let window = { LOKI_BYTECODE_VALIDATION_TTL: "30" };
     let at = (seconds, fn) => {
         stub.clock(seconds);
         return fn();

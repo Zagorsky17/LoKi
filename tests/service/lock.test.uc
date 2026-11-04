@@ -58,10 +58,10 @@ t.test("a request marker is written with its reason and consumed once", () => {
 t.test("a pending reload runs the init script's reload in the background, once", () => {
     let path = stub.tmpdir() + "/reload.pending";
     lock.mark_request(path, "reload_busy");
-    stub.commands([ [ "logger", {} ], [ /'\/etc\/init.d\/forkop' 'reload' 'pending'.*&$/, {} ] ]);
-    lock.run_pending_reload_if_requested(path, "/etc/init.d/forkop");
-    lock.run_pending_reload_if_requested(path, "/etc/init.d/forkop");
-    t.eq(stub.command_lines(), [ "/etc/init.d/forkop reload pending" ], "the reload it starts says what it applies");
+    stub.commands([ [ "logger", {} ], [ /'\/etc\/init.d\/loki' 'reload' 'pending'.*&$/, {} ] ]);
+    lock.run_pending_reload_if_requested(path, "/etc/init.d/loki");
+    lock.run_pending_reload_if_requested(path, "/etc/init.d/loki");
+    t.eq(stub.command_lines(), [ "/etc/init.d/loki reload pending" ], "the reload it starts says what it applies");
     stub.restore();
 });
 

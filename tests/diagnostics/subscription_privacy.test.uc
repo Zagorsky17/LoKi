@@ -22,8 +22,8 @@ t.test("masked diagnostics never read or attach the raw subscription cache", () 
         experimental: { cache_file: { enabled: true, path: cache }, clash_api: { secret: "ConfiguredApi82" } }
     }));
     fixture.seed({ settings: { config_path: runtime } });
-    report.paths.forkop_config = dir + "/forkop";
-    fs.writefile(report.paths.forkop_config, "config settings 'settings'\n");
+    report.paths.loki_config = dir + "/loki";
+    fs.writefile(report.paths.loki_config, "config settings 'settings'\n");
     stub.commands([ [ () => true, { stdout: "ConfiguredBearer73 ConfiguredApi82 https://source.example/sub?token=SourceOnlyCedar69\n" } ] ]);
     let reads = [];
     let readfile = fs.readfile;

@@ -11,8 +11,8 @@ let serial = 0;
 
 function exercise(options) {
     let nonce = ++serial;
-    let base = sprintf("/tmp/forkop-ruleset-sync.%d.123456.%d", common.own_pid(), nonce);
-    let old_path = sprintf("/tmp/forkop-ruleset-sync.123456.%d.nft", nonce);
+    let base = sprintf("/tmp/loki-ruleset-sync.%d.123456.%d", common.own_pid(), nonce);
+    let old_path = sprintf("/tmp/loki-ruleset-sync.123456.%d.nft", nonce);
     t.eq(fs.lstat(base), null);
     t.eq(fs.lstat(old_path), null);
     let dir = stub.tmpdir();
@@ -39,7 +39,7 @@ function exercise(options) {
     let failure = options?.failure ?? "";
     let opened = [], transactions = [], modes = [], logs = [];
     fs.open = (path, mode) => {
-        if (index(path, "/tmp/forkop-ruleset-sync.") != 0)
+        if (index(path, "/tmp/loki-ruleset-sync.") != 0)
             return open(path, mode);
         if (failure == "open")
             return null;
@@ -63,7 +63,7 @@ function exercise(options) {
             close: () => { let closed = file.close(); return failure == "close" ? null : closed; }
         };
     };
-    fs.stat = (path) => failure == "stat" && index(path, "/tmp/forkop-ruleset-sync.") == 0 ? null : stat(path);
+    fs.stat = (path) => failure == "stat" && index(path, "/tmp/loki-ruleset-sync.") == 0 ? null : stat(path);
     global.clock = () => [ 123456, nonce ];
     stub.commands([
         [ "nft -f", (argv) => {

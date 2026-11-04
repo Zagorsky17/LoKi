@@ -1,4 +1,4 @@
-// Lookups over a generated sing-box configuration.
+// Lookups over a generated loki-core configuration.
 
 function as_array(value) {
     if (value == null)

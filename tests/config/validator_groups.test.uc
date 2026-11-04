@@ -295,7 +295,7 @@ t.test("endpoint type in a subscription", () => {
     }, "is not available in a subscription");
 });
 
-t.test("protocol sing-box removed", () => {
+t.test("protocol loki-core removed", () => {
     v.refuses({
         "settings": {
             "dns_server": [

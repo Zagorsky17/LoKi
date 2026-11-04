@@ -9,7 +9,7 @@ function fresh() {
     let root = stub.tmpdir();
     request.paths.pending = root + "/runtime/start.retry";
     request.paths.lock = root + "/runtime/request.lock";
-    request.paths.autostart = root + "/S99forkop";
+    request.paths.autostart = root + "/S99loki";
     return root;
 }
 
@@ -118,13 +118,13 @@ t.test("invalid and linked markers are not executable retry generations", () => 
 t.test("autostart accepts only the exact own symlink", () => {
     fresh();
     t.eq(request.enabled(), false);
-    fs.writefile(request.paths.autostart, "../init.d/forkop");
+    fs.writefile(request.paths.autostart, "../init.d/loki");
     t.eq(request.enabled(), false);
     fs.unlink(request.paths.autostart);
     fs.symlink("../init.d/other", request.paths.autostart);
     t.eq(request.enabled(), false);
     fs.unlink(request.paths.autostart);
-    fs.symlink("../init.d/forkop", request.paths.autostart);
+    fs.symlink("../init.d/loki", request.paths.autostart);
     t.eq(request.enabled(), true);
 });
 

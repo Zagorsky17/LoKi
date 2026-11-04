@@ -12,13 +12,13 @@ function sections(extra) {
 
 function router(data, text) {
     let dir = stub.tmpdir();
-    migration.paths.config = dir + "/forkop";
+    migration.paths.config = dir + "/loki";
     migration.paths.internal_change = dir + "/internal-change";
     if (text != null)
         fs.writefile(migration.paths.config, text);
     uci.__reset();
     if (data != null)
-        uci.__seed("forkop", data);
+        uci.__seed("loki", data);
     let logs = [];
     stub.commands([ stub.logger(logs) ]);
     return { dir, logs };
@@ -32,13 +32,13 @@ function run(start) {
 }
 
 t.test("the package defaults identify LoKi and need no migration or cleanup", () => {
-    let data = uci_file.parse(fs.readfile(repo.path("forkop/files/etc/config/forkop")));
+    let data = uci_file.parse(fs.readfile(repo.path("loki/files/etc/config/loki")));
     t.eq(data.settings.config_format, "loki");
     let setup = router(sections(), "own configuration");
     let result = run();
     t.eq([ result.result, result.commands, uci.__commits(), setup.logs ], [ 0, [], [], [] ]);
     t.eq(fs.readfile(migration.paths.config), "own configuration");
-    t.eq(fs.lsdir(setup.dir), [ "forkop" ]);
+    t.eq(fs.lsdir(setup.dir), [ "loki" ]);
 });
 
 t.test("foreign, unsupported and ambiguous files are refused on install and start without writes", () => {
@@ -56,7 +56,7 @@ t.test("foreign, unsupported and ambiguous files are refused on install and star
             t.eq(result.result, start ? false : 1);
             t.eq(uci.__commits(), []);
             t.eq(fs.readfile(migration.paths.config), "synthetic-secret: original file");
-            t.eq(fs.lsdir(setup.dir), [ "forkop" ]);
+            t.eq(fs.lsdir(setup.dir), [ "loki" ]);
             t.eq(length(setup.logs), 1);
             t.excludes(result.stderr, "synthetic-secret");
             t.excludes(join("\n", setup.logs), "injected");
@@ -85,7 +85,7 @@ t.test("read-only checks return a failing exit status and a bounded reason for u
         t.excludes(capture.stdout, "secret");
         t.eq(uci.__commits(), []);
         t.eq(fs.readfile(migration.paths.config), "original");
-        t.eq(fs.lsdir(setup.dir), [ "forkop" ]);
+        t.eq(fs.lsdir(setup.dir), [ "loki" ]);
     }
 });
 
@@ -98,7 +98,7 @@ t.test("repeated current checks and starts leave the same file and state intact"
     t.eq(stub.command_lines(), []);
     stub.restore();
     t.eq(uci.__commits(), []);
-    t.eq(fs.lsdir(setup.dir), [ "forkop" ]);
+    t.eq(fs.lsdir(setup.dir), [ "loki" ]);
 });
 
 t.done();

@@ -8,7 +8,7 @@ let pid = common.own_pid();
 
 function temporary(nonce) {
     global.clock = () => [ 123456, nonce ];
-    return sprintf("/tmp/forkop-exec.%d.123456.%d", pid, nonce);
+    return sprintf("/tmp/loki-exec.%d.123456.%d", pid, nonce);
 }
 
 function remove_paths(base) {
@@ -36,7 +36,7 @@ t.test("feed protects an existing stderr symlink target", () => {
     let base = temporary(2);
     let dir = stub.tmpdir();
     let victim = dir + "/victim";
-    let old_path = "/tmp/forkop-exec.123456.2.err";
+    let old_path = "/tmp/loki-exec.123456.2.err";
     fs.writefile(victim, "preserved synthetic data");
     t.eq(exec.status([ "ln", "-s", victim, old_path ]), 0);
     let result = exec.feed([ "sh", "-c", "cat >/dev/null; printf changed >&2; exit 7" ], "synthetic input");

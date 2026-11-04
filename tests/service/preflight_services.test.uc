@@ -59,11 +59,11 @@ t.test("only the fixed read-only query is issued and oversize output is not reta
     t.eq(commands, [ "exec timeout -s KILL 5 ubus call service list {\"verbose\":true}" ]);
 });
 
-t.test("running own aliases and inactive respawn or triggers remain unverified", () => {
+t.test("running own services and inactive respawn or triggers remain unverified", () => {
     let root = fixture();
-    query(sprintf("%J", { forkop: { instances: { main: { running: true, pid: 20 } } },
+    query(sprintf("%J", { loki: { instances: { main: { running: true, pid: 20 } } },
         podkop: { instances: { main: { running: false, respawn: {} } } },
-        loki: { triggers: [ [ "synthetic-private-trigger" ] ] } }));
+        "loki-state": { triggers: [ [ "synthetic-private-trigger" ] ] } }));
     let result = services.collect(root);
     stub.restore();
     t.ok(has(result, "incomplete", "existing-service-origin-unverified"));

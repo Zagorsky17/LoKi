@@ -5,16 +5,16 @@ let packages = require("core.packages");
 
 let dir = stub.tmpdir();
 packages.paths.opkg_status = dir + "/missing-status";
-packages.paths.sing_box_version = dir + "/sing-box-forkop.version";
+packages.paths.sing_box_version = dir + "/loki-core.version";
 
 const STATUS = "Package: libc\nVersion: 1.2.5-r4\nStatus: install ok installed\n\n" +
-    "Package: forkop\nVersion: 1.0.5\nDepends: libc, curl\nStatus: install user installed\n\n" +
+    "Package: loki\nVersion: 1.0.5\nDepends: libc, curl\nStatus: install user installed\n\n" +
     "Package: luci-app-passwall\nVersion: 4.0.0\nStatus: install ok not-installed\n\n" +
     "Package: zapret\nVersion: 72.20260307-r1\nStatus: install hold installed\n\n" +
     "Package: byedpi\nVersion: 0.17\nStatus: install prefer,user not-installed\n";
 
 t.test("the opkg status file answers for installed stanzas only", () => {
-    t.eq(packages.opkg_status_version(STATUS, "forkop"), "1.0.5");
+    t.eq(packages.opkg_status_version(STATUS, "loki"), "1.0.5");
     t.eq(packages.opkg_status_version(STATUS, "libc"), "1.2.5-r4", "the first stanza is read");
     t.eq(packages.opkg_status_version(STATUS, "zapret"), "72.20260307-r1", "a held package is still installed");
     t.eq(packages.opkg_status_version(STATUS, "luci-app-passwall"), "", "not-installed ends in installed");
@@ -52,21 +52,21 @@ t.test("an apk version comes from the installed list, whatever the description s
     stub.restore();
 });
 
-t.test("the sing-box-forkop version is the one the core records, and only a well-formed one", () => {
-    let installed = [ [ "apk list --installed sing-box-forkop", { stdout: "<sing-box> sing-box-forkop-1.13.14.2.5.3.1-r0 aarch64 {local} [installed]\n" } ] ];
+t.test("the loki-core version is the one the core records, and only a well-formed one", () => {
+    let installed = [ [ "apk list --installed loki-core", { stdout: "<loki-core> loki-core-1.14.4-r6 aarch64 {local} [installed]\n" } ] ];
     apk(installed);
-    for (let recorded in [ "1.13.14-extended-2.5.3-f1", "1.13.14-extended-2.5.2-forkop.14" ]) {
+    for (let recorded in [ "1.13.14-extended-2.5.3-f1", "1.13.14-extended-2.5.2-forkop.14", "1.14.4-loki.1" ]) {
         fs.writefile(packages.paths.sing_box_version, recorded + "\n");
-        t.eq(packages.version("sing-box-forkop"), recorded);
+        t.eq(packages.version("loki-core"), "", "a foreign version record is not an own build");
     }
     fs.writefile(packages.paths.sing_box_version, "1.13.14.2.5.3.1-r0\n");
-    t.eq(packages.version("sing-box-forkop"), "", "a malformed record is not replaced by the package version");
+    t.eq(packages.version("loki-core"), "", "a malformed record is not replaced by the package version");
     fs.unlink(packages.paths.sing_box_version);
-    t.eq(packages.version("sing-box-forkop"), "1.13.14.2.5.3.1-r0", "without a record the package version answers");
+    t.eq(packages.version("loki-core"), "1.14.4-r6", "without a record the package version answers");
     stub.restore();
 
     fs.writefile(packages.paths.sing_box_version, "1.14.1~rc1-extended-2.7.2-f122\n");
-    t.eq(packages.sing_box_version(), "1.14.1-rc1-extended-2.7.2-f122", "the release spelling");
+    t.eq(packages.sing_box_version(), "", "an unrelated fork is not an own version record");
     fs.writefile(packages.paths.sing_box_version, "garbage\n");
     t.eq(packages.sing_box_version(), "");
 });
@@ -83,7 +83,7 @@ t.test("a core release records X.Y.Z-rN and a build between releases X.Y.Z-rN+K"
 });
 
 t.test("the variant is the one the core package records, and only a known one", () => {
-    packages.paths.sing_box_variant = dir + "/sing-box-forkop.variant";
+    packages.paths.sing_box_variant = dir + "/loki-core.variant";
     for (let variant in [ "base", "full", "tiny", "custom" ]) {
         fs.writefile(packages.paths.sing_box_variant, variant + "\n");
         t.eq(packages.sing_box_variant(), variant);

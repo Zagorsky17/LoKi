@@ -1,0 +1,67 @@
+{
+  "luci-app-loki": {
+    "description": "Grant UCI and RPC access to LuCI app LoKi",
+    "read": {
+      "ubus": {
+        "loki": [
+          "rpc_read",
+          "rpc_read_prepare",
+          "rpc_read_result",
+          "state",
+          "state_wait",
+          "config",
+          "system_info",
+          "logs",
+          "log_text",
+          "usage",
+          "refresh"
+        ],
+        "loki.installer": [
+          "read"
+        ],
+        "luci-rpc": [
+          "getDHCPLeases",
+          "getHostHints"
+        ],
+        "network.interface": [
+          "dump"
+        ]
+      },
+      "uci": [
+        "dhcp"
+      ]
+    },
+    "write": {
+      "cgi-io": [
+        "upload"
+      ],
+      "file": {
+        "/tmp/loki-import.conf": [
+          "write"
+        ]
+      },
+      "ubus": {
+        "file": [
+          "remove"
+        ],
+        "loki": [
+          "rpc_write",
+          "rpc_write_prepare",
+          "rpc_write_result",
+          "config_private",
+          "import_config"
+        ],
+        "loki.installer": [
+          "input",
+          "stop"
+        ]
+      },
+      "uci": {
+        "loki": [
+          "read",
+          "write"
+        ]
+      }
+    }
+  }
+}

@@ -151,8 +151,8 @@ chmod +x "$1/build.sh"
     def manifest_case(self, core=True, missing=False, mirror=False, bad_url=False, bad_digest=False):
         with tempfile.TemporaryDirectory() as work:
             work = Path(work)
-            manifest = {'schema': 1, 'name': 'sing-box-forkop' if core else 'forkop',
-                        'version': '1.14.4-r6', 'tag': '2.0.0', 'requires': {'forkop': '2.0.0'}}
+            manifest = {'schema': 1, 'name': 'loki-core' if core else 'loki',
+                        'version': '1.14.4-r6', 'tag': '2.0.0', 'requires': {'loki': '2.0.0'}}
             (work / 'manifest.json').write_text(json.dumps(manifest))
             digest = hashlib.sha256((work / 'manifest.json').read_bytes()).hexdigest()
             (work / 'sums').write_text(('0' * 64 if bad_digest else digest) + '  core-release.json\n')
@@ -183,7 +183,7 @@ if value is not None:
     print(value)
 ''')
             jsonfilter.chmod(0o755)
-            repos = '\n'.join(re.findall(r'^(?:FORKOP_REPO|CORE_REPO)=.*$', INSTALLER, re.M))
+            repos = '\n'.join(re.findall(r'^(?:LOKI_REPO|CORE_REPO)=.*$', INSTALLER, re.M))
             functions = '\n'.join(shell_function(name) for name in (
                 'release_url', 'valid_mirror', 'valid_asset_url', 'asset_url', 'valid_release_version',
                 'checksum_of', 'verify_named', 'fetch_or_fail', 'read_manifest', 'fetch_release'))
@@ -206,7 +206,7 @@ download() {
     esac
 }
 fetch_release core
-printf '%s %s %s\n' "$C_VERSION" "$C_TAG" "$C_FORKOP_MIN"
+printf '%s %s %s\n' "$C_VERSION" "$C_TAG" "$C_LOKI_MIN"
 '''
             result = subprocess.run(['busybox', 'ash', '-c', script],
                 env=dict(os.environ, WORK=str(work), USE_MIRROR='yes' if mirror else 'no',

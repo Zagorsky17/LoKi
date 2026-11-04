@@ -21,7 +21,7 @@ t.test("the verified 10s DNS default is omitted without changing resolvers or th
         t.eq(q.dns_server_tag(config, "bootstrap-dns-server").server, "127.0.0.1");
         t.eq(config.dns.final, "dns-server");
         t.eq(config.experimental.cache_file.store_fakeip, true);
-        t.eq(uci.cursor().get("forkop", "settings", "dns_timeout"), settings.dns_timeout);
+        t.eq(uci.cursor().get("loki", "settings", "dns_timeout"), settings.dns_timeout);
     }
 });
 
@@ -33,7 +33,7 @@ t.test("every nondefault spelling is preserved and a later build cannot lose its
         t.eq(first.dns.timeout, duration);
         t.eq(defaults.dns.timeout, null);
         t.eq(again.dns.timeout, duration);
-        t.eq(uci.cursor().get("forkop", "settings", "dns_timeout"), duration);
+        t.eq(uci.cursor().get("loki", "settings", "dns_timeout"), duration);
     }
 });
 

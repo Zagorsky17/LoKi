@@ -6,7 +6,7 @@ let repo = require("repo");
 let uci = require("uci");
 
 function future(step) {
-    let source = fs.readfile(repo.path("forkop/files/usr/lib/config/migration.uc"));
+    let source = fs.readfile(repo.path("loki/files/usr/lib/config/migration.uc"));
     source = replace(source, "const TARGET_CONFIG_VERSION", 'push(RELEASES, { version: "2.2.0", types: RELEASES[0].types, steps: [ ' + step + ' ] });\nconst TARGET_CONFIG_VERSION');
     return loadstring(source)();
 }
@@ -20,11 +20,11 @@ function model() {
 
 function runtime(migration, extra) {
     let dir = stub.tmpdir();
-    migration.paths.config = dir + "/forkop";
+    migration.paths.config = dir + "/loki";
     migration.paths.internal_change = dir + "/internal-change";
     fs.writefile(migration.paths.config, "original synthetic-secret");
     uci.__reset();
-    uci.__seed("forkop", model().sections);
+    uci.__seed("loki", model().sections);
     let logs = [];
     stub.commands([ ...(extra ?? []), stub.logger(logs), [ /md5sum/, { stdout: "0123456789abcdef0123456789abcdef  -\n" } ] ]);
     return { dir, logs };
@@ -41,7 +41,7 @@ t.test("future own steps run on a copy, advance the version and reject unknown i
     t.eq(original.sections[1].label, "Original");
     original.sections[0].config_version = "2.1.0";
     t.eq(migration.decide(original).reason, "unknown");
-    original.sections[0].config_format = "forkop";
+    original.sections[0].config_format = "loki";
     t.eq(migration.migrate(original, "2.1.0").model, null);
 });
 
@@ -51,15 +51,15 @@ t.test("a future runtime migration keeps a private backup and stamps only its ow
     let run = stub.capture(() => migration.main([ "migrate" ]));
     stub.restore();
     t.eq(run.result, 0, run.stderr);
-    t.eq(uci.__commits(), [ "forkop" ]);
-    let backups = filter(fs.lsdir(setup.dir), (name) => match(name, /^forkop\./));
+    t.eq(uci.__commits(), [ "loki" ]);
+    let backups = filter(fs.lsdir(setup.dir), (name) => match(name, /^loki\./));
     t.eq(length(backups), 1);
     t.eq(fs.readfile(setup.dir + "/" + backups[0]), "original synthetic-secret");
     t.eq(fs.stat(setup.dir + "/" + backups[0]).mode & 0777, 0600);
     t.ok(fs.stat(migration.paths.internal_change) != null);
     t.excludes(run.stderr, "synthetic-secret");
-    t.eq(uci.__sections("forkop")[0].config_version, "2.2.0");
-    t.eq(uci.__sections("forkop")[1].label, "Updated");
+    t.eq(uci.__sections("loki")[0].config_version, "2.2.0");
+    t.eq(uci.__sections("loki")[1].label, "Updated");
     stub.commands([]);
     t.eq(migration.start(), true, "a second start is a no-op");
     t.eq(stub.command_lines(), []);
@@ -78,7 +78,7 @@ t.test("failed or malformed future steps preserve the source and never commit", 
         t.eq(fs.readfile(migration.paths.config), "original synthetic-secret");
         t.eq(fs.stat(migration.paths.internal_change), null);
         t.excludes(run.stderr, "synthetic-secret");
-        t.eq(fs.lsdir(setup.dir), [ "forkop" ]);
+        t.eq(fs.lsdir(setup.dir), [ "loki" ]);
     }
 });
 
@@ -112,7 +112,7 @@ t.test("backup and UCI commit failures stop a future migration", () => {
         stub.restore();
         t.eq(run.result, 1);
         t.eq(uci.__commits(), []);
-        t.eq(uci.__sections("forkop")[1].label, "Original");
+        t.eq(uci.__sections("loki")[1].label, "Original");
         t.eq(fs.readfile(migration.paths.config), "original synthetic-secret");
         t.eq(fs.stat(migration.paths.internal_change), null);
         for (let name in fs.lsdir(setup.dir))
@@ -126,8 +126,8 @@ t.test("a future step that only advances its schema keeps no redundant copy", ()
     let run = stub.capture(() => migration.main([ "migrate" ]));
     stub.restore();
     t.eq(run.result, 0, run.stderr);
-    t.eq(filter(fs.lsdir(setup.dir), (name) => match(name, /^forkop\./)), []);
-    t.eq(uci.__sections("forkop")[0].config_version, "2.2.0");
+    t.eq(filter(fs.lsdir(setup.dir), (name) => match(name, /^loki\./)), []);
+    t.eq(uci.__sections("loki")[0].config_version, "2.2.0");
 });
 
 t.done();

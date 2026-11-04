@@ -104,7 +104,7 @@ t.test("unknown fields, executable/env injection, malformed SID and input limits
 
 t.test("a trusted worker gets fixed argv and a clean environment, with private output even under umask zero", () => {
     let rpc = fresh();
-    stub.env({ LD_PRELOAD: "/tmp/untrusted", PATH: "/tmp/attacker", FORKOP_LIB: "/tmp/attacker" });
+    stub.env({ LD_PRELOAD: "/tmp/untrusted", PATH: "/tmp/attacker", LOKI_LIB: "/tmp/attacker" });
     let value = request([ "report", "masked", '{"message":"$(touch should-not-run); quoted"}' ]);
     t.eq(start(rpc, value, "rpc_read"), null);
     stub.restore();
@@ -113,10 +113,10 @@ t.test("a trusted worker gets fixed argv and a clean environment, with private o
     t.eq(child.executable, "/usr/bin/setsid");
     t.eq(child.env.LD_PRELOAD, null);
     t.eq(child.env.PATH, "/usr/sbin:/usr/bin:/sbin:/bin");
-    t.eq(child.env.FORKOP_RPC_SESSION, SID);
-    t.eq(child.env.FORKOP_RPC_ACCESS, null);
-    t.eq(child.env.FORKOP_LIB, require("core.library").dir());
-    t.eq(slice(child.args, 5), [ "/usr/bin/forkop", "rpc_dispatch", "rpc_read", ...value.args.argv ]);
+    t.eq(child.env.LOKI_RPC_SESSION, SID);
+    t.eq(child.env.LOKI_RPC_ACCESS, null);
+    t.eq(child.env.LOKI_LIB, require("core.library").dir());
+    t.eq(slice(child.args, 5), [ "/usr/bin/loki", "rpc_dispatch", "rpc_read", ...value.args.argv ]);
     t.eq(fs.stat(job_path()).mode & 0777, 0700);
     complete(0, "masked output", "", "0");
     t.eq(value.replied, { code: 0, stdout: "masked output", stderr: "" });
@@ -212,12 +212,12 @@ t.test("the child validates the current session and exact ACL method before disp
     let real = cli.dispatch;
     let dispatched = [];
     cli.dispatch = (argv, lib) => { push(dispatched, { argv, lib }); return 0; };
-    stub.env({ FORKOP_RPC_SESSION: SID });
+    stub.env({ LOKI_RPC_SESSION: SID });
     let granted = true;
     ubus.__on("session.access", (args) => ({ access: granted && args.function == "rpc_read" }));
     t.eq(rpc.run([ "show_version" ], "/trusted", "rpc_read"), 0);
     t.eq(ubus.__calls()[0], { object: "session", method: "access", args: {
-        ubus_rpc_session: SID, scope: "ubus", object: "forkop", function: "rpc_read"
+        ubus_rpc_session: SID, scope: "ubus", object: "loki", function: "rpc_read"
     } });
     granted = false;
     t.eq(stub.capture(() => rpc.run([ "show_version" ], "/trusted", "rpc_read")).result, 1);

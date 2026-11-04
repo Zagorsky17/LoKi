@@ -40,9 +40,9 @@ from pathlib import Path
 import sys
 output, tag, version = sys.argv[1:]
 manifest = {
-    'schema': 1, 'name': 'sing-box-forkop', 'version': version, 'tag': tag,
+    'schema': 1, 'name': 'loki-core', 'version': version, 'tag': tag,
     'page': f'https://github.com/Zagorsky17/LoKi/releases/tag/{tag}',
-    'requires': {'forkop': tag},
+    'requires': {'loki': tag},
 }
 (Path(output) / 'core-release.json').write_text(json.dumps(manifest, indent=2) + '\n')
 PY

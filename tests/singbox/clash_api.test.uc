@@ -44,7 +44,7 @@ function received() {
     return result;
 }
 
-t.test("an allowlisted request reaches the controller as asked, with the secret sing-box runs with", () => {
+t.test("an allowlisted request reaches the controller as asked, with the secret loki-core runs with", () => {
     config(controller.endpoint);
     controller.reply({ status: 200, body: "{\"url\":\"vless://id@example.com:443\"}" });
     received();
@@ -187,7 +187,7 @@ t.test("read deadlines are short while probes through an outbound and updates re
 t.test("the transport loads nothing beyond core, the constants and socket", () => {
     let probe = stub.tmpdir() + "/probe.uc";
     fs.writefile(probe, "require(\"singbox.clash_api\");\nprint(join(\" \", keys(global.modules)), \"\\n\");\n");
-    let pipe = fs.popen("ucode -L '" + repo.path("forkop/files/usr/lib") + "' '" + probe + "'", "r");
+    let pipe = fs.popen("ucode -L '" + repo.path("loki/files/usr/lib") + "' '" + probe + "'", "r");
     let loaded = split(trim(pipe.read("all")), " ");
     pipe.close();
     t.contains(loaded, "singbox.clash_api");

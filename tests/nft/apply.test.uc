@@ -26,24 +26,24 @@ function before(lines, first, second, label) {
     t.ok(a >= 0 && b >= 0 && a < b, label + ": " + first + " before " + second);
 }
 
-const T = "add rule inet ForkopTable ";
+const T = "add rule inet loki ";
 
 t.test("the base table captures the source interfaces, FakeIP and the TProxy inbounds", () => {
     let lines = script_lines({ settings: { source_network_interfaces: "br-lan tun0" } });
-    t.eq(lines[0], "add table inet ForkopTable");
-    has(lines, "add set inet ForkopTable localv4 { type ipv4_addr; flags interval; auto-merge; }");
-    has(lines, "add set inet ForkopTable localv6 { type ipv6_addr; flags interval; auto-merge; }");
-    t.ok(length(filter(lines, (l) => index(l, "add element inet ForkopTable localv4 { 0.0.0.0/8,10.0.0.0/8,127.0.0.0/8") == 0)) == 1);
-    has(lines, "add set inet ForkopTable forkop_interfaces { type ifname; flags interval; }");
-    has(lines, "add element inet ForkopTable forkop_interfaces { br-lan }");
-    has(lines, "add element inet ForkopTable forkop_interfaces { tun0 }");
-    has(lines, "add chain inet ForkopTable mangle { type filter hook prerouting priority -149; policy accept; }", "mangle runs after the Tailscale connmark restore");
+    t.eq(lines[0], "add table inet loki");
+    has(lines, "add set inet loki localv4 { type ipv4_addr; flags interval; auto-merge; }");
+    has(lines, "add set inet loki localv6 { type ipv6_addr; flags interval; auto-merge; }");
+    t.ok(length(filter(lines, (l) => index(l, "add element inet loki localv4 { 0.0.0.0/8,10.0.0.0/8,127.0.0.0/8") == 0)) == 1);
+    has(lines, "add set inet loki loki_interfaces { type ifname; flags interval; }");
+    has(lines, "add element inet loki loki_interfaces { br-lan }");
+    has(lines, "add element inet loki loki_interfaces { tun0 }");
+    has(lines, "add chain inet loki mangle { type filter hook prerouting priority -149; policy accept; }", "mangle runs after the Tailscale connmark restore");
     has(lines, T + "priority_output_rules meta mark != 0 return", "a provider mark is preserved");
-    has(lines, "add chain inet ForkopTable dns_redirect { type nat hook prerouting priority -101; policy accept; }");
-    has(lines, T + "dns_redirect iifname @forkop_interfaces udp dport 53 counter redirect to :1603");
-    has(lines, T + "dns_redirect iifname @forkop_interfaces tcp dport 53 counter redirect to :1603");
-    has(lines, T + "mangle iifname @forkop_interfaces ip6 daddr @localv6 ip6 daddr != fc00::/112 return", "local IPv6 keeps FakeIP6 captured");
-    before(lines, T + "mangle iifname @forkop_interfaces meta l4proto { tcp, udp } th dport 53 return", T + "mangle jump priority_rules",
+    has(lines, "add chain inet loki dns_redirect { type nat hook prerouting priority -101; policy accept; }");
+    has(lines, T + "dns_redirect iifname @loki_interfaces udp dport 53 counter redirect to :1603");
+    has(lines, T + "dns_redirect iifname @loki_interfaces tcp dport 53 counter redirect to :1603");
+    has(lines, T + "mangle iifname @loki_interfaces ip6 daddr @localv6 ip6 daddr != fc00::/112 return", "local IPv6 keeps FakeIP6 captured");
+    before(lines, T + "mangle iifname @loki_interfaces meta l4proto { tcp, udp } th dport 53 return", T + "mangle jump priority_rules",
         "client DNS is left to the capture");
     has(lines, T + "mangle jump priority_rules");
     has(lines, T + "proxy meta mark & 0x04000000 == 0x04000000 meta l4proto tcp tproxy ip to :1602 counter");
@@ -51,33 +51,33 @@ t.test("the base table captures the source interfaces, FakeIP and the TProxy inb
     before(lines, T + "proxy iifname lo meta mark & 0x10000000 == 0x10000000 meta l4proto tcp tproxy ip to :1604 counter accept",
         T + "proxy meta mark & 0x04000000 == 0x04000000 meta l4proto tcp tproxy ip to :1602 counter", "System TProxy classification");
     has(lines, T + "proxy iifname lo meta mark & 0x10000000 == 0x10000000 meta l4proto tcp tproxy ip6 to [::1]:1604 counter accept");
-    has(lines, T + "mangle_output meta mark & 0x08000000 == 0x08000000 counter return", "sing-box's own traffic, whatever bits mwan3 adds");
+    has(lines, T + "mangle_output meta mark & 0x08000000 == 0x08000000 counter return", "loki-core's own traffic, whatever bits mwan3 adds");
     before(lines, T + "mangle_output meta l4proto { tcp, udp } th dport 53 return", T + "mangle_output jump priority_output_rules",
         "the resolver reaches its upstream directly");
     has(lines, T + "mangle_output jump priority_output_rules");
-    has(lines, "add chain inet ForkopTable system_dns_redirect { type nat hook output priority -100; policy accept; }",
+    has(lines, "add chain inet loki system_dns_redirect { type nat hook output priority -100; policy accept; }",
         "the router's own lookups are captured whatever the sections say");
     for (let address in [ "ip daddr 127.0.0.1", "ip6 daddr ::1" ])
         for (let proto in [ "tcp", "udp" ])
             before(lines, T + "system_dns_redirect meta mark != 0 return",
-                T + "system_dns_redirect " + address + " " + proto + " dport 53 counter redirect to :1605", "sing-box asking the resolver itself passes");
+                T + "system_dns_redirect " + address + " " + proto + " dport 53 counter redirect to :1605", "loki-core asking the resolver itself passes");
     lacks(lines, "system_dns_redirect udp dport 53", "the resolver's upstream queries are not taken back");
     for (let pair in [ [ "ip", "198.18.0.0/16" ], [ "ip6", "fc00::/112" ] ])
         for (let proto in [ "tcp", "udp" ])
             has(lines, T + "mangle_output " + pair[0] + " daddr " + pair[1] + " meta l4proto " + proto + " meta mark set 0x10000000 counter",
                 "the router's own FakeIP traffic");
-    for (let absent in [ "forkop_subnets", "forkop_ports", "forkop_ip_ports", "forkop_dns_sources", "forkop_excluded" ])
+    for (let absent in [ "loki_subnets", "loki_ports", "loki_ip_ports", "loki_dns_sources", "loki_excluded" ])
         lacks(lines, absent);
 });
 
-t.test("a flow handed to sing-box stays captured whatever the sets hold, and a pause holds back what goes to it", () => {
+t.test("a flow handed to loki-core stays captured whatever the sets hold, and a pause holds back what goes to it", () => {
     let lines = script_lines({ settings: { routing_excluded_ips: "192.168.1.50 @system" } });
     let held = (mark) => "ct direction original ct mark & " + mark + " == " + mark + " meta mark set " + mark + " counter accept";
     for (let pair in [ [ "mangle", "0x04000000" ], [ "mangle_output", "0x10000000" ] ]) {
         let first = filter(lines, (line) => index(line, T + pair[0] + " ") == 0)[0];
         t.eq(first, T + pair[0] + " " + held(pair[1]), pair[0] + ": a held flow is not matched against the sets or the exclusions");
     }
-    has(lines, "add chain inet ForkopTable capture_pause { }");
+    has(lines, "add chain inet loki capture_pause { }");
     for (let chain in [ "proxy", "dns_redirect", "system_dns_redirect" ]) {
         let first = filter(lines, (line) => index(line, T + chain + " ") == 0)[0];
         t.eq(first, T + chain + " jump capture_pause", chain + " asks the pause first");
@@ -87,22 +87,22 @@ t.test("a flow handed to sing-box stays captured whatever the sets hold, and a p
             T + "proxy iifname lo meta mark & 0x10000000 == 0x10000000 meta l4proto tcp tproxy ip to :1604 counter accept",
             "the flow is marked before any TProxy rule accepts its packet");
 
-    t.eq(nft.capture_command(true), [ "nft", "flush chain inet ForkopTable capture_pause" ]);
-    t.eq(nft.capture_command(false), [ "nft", "flush chain inet ForkopTable capture_pause; " +
-        "add rule inet ForkopTable capture_pause meta mark & 0x04000000 == 0x04000000 counter drop; " +
-        "add rule inet ForkopTable capture_pause meta mark & 0x10000000 == 0x10000000 counter drop; " +
-        "add rule inet ForkopTable capture_pause counter accept" ], "paused: traffic for sing-box waits, lookups go to their resolver");
+    t.eq(nft.capture_command(true), [ "nft", "flush chain inet loki capture_pause" ]);
+    t.eq(nft.capture_command(false), [ "nft", "flush chain inet loki capture_pause; " +
+        "add rule inet loki capture_pause meta mark & 0x04000000 == 0x04000000 counter drop; " +
+        "add rule inet loki capture_pause meta mark & 0x10000000 == 0x10000000 counter drop; " +
+        "add rule inet loki capture_pause counter accept" ], "paused: traffic for loki-core waits, lookups go to their resolver");
 });
 
 t.test("excluded devices leave every capture before anything matches them", () => {
     let lines = script_lines({ settings: { routing_excluded_ips: "192.168.1.50 2001:db8::5/128" } });
-    has(lines, "add set inet ForkopTable forkop_excluded { type ipv4_addr; flags interval; auto-merge; }");
-    has(lines, "add element inet ForkopTable forkop_excluded { 192.168.1.50 }");
-    has(lines, "add element inet ForkopTable forkop_excluded6 { 2001:db8::5/128 }");
-    before(lines, T + "dns_redirect ip saddr @forkop_excluded counter return", T + "dns_redirect iifname @forkop_interfaces tcp dport 53 counter redirect to :1603",
+    has(lines, "add set inet loki loki_excluded { type ipv4_addr; flags interval; auto-merge; }");
+    has(lines, "add element inet loki loki_excluded { 192.168.1.50 }");
+    has(lines, "add element inet loki loki_excluded6 { 2001:db8::5/128 }");
+    before(lines, T + "dns_redirect ip saddr @loki_excluded counter return", T + "dns_redirect iifname @loki_interfaces tcp dport 53 counter redirect to :1603",
         "the DNS exclusion");
-    before(lines, T + "mangle ip saddr @forkop_excluded counter return", T + "mangle jump priority_rules", "the capture exclusion");
-    has(lines, T + "mangle ip6 saddr @forkop_excluded6 counter return");
+    before(lines, T + "mangle ip saddr @loki_excluded counter return", T + "mangle jump priority_rules", "the capture exclusion");
+    has(lines, T + "mangle ip6 saddr @loki_excluded6 counter return");
     lacks(lines, T + "mangle_output counter return", "the router is not excluded with them");
 });
 
@@ -110,7 +110,7 @@ t.test("the excluded System device keeps the router's own traffic and lookups ou
     let result = built({ settings: { routing_excluded_ips: "@system 192.168.1.50" } });
     let lines = split(result.script, "\n");
     t.eq(result.skipped, [], "the System device is not an address to skip");
-    has(lines, "add element inet ForkopTable forkop_excluded { 192.168.1.50 }");
+    has(lines, "add element inet loki loki_excluded { 192.168.1.50 }");
     before(lines, T + "mangle_output counter return", T + "mangle_output ip daddr @localv4 return", "the router's traffic");
     before(lines, T + "system_dns_redirect counter return", T + "system_dns_redirect meta mark != 0 return", "the router's lookups");
     lacks(lines, T + "mangle counter return", "clients stay captured");
@@ -133,44 +133,44 @@ t.test("an answer to a connection the other side opened never reaches the sectio
     let lines = script_lines({ settings: {}, section: priority_sections() });
     before(lines, T + "mangle ct direction reply return", T + "mangle jump priority_rules", "a device answering from behind the router");
     before(lines, T + "mangle_output ct direction reply return", T + "mangle_output jump priority_output_rules",
-        "a server on the router and sing-box answering a client it captured");
+        "a server on the router and loki-core answering a client it captured");
 });
 
 t.test("section rules keep configuration order and reach only the traffic their devices send", () => {
     let lines = script_lines({ settings: {}, section: priority_sections() });
     let local = "ip daddr != @localv4 ";
-    has(lines, "add set inet ForkopTable forkop_rule_bypass_first_subnets { type ipv4_addr; flags interval; auto-merge; }");
-    has(lines, T + "priority_rules iifname @forkop_interfaces ip saddr @forkop_rule_bypass_first_fully_sources " + local + "ip daddr != 198.18.0.0/16 counter accept",
+    has(lines, "add set inet loki loki_rule_bypass_first_subnets { type ipv4_addr; flags interval; auto-merge; }");
+    has(lines, T + "priority_rules iifname @loki_interfaces ip saddr @loki_rule_bypass_first_fully_sources " + local + "ip daddr != 198.18.0.0/16 counter accept",
         "a fully routed bypass takes real addresses");
-    has(lines, T + "priority_rules iifname @forkop_interfaces ip6 saddr @forkop_rule_bypass_first_fully_sources6 ip6 daddr != @localv6 ip6 daddr != fc00::/112 counter accept");
-    has(lines, T + "priority_rules iifname @forkop_interfaces ip saddr @forkop_rule_wide_proxy_fully_sources " + local + "meta l4proto tcp meta mark set 0x04000000 counter accept");
+    has(lines, T + "priority_rules iifname @loki_interfaces ip6 saddr @loki_rule_bypass_first_fully_sources6 ip6 daddr != @localv6 ip6 daddr != fc00::/112 counter accept");
+    has(lines, T + "priority_rules iifname @loki_interfaces ip saddr @loki_rule_wide_proxy_fully_sources " + local + "meta l4proto tcp meta mark set 0x04000000 counter accept");
     has(lines, T + "priority_output_rules " + local + "ip daddr != 198.18.0.0/16 counter accept", "the System device fully routed around the proxy");
     has(lines, T + "priority_output_rules " + local + "meta l4proto tcp meta mark set 0x10000000 counter accept", "the System device fully routed through it");
-    has(lines, T + "priority_output_rules " + local + "ip daddr @forkop_rule_system_filter_subnets meta mark set 0x10000000 counter accept");
-    has(lines, T + "priority_rules iifname @forkop_interfaces ip saddr @forkop_rule_client_filter_sources " + local + "ip daddr @forkop_rule_client_filter_subnets meta mark set 0x04000000 counter accept");
+    has(lines, T + "priority_output_rules " + local + "ip daddr @loki_rule_system_filter_subnets meta mark set 0x10000000 counter accept");
+    has(lines, T + "priority_rules iifname @loki_interfaces ip saddr @loki_rule_client_filter_sources " + local + "ip daddr @loki_rule_client_filter_subnets meta mark set 0x04000000 counter accept");
     t.eq(filter(lines, (l) => index(l, "priority_rules iifname") >= 0 && index(l, "system_filter") >= 0), [], "a System-only filter on forwarded traffic");
     t.eq(filter(lines, (l) => index(l, "priority_output_rules") >= 0 && index(l, "client_filter") >= 0), [], "a client filter on the router's traffic");
     lacks(lines, "@system", "the System sentinel is not an address");
-    has(lines, T + "priority_rules iifname @forkop_interfaces " + local + "ip daddr != 198.18.0.0/16 tcp dport @forkop_rule_port_bypass_ports counter accept");
-    before(lines, T + "priority_rules iifname @forkop_interfaces " + local + "ip daddr != 198.18.0.0/16 ip daddr @forkop_rule_bypass_first_subnets counter accept",
-        T + "priority_rules iifname @forkop_interfaces " + local + "ip daddr @forkop_rule_wide_proxy_subnets meta mark set 0x04000000 counter accept", "bypass order");
+    has(lines, T + "priority_rules iifname @loki_interfaces " + local + "ip daddr != 198.18.0.0/16 tcp dport @loki_rule_port_bypass_ports counter accept");
+    before(lines, T + "priority_rules iifname @loki_interfaces " + local + "ip daddr != 198.18.0.0/16 ip daddr @loki_rule_bypass_first_subnets counter accept",
+        T + "priority_rules iifname @loki_interfaces " + local + "ip daddr @loki_rule_wide_proxy_subnets meta mark set 0x04000000 counter accept", "bypass order");
 
-    has(lines, "add set inet ForkopTable forkop_rule_builtin_subnets_ip_ports { type ipv4_addr . inet_service; flags interval; auto-merge; }",
+    has(lines, "add set inet loki loki_rule_builtin_subnets_ip_ports { type ipv4_addr . inet_service; flags interval; auto-merge; }",
         "a built-in list's port-scoped addresses have a set a rule reads");
-    has(lines, T + "priority_rules iifname @forkop_interfaces " + local + "ip daddr . udp dport @forkop_rule_builtin_subnets_ip_ports meta mark set 0x04000000 counter accept");
-    has(lines, "add set inet ForkopTable forkop_rule_builtin_subnets_proto6_ports { type ipv6_addr . inet_proto . inet_service; flags interval; auto-merge; }");
-    t.eq(length(filter(lines, (l) => index(l, "th dport @forkop_rule_builtin_subnets_proto_ports") >= 0)), 2, "one rule per chain covers both transports");
-    has(lines, T + "priority_rules iifname @forkop_interfaces " + local + "ip daddr @forkop_rule_ip_and_ports_subnets tcp dport @forkop_rule_ip_and_ports_ports meta mark set 0x04000000 counter accept",
+    has(lines, T + "priority_rules iifname @loki_interfaces " + local + "ip daddr . udp dport @loki_rule_builtin_subnets_ip_ports meta mark set 0x04000000 counter accept");
+    has(lines, "add set inet loki loki_rule_builtin_subnets_proto6_ports { type ipv6_addr . inet_proto . inet_service; flags interval; auto-merge; }");
+    t.eq(length(filter(lines, (l) => index(l, "th dport @loki_rule_builtin_subnets_proto_ports") >= 0)), 2, "one rule per chain covers both transports");
+    has(lines, T + "priority_rules iifname @loki_interfaces " + local + "ip daddr @loki_rule_ip_and_ports_subnets tcp dport @loki_rule_ip_and_ports_ports meta mark set 0x04000000 counter accept",
         "an address with a port is matched against both plain sets");
-    has(lines, T + "priority_output_rules ip6 daddr != @localv6 ip6 daddr @forkop_rule_ip_and_ports_subnets6 udp dport @forkop_rule_ip_and_ports_ports meta mark set 0x10000000 counter accept");
-    lacks(lines, "ip daddr @forkop_rule_ip_and_ports_subnets meta mark", "an address with a port is never matched without it");
-    lacks(lines, T + "priority_rules iifname @forkop_interfaces " + local + "tcp dport @forkop_rule_ip_and_ports_ports", "a port next to an address on its own");
+    has(lines, T + "priority_output_rules ip6 daddr != @localv6 ip6 daddr @loki_rule_ip_and_ports_subnets6 udp dport @loki_rule_ip_and_ports_ports meta mark set 0x10000000 counter accept");
+    lacks(lines, "ip daddr @loki_rule_ip_and_ports_subnets meta mark", "an address with a port is never matched without it");
+    lacks(lines, T + "priority_rules iifname @loki_interfaces " + local + "tcp dport @loki_rule_ip_and_ports_ports", "a port next to an address on its own");
 
-    for (let absent in [ "forkop_rule_port_bypass_subnets", "forkop_rule_port_bypass_sources", "forkop_rule_bypass_first_ports",
-        "forkop_rule_bypass_first_sources", "forkop_rule_client_filter_fully_sources", "forkop_rule_system_filter_sources",
-        "forkop_rule_ip_and_ports_ip_ports", "forkop_rule_ip_and_ports_proto_ports",
-        "forkop_rule_bypass_first_proto_ports", "forkop_rule_builtin_subnets_ports" ])
-        lacks(lines, "add set inet ForkopTable " + absent + " ", "no rule reads " + absent);
+    for (let absent in [ "loki_rule_port_bypass_subnets", "loki_rule_port_bypass_sources", "loki_rule_bypass_first_ports",
+        "loki_rule_bypass_first_sources", "loki_rule_client_filter_fully_sources", "loki_rule_system_filter_sources",
+        "loki_rule_ip_and_ports_ip_ports", "loki_rule_ip_and_ports_proto_ports",
+        "loki_rule_bypass_first_proto_ports", "loki_rule_builtin_subnets_ports" ])
+        lacks(lines, "add set inet loki " + absent + " ", "no rule reads " + absent);
 });
 
 t.test("the sets are filled in the same transaction from what the configuration lists", () => {
@@ -184,20 +184,20 @@ t.test("the sets are filled in the same transaction from what the configuration 
         { ".name": "dns_only", action: "dns", destinations: "dns-only.example\n192.0.2.53", fully_routed_ips: [ "192.168.1.53/32" ] },
         { ".name": "vpn", action: "connection", fully_routed_ips: [ "@system" ] }
     ] });
-    has(lines, "add element inet ForkopTable forkop_rule_inline_subnets { 198.51.100.1,203.0.113.0/24 }", "addresses and ports are not multiplied");
-    has(lines, "add element inet ForkopTable forkop_rule_inline_subnets6 { 2001:db8::1 }");
-    has(lines, "add element inet ForkopTable forkop_rule_inline_ports { 80,443-444 }");
-    lacks(lines, "forkop_rule_inline_ip_ports", "only a provider limits addresses to ports of its own");
-    has(lines, "add element inet ForkopTable forkop_rule_inline_no_ports_subnets { 198.51.100.200 }");
-    has(lines, "add element inet ForkopTable forkop_rule_inline_no_ports_subnets6 { 2001:db8::200 }");
-    has(lines, "add element inet ForkopTable forkop_rule_ports_only_ports { 53,853,5353 }");
-    has(lines, "add element inet ForkopTable forkop_rule_inline_fully_sources { 192.168.1.20/32 }");
-    has(lines, "add element inet ForkopTable forkop_rule_inline_fully_sources6 { 2001:db8::20/128 }");
-    has(lines, "add element inet ForkopTable forkop_rule_inline_sources { 192.168.1.60/32 }");
-    before(lines, "add set inet ForkopTable forkop_rule_inline_subnets { type ipv4_addr; flags interval; auto-merge; }",
-        "add element inet ForkopTable forkop_rule_inline_subnets { 198.51.100.1,203.0.113.0/24 }", "a set exists before it is filled");
+    has(lines, "add element inet loki loki_rule_inline_subnets { 198.51.100.1,203.0.113.0/24 }", "addresses and ports are not multiplied");
+    has(lines, "add element inet loki loki_rule_inline_subnets6 { 2001:db8::1 }");
+    has(lines, "add element inet loki loki_rule_inline_ports { 80,443-444 }");
+    lacks(lines, "loki_rule_inline_ip_ports", "only a provider limits addresses to ports of its own");
+    has(lines, "add element inet loki loki_rule_inline_no_ports_subnets { 198.51.100.200 }");
+    has(lines, "add element inet loki loki_rule_inline_no_ports_subnets6 { 2001:db8::200 }");
+    has(lines, "add element inet loki loki_rule_ports_only_ports { 53,853,5353 }");
+    has(lines, "add element inet loki loki_rule_inline_fully_sources { 192.168.1.20/32 }");
+    has(lines, "add element inet loki loki_rule_inline_fully_sources6 { 2001:db8::20/128 }");
+    has(lines, "add element inet loki loki_rule_inline_sources { 192.168.1.60/32 }");
+    before(lines, "add set inet loki loki_rule_inline_subnets { type ipv4_addr; flags interval; auto-merge; }",
+        "add element inet loki loki_rule_inline_subnets { 198.51.100.1,203.0.113.0/24 }", "a set exists before it is filled");
     lacks(lines, "192.0.2.1", "a disabled section");
-    lacks(lines, "forkop_rule_ports_with_domain_ports", "a port next to a domain is sing-box's to match");
+    lacks(lines, "loki_rule_ports_with_domain_ports", "a port next to a domain is loki-core's to match");
     lacks(lines, "192.0.2.53", "a DNS section's addresses");
     lacks(lines, "@system");
 });
@@ -231,7 +231,7 @@ t.test("the script is the same for the same configuration and moves with anythin
 t.test("a value nft cannot take is left out and reported when the table is applied", () => {
     let result = built({ settings: { routing_excluded_ips: "192.168.1.50 phone" } });
     t.eq(result.skipped, [ "Exclude devices from routing: 'phone' is not an IP address or subnet and is ignored" ]);
-    t.contains(split(result.script, "\n"), "add element inet ForkopTable forkop_excluded { 192.168.1.50 }");
+    t.contains(split(result.script, "\n"), "add element inet loki loki_excluded { 192.168.1.50 }");
 });
 
 function routing(ip_state) {
@@ -241,13 +241,13 @@ function routing(ip_state) {
     let logs = [];
     let handlers = [
         stub.logger(logs),
-        [ "/sbin/ip route list table forkop", { stdout: ip_state?.route4 ?? "" } ],
-        [ "/sbin/ip -6 route list table forkop", { stdout: ip_state?.route6 ?? "" } ],
-        [ "/sbin/ip -4 rule list table forkop", { stdout: ip_state?.rule4 ?? "" } ],
-        [ "/sbin/ip -6 rule list table forkop", { stdout: ip_state?.rule6 ?? "" } ],
+        [ "/sbin/ip route list table loki", { stdout: ip_state?.route4 ?? "" } ],
+        [ "/sbin/ip -6 route list table loki", { stdout: ip_state?.route6 ?? "" } ],
+        [ "/sbin/ip -4 rule list table loki", { stdout: ip_state?.rule4 ?? "" } ],
+        [ "/sbin/ip -6 rule list table loki", { stdout: ip_state?.rule6 ?? "" } ],
         [ "/sbin/ip -4 rule list priority 104", { stdout: ip_state?.rule104 ?? "" } ],
         [ /'\/sbin\/ip'.* 'add' /, {} ],
-        [ "nft -t list table inet ForkopTable", { status: 1 } ],
+        [ "nft -t list table inet loki", { status: 1 } ],
         [ /^'nft' '-f' '-'/, { status: ip_state?.nft_status ?? 0 } ]
     ];
     return { dir, logs, handlers };
@@ -260,24 +260,24 @@ t.test("applying the table sets up its routing once and hands nft the whole scri
     nft.apply(nft.build());
     let calls = stub.calls();
     stub.restore();
-    t.eq(fs.readfile(nft.paths.rt_tables), "105 forkop\n");
+    t.eq(fs.readfile(nft.paths.rt_tables), "105 loki\n");
     let commands = map(calls, (c) => join(" ", c.argv));
-    for (let line in [ "/sbin/ip route add local 0.0.0.0/0 dev lo table forkop", "/sbin/ip -6 route add local ::/0 dev lo table forkop",
-        "/sbin/ip -4 rule add fwmark 0x04000000/0x04000000 table forkop priority 105", "/sbin/ip -6 rule add fwmark 0x04000000/0x04000000 table forkop priority 105",
-        "/sbin/ip -4 rule add fwmark 0x10000000/0x10000000 table forkop priority 105", "/sbin/ip -6 rule add fwmark 0x10000000/0x10000000 table forkop priority 105",
+    for (let line in [ "/sbin/ip route add local 0.0.0.0/0 dev lo table loki", "/sbin/ip -6 route add local ::/0 dev lo table loki",
+        "/sbin/ip -4 rule add fwmark 0x04000000/0x04000000 table loki priority 105", "/sbin/ip -6 rule add fwmark 0x04000000/0x04000000 table loki priority 105",
+        "/sbin/ip -4 rule add fwmark 0x10000000/0x10000000 table loki priority 105", "/sbin/ip -6 rule add fwmark 0x10000000/0x10000000 table loki priority 105",
         "/sbin/ip -4 rule add iif lo fwmark 0x04000000/0x04000000 lookup main priority 104" ])
         t.contains(commands, line);
     t.eq(filter(commands, (line) => index(line, "-6 rule add iif lo") >= 0), [], "IPv6 checks no source by a lookup");
     let transactions = filter(calls, (c) => c.argv[0] == "nft" && c.argv[1] == "-f");
     t.eq(length(transactions), 1, "one transaction");
-    t.eq(split(transactions[0].stdin, "\n")[0], "add table inet ForkopTable");
+    t.eq(split(transactions[0].stdin, "\n")[0], "add table inet loki");
     t.eq(r.logs, [], "setting the routing up is a routine step and is not reported");
 
     let present = routing({ route4: "local default dev lo scope host", route6: "local default dev lo metric 1024 pref medium",
-        rule4: "105: from all fwmark 0x4000000/0x4000000 lookup forkop\n105: from all fwmark 0x10000000/0x10000000 lookup forkop",
+        rule4: "105: from all fwmark 0x4000000/0x4000000 lookup loki\n105: from all fwmark 0x10000000/0x10000000 lookup loki",
         rule6: "105: from all fwmark 0x4000000/0x4000000 lookup podkop\n105: from all fwmark 0x10000000/0x10000000 lookup podkop",
         rule104: "104:\tfrom all fwmark 0x4000000/0x4000000 iif lo lookup main" });
-    fs.writefile(nft.paths.rt_tables, "105 forkop\n");
+    fs.writefile(nft.paths.rt_tables, "105 loki\n");
     stub.commands(present.handlers);
     nft.apply(nft.build());
     commands = stub.command_lines();
@@ -295,16 +295,16 @@ t.test("a router with IPv6 off everywhere, or a kernel without IPv6, gets IPv4 r
         let calls = stub.calls();
         stub.restore();
         let commands = map(calls, (c) => join(" ", c.argv));
-        t.contains(commands, "/sbin/ip route add local 0.0.0.0/0 dev lo table forkop");
-        t.contains(commands, "/sbin/ip -4 rule add fwmark 0x04000000/0x04000000 table forkop priority 105");
-        t.contains(commands, "/sbin/ip -4 rule add fwmark 0x10000000/0x10000000 table forkop priority 105");
+        t.contains(commands, "/sbin/ip route add local 0.0.0.0/0 dev lo table loki");
+        t.contains(commands, "/sbin/ip -4 rule add fwmark 0x04000000/0x04000000 table loki priority 105");
+        t.contains(commands, "/sbin/ip -4 rule add fwmark 0x10000000/0x10000000 table loki priority 105");
         t.contains(commands, "/sbin/ip -4 rule add iif lo fwmark 0x04000000/0x04000000 lookup main priority 104");
         t.eq(filter(commands, (line) => index(line, " -6 ") >= 0), [], "nothing is asked of IPv6");
         t.eq(length(filter(calls, (c) => c.argv[0] == "nft" && c.argv[1] == "-f")), 1, "the table is applied");
     }
 });
 
-t.test("IPv6 left on some interfaces but off on lo is refused, since that traffic would bypass Forkop", () => {
+t.test("IPv6 left on some interfaces but off on lo is refused, since that traffic would bypass Loki", () => {
     fixture.seed({ settings: {} });
     let r = routing({ ipv6: { lo: "1", "br-lan": "0", wan: "0", "wan.30": "1" } });
     stub.commands(r.handlers);
@@ -389,34 +389,34 @@ t.test("a rebuilt table keeps what the rule-set worker wrote and defines everyth
     ] });
     let result = nft.build();
     let fed = [ "subnets", "subnets6", "ip_ports", "ip6_ports", "proto_ports", "proto6_ports" ];
-    t.eq(result.kept, map(fed, (suffix) => "forkop_rule_fed_" + suffix), "only a section a provider feeds has sets to keep");
-    t.eq(split(result.script, "\n")[0], "add table inet ForkopTable");
+    t.eq(result.kept, map(fed, (suffix) => "loki_rule_fed_" + suffix), "only a section a provider feeds has sets to keep");
+    t.eq(split(result.script, "\n")[0], "add table inet loki");
 
-    let live = "table inet ForkopTable {\n\tset localv4 {\n\t\ttype ipv4_addr\n\t}\n\tset forkop_rule_fed_subnets {\n\t\ttype ipv4_addr\n\t}\n" +
-        "\tset forkop_rule_fed_proto_ports {\n\t\ttype ipv4_addr . inet_proto . inet_service\n\t}\n\tset forkop_rule_own_subnets {\n\t}\n" +
-        "\tset forkop_rule_gone_subnets {\n\t}\n\tchain mangle {\n\t\ttype filter hook prerouting priority mangle + 1; policy accept;\n\t}\n" +
+    let live = "table inet loki {\n\tset localv4 {\n\t\ttype ipv4_addr\n\t}\n\tset loki_rule_fed_subnets {\n\t\ttype ipv4_addr\n\t}\n" +
+        "\tset loki_rule_fed_proto_ports {\n\t\ttype ipv4_addr . inet_proto . inet_service\n\t}\n\tset loki_rule_own_subnets {\n\t}\n" +
+        "\tset loki_rule_gone_subnets {\n\t}\n\tchain mangle {\n\t\ttype filter hook prerouting priority mangle + 1; policy accept;\n\t}\n" +
         "\tchain priority_rules {\n\t}\n}\n";
     let r = routing({ route4: "local default dev lo scope host", route6: "local default dev lo metric 1024 pref medium",
-        rule4: "105: from all fwmark 0x4000000/0x4000000 lookup forkop", rule6: "105: from all fwmark 0x4000000/0x4000000 lookup forkop" });
-    fs.writefile(nft.paths.rt_tables, "105 forkop\n");
-    stub.commands([ [ "nft -t list table inet ForkopTable", { stdout: live } ], ...r.handlers ]);
+        rule4: "105: from all fwmark 0x4000000/0x4000000 lookup loki", rule6: "105: from all fwmark 0x4000000/0x4000000 lookup loki" });
+    fs.writefile(nft.paths.rt_tables, "105 loki\n");
+    stub.commands([ [ "nft -t list table inet loki", { stdout: live } ], ...r.handlers ]);
     nft.apply(result);
     let fed_script = filter(stub.calls(), (c) => c.argv[1] == "-f")[0].stdin;
     stub.restore();
     let lines = split(fed_script, "\n");
-    t.eq(slice(lines, 0, 7), [ "add table inet ForkopTable", "flush table inet ForkopTable",
-        "delete set inet ForkopTable localv4", "delete set inet ForkopTable forkop_rule_own_subnets", "delete set inet ForkopTable forkop_rule_gone_subnets",
-        "delete chain inet ForkopTable mangle", "delete chain inet ForkopTable priority_rules" ],
+    t.eq(slice(lines, 0, 7), [ "add table inet loki", "flush table inet loki",
+        "delete set inet loki localv4", "delete set inet loki loki_rule_own_subnets", "delete set inet loki loki_rule_gone_subnets",
+        "delete chain inet loki mangle", "delete chain inet loki priority_rules" ],
         "the rules go, every chain is defined again, and a set goes unless the worker fills it");
-    has(lines, "add set inet ForkopTable forkop_rule_fed_subnets { type ipv4_addr; flags interval; auto-merge; }", "a kept set is declared as before");
+    has(lines, "add set inet loki loki_rule_fed_subnets { type ipv4_addr; flags interval; auto-merge; }", "a kept set is declared as before");
     lacks(lines, "flush set", "a kept set keeps its addresses");
     t.eq(join("\n", slice(lines, 7)), result.script, "followed by the table as built");
 
-    stub.commands([ [ "nft -t list table inet ForkopTable", { status: 1 } ], ...r.handlers ]);
+    stub.commands([ [ "nft -t list table inet loki", { status: 1 } ], ...r.handlers ]);
     nft.apply(result);
     fed_script = filter(stub.calls(), (c) => c.argv[1] == "-f")[0].stdin;
     stub.restore();
-    t.eq(slice(split(fed_script, "\n"), 0, 3), [ "add table inet ForkopTable", "flush table inet ForkopTable", "add table inet ForkopTable" ],
+    t.eq(slice(split(fed_script, "\n"), 0, 3), [ "add table inet loki", "flush table inet loki", "add table inet loki" ],
         "a missing table has nothing to take apart");
 });
 
@@ -432,10 +432,10 @@ t.test("a value left out is a warning each time the table is applied", () => {
 t.test("a refused transaction fails with the first line nft gave", () => {
     fixture.seed({ settings: {} });
     let r = routing({ route4: "local default dev lo scope host", route6: "local default dev lo metric 1024 pref medium",
-        rule4: "105: from all fwmark 0x4000000/0x4000000 lookup forkop", rule6: "105: from all fwmark 0x4000000/0x4000000 lookup forkop" });
-    fs.writefile(nft.paths.rt_tables, "105 forkop\n");
+        rule4: "105: from all fwmark 0x4000000/0x4000000 lookup loki", rule6: "105: from all fwmark 0x4000000/0x4000000 lookup loki" });
+    fs.writefile(nft.paths.rt_tables, "105 loki\n");
     stub.commands([ [ /^'nft' '-f' '-'/, (argv, command) => {
-        fs.writefile(match(command, /2>'([^']+)'/)[1], "Error: syntax error, unexpected junk\nadd element inet ForkopTable localv4 { junk }\n");
+        fs.writefile(match(command, /2>'([^']+)'/)[1], "Error: syntax error, unexpected junk\nadd element inet loki localv4 { junk }\n");
         return { status: 1 };
     } ], ...r.handlers ]);
     let e = t.throws(() => nft.apply(nft.build()));

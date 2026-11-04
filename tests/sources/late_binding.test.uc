@@ -5,7 +5,7 @@ let t = require("t");
 let fs = require("fs");
 let repo = require("repo");
 
-const LIBRARY = repo.path("forkop/files/usr/lib");
+const LIBRARY = repo.path("loki/files/usr/lib");
 const KEYWORDS = [ "if", "else", "for", "while", "switch", "try", "catch", "return", "function" ];
 
 function library_files() {

@@ -1,5 +1,5 @@
 // Seeds the fake uci from the fixture shape the tests describe a configuration
-// in: { settings: {...}, section: [...], server: [...], ... } for /etc/config/forkop,
+// in: { settings: {...}, section: [...], server: [...], ... } for /etc/config/loki,
 // plus dhcp_dnsmasq for the first dnsmasq section of /etc/config/dhcp.
 
 let fs = require("fs");
@@ -55,7 +55,7 @@ function seed(data) {
                 entry[".name"] = entry[".name"] ?? "settings";
             push(sections, entry);
         }
-    uci.__seed("forkop", sections);
+    uci.__seed("loki", sections);
 
     if (data.dhcp_dnsmasq != null)
         uci.__seed("dhcp", [ { ".type": "dnsmasq", ...data.dhcp_dnsmasq } ]);
@@ -66,7 +66,7 @@ function seed(data) {
 // The settings every generated configuration needs, merged with the test's own.
 function settings(extra) {
     return {
-        config_path: "/etc/sing-box/config.json",
+        config_path: "/etc/loki-core/config.json",
         dns_server: "1.1.1.1",
         ...(extra ?? {})
     };

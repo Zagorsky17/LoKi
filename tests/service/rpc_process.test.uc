@@ -67,7 +67,7 @@ t.test("an accepted lifecycle worker keeps writing own state after the RPC respo
     fs.chmod(helper, 0755);
     let runner = base + "/accept.uc";
     fs.writefile(runner, 'let ui = require("service.ui"); let installer = require("service.installer");\n' +
-        'require("core.constants").FORKOP_BIN = ' + sprintf("%J", helper) + ';\n' +
+        'require("core.constants").LOKI_BIN = ' + sprintf("%J", helper) + ';\n' +
         'ui.paths.service_actions = ' + sprintf("%J", base + "/actions") + ';\n' +
         'ui.paths.service_action_lock = ' + sprintf("%J", base + "/actions.lock") + ';\n' +
         'ui.paths.reload_lock = ' + sprintf("%J", base + "/reload.lock") + ';\n' +
@@ -76,7 +76,7 @@ t.test("an accepted lifecycle worker keeps writing own state after the RPC respo
     let pgid_file = base + "/rpc-pgid";
     let result = exec.combined([ "/usr/bin/setsid", "/bin/busybox", "ash", "-c",
         'echo "$$" > ' + quote(pgid_file) + '; ' + run.script, run.output,
-        "ucode", "-L", repo.path("tests/fakes"), "-L", repo.path("tests/lib"), "-L", repo.path("forkop/files/usr/lib"), runner ]);
+        "ucode", "-L", repo.path("tests/fakes"), "-L", repo.path("tests/lib"), "-L", repo.path("loki/files/usr/lib"), runner ]);
     t.eq(result.status, 0, result.output);
     uloop.__exit(0, 0);
     t.eq(response(run).code, 0);
@@ -253,10 +253,10 @@ t.test("fixed Monitoring and dashboard snapshots above128KiB cross real HTTP and
         fs.writefile(driver, 'require("fixture").seed({ settings: { config_path: ' + sprintf("%J", config) + ' } });\n' +
             'require("ubus").__on("session.access", { access: true });\n' +
             'exit(require("service.rpc").run(' + sprintf("%J", run.request.args.argv) + ', ' +
-            sprintf("%J", repo.path("forkop/files/usr/lib")) + ', "rpc_read"));\n');
+            sprintf("%J", repo.path("loki/files/usr/lib")) + ', "rpc_read"));\n');
         let captured = exec.combined([ "/usr/bin/setsid", "/bin/busybox", "ash", "-c", run.script, run.output,
-            "/usr/bin/env", "FORKOP_RPC_SESSION=" + run.request.args.ubus_rpc_session, "ucode", "-L", repo.path("tests/fakes"),
-            "-L", repo.path("tests/lib"), "-L", repo.path("forkop/files/usr/lib"), driver ]);
+            "/usr/bin/env", "LOKI_RPC_SESSION=" + run.request.args.ubus_rpc_session, "ucode", "-L", repo.path("tests/fakes"),
+            "-L", repo.path("tests/lib"), "-L", repo.path("loki/files/usr/lib"), driver ]);
         uloop.__exit(0, captured.status);
         let terminal = response(run);
         t.eq(terminal.code, 0, "a valid full snapshot must not be reduced to an inline-size failure");

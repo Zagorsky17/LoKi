@@ -3,20 +3,20 @@ name: Frontend CI
 on:
   pull_request:
     paths:
-      - 'fe-app-forkop/**'
-      - 'luci-app-forkop/**'
+      - 'fe-app-loki/**'
+      - 'luci-app-loki/**'
       # The suite includes checks that compare the page with what the package
       # ships, and fixtures it shares with the backend tests.
-      - 'forkop/files/etc/config/forkop'
+      - 'loki/files/etc/config/loki'
       - 'tests/fixtures/**'
       - '.github/workflows/frontend-ci.yml'
   push:
     branches:
       - main
     paths:
-      - 'fe-app-forkop/**'
-      - 'luci-app-forkop/**'
-      - 'forkop/files/etc/config/forkop'
+      - 'fe-app-loki/**'
+      - 'luci-app-loki/**'
+      - 'loki/files/etc/config/loki'
       - 'tests/fixtures/**'
       - '.github/workflows/frontend-ci.yml'
 
@@ -26,7 +26,7 @@ jobs:
     runs-on: ubuntu-24.04
     defaults:
       run:
-        working-directory: fe-app-forkop
+        working-directory: fe-app-loki
 
     steps:
       - name: Checkout code
@@ -42,14 +42,14 @@ jobs:
 
       - name: Get yarn cache directory path
         id: yarn-cache-dir-path
-        working-directory: fe-app-forkop
+        working-directory: fe-app-loki
         run: echo "dir=$(yarn config get cacheFolder)" >> $GITHUB_OUTPUT
 
       - name: Cache yarn dependencies
         uses: actions/cache@v4.3.0
         with:
           path: ${{ steps.yarn-cache-dir-path.outputs.dir }}
-          key: ${{ runner.os }}-yarn-${{ hashFiles('fe-app-forkop/yarn.lock') }}
+          key: ${{ runner.os }}-yarn-${{ hashFiles('fe-app-loki/yarn.lock') }}
           restore-keys: |
             ${{ runner.os }}-yarn-
 

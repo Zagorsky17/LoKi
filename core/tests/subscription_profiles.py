@@ -760,7 +760,7 @@ def main(core, output, measure_sizes=False):
                        'let v=json(fs.readfile(getenv("PROFILE_SOURCE")));'
                        'print(sprintf("%J",{config:m.sing_box_config(v),text:m.text(sprintf("%J",v),[],[],m.credentials(v))}));')
     command = ['ucode', '-L', str(links.ROOT / 'tests/fakes'), '-L', str(links.ROOT / 'tests/lib'),
-               '-L', str(links.ROOT / 'forkop/files/usr/lib'), str(program)]
+               '-L', str(links.ROOT / 'loki/files/usr/lib'), str(program)]
     masked = subprocess.run(command, env={**os.environ, 'PROFILE_SOURCE': str(source)},
                             check=True, capture_output=True, timeout=10).stdout
     for number, value in enumerate(secrets[:5] + [keys['publickey']] + SS_PASSWORDS):

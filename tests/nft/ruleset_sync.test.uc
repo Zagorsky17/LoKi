@@ -53,7 +53,7 @@ function lines(transaction) {
 function elements(transaction, set_name) {
     let result = [];
     for (let line in lines(transaction)) {
-        let prefix = "add element inet ForkopTable " + set_name + " { ";
+        let prefix = "add element inet loki " + set_name + " { ";
         if (substr(line, 0, length(prefix)) == prefix)
             push(result, ...split(substr(line, length(prefix), length(line) - length(prefix) - 2), ", "));
     }
@@ -79,9 +79,9 @@ t.test("a section's providers and its own addresses replace its sets in one tran
     seed([ MIXED ]);
     run(() => sync.sync(mixed_snapshot(), [ MIXED ]));
     t.eq(length(transactions), 1);
-    let s = "forkop_rule_mixed_";
+    let s = "loki_rule_mixed_";
     t.eq(filter(lines(transactions[0]), (line) => substr(line, 0, 5) == "flush"),
-        map([ "subnets", "subnets6", "ip_ports", "ip6_ports", "proto_ports", "proto6_ports" ], (name) => "flush set inet ForkopTable " + s + name));
+        map([ "subnets", "subnets6", "ip_ports", "ip6_ports", "proto_ports", "proto6_ports" ], (name) => "flush set inet loki " + s + name));
     t.eq(elements(transactions[0], s + "subnets"), [ "10.0.0.0/8", "192.0.2.0/24", "198.51.100.0/24" ], "the section's ports apply by rule, and a shared prefix is written once");
     t.eq(elements(transactions[0], s + "subnets6"), [ "2001:db8:1::/48", "fd00::/8" ]);
     t.eq(elements(transactions[0], s + "ip_ports"), [ "203.0.113.1 . 1000-1050", "203.0.113.1 . 80" ], "a provider's own ports are narrowed by the section's");
@@ -96,7 +96,7 @@ t.test("overlapping provider elements under a port become disjoint ones the kern
         [ALPHA]: provider(1, { scoped_ipv4: [ { prefixes: [ "10.0.0.0/8" ], port_ranges: [ { start: 443, end: 443 } ] } ] }),
         [BETA]: provider(1, { scoped_ipv4: [ { prefixes: [ "10.1.0.0/16" ], port_ranges: [ { start: 80, end: 90 }, { start: 85, end: 443 } ] } ] })
     }), [ section ]));
-    t.eq(elements(transactions[0], "forkop_rule_nested_ip_ports"),
+    t.eq(elements(transactions[0], "loki_rule_nested_ip_ports"),
         [ "10.0.0.0/16 . 443", "10.1.0.0/16 . 80-443", "10.2.0.0-10.255.255.255 . 443" ]);
 });
 
@@ -113,7 +113,7 @@ t.test("a transport-limited group carries the transport in its key and covers ev
     }) });
     seed([ section ]);
     run(() => sync.sync(value, [ section ]));
-    let s = "forkop_rule_transport_";
+    let s = "loki_rule_transport_";
     t.eq(elements(transactions[0], s + "proto_ports"), [ "1.2.3.0/24 . tcp . 1-65535", "104.16.0.0/12 . udp . 50000-65535" ]);
     t.eq(elements(transactions[0], s + "proto6_ports"), [ "2001:db8:5::/48 . udp . 1-65535" ]);
     t.eq(elements(transactions[0], s + "ip_ports"), [ "5.5.5.0/24 . 443" ]);
@@ -130,7 +130,7 @@ t.test("a section the snapshot or nft refuses is reported once and does not keep
     let good = { ".name": "good", enabled: "1", action: "connection", rule_set_with_subnets: [ BETA ] };
     let revision = 0;
     for (let broken in [
-        { ipv4: [ "198.51.100.0/24; delete table inet ForkopTable" ] },
+        { ipv4: [ "198.51.100.0/24; delete table inet loki" ] },
         { scoped_ipv4: [ { prefixes: [ "198.51.100.1" ], port_ranges: [ { start: 80, end: 70000 } ] } ] },
         { scoped_ipv4: [ { prefixes: [ "1.1.1.0/24" ], networks: [ "icmp" ], port_ranges: [] } ] },
         { scoped_ipv4: [ { prefixes: [ "1.1.1.0/24" ], networks: [], port_ranges: [] } ] },
@@ -142,7 +142,7 @@ t.test("a section the snapshot or nft refuses is reported once and does not keep
         let result = run(() => sync.sync(value, [ bad, good ]));
         t.eq(result.written, 1, sprintf("%J", broken));
         t.eq(length(transactions), 1);
-        t.excludes(transactions[0], "forkop_rule_bad_");
+        t.excludes(transactions[0], "loki_rule_bad_");
         t.eq(length(filter(logs, (line) => index(line, "[error] Failed to load the rule-set subnets of section 'bad' into nftables: provider ") == 0)), 1);
 
         run(() => sync.sync(value, [ bad, good ]));
@@ -174,7 +174,7 @@ t.test("a section is rewritten only when the content of a provider it reads chan
     t.eq(transactions, []);
     run(() => sync.sync(value([ "192.0.2.0/24", "203.0.113.0/24" ]), [ section, other ]));
     t.eq(length(transactions), 1);
-    t.contains(transactions[0], "forkop_rule_other_subnets");
+    t.contains(transactions[0], "loki_rule_other_subnets");
     t.eq(logs, [ "[info] Loaded 2 rule-set subnets into nftables for 1 of 2 sections" ]);
 });
 
@@ -207,12 +207,12 @@ t.test("a transaction nft is killed over says the router ran out of memory, nami
 });
 
 t.test("a user's unusable address is dropped and the rest of the section loads", () => {
-    let section = { ".name": "typed", enabled: "1", action: "connection", destinations: "203.0.113.0/24; delete table inet ForkopTable\n198.51.100.7",
+    let section = { ".name": "typed", enabled: "1", action: "connection", destinations: "203.0.113.0/24; delete table inet loki\n198.51.100.7",
         rule_set_with_subnets: [ ALPHA ] };
     seed([ section ]);
     run(() => sync.sync(snapshot({ [ALPHA]: provider(1, {}) }), [ section ]));
     t.excludes(transactions[0], "delete table");
-    t.eq(elements(transactions[0], "forkop_rule_typed_subnets"), [ "198.51.100.7" ]);
+    t.eq(elements(transactions[0], "loki_rule_typed_subnets"), [ "198.51.100.7" ]);
 });
 
 t.test("a large set goes to nft in bounded lines", () => {
@@ -222,10 +222,10 @@ t.test("a large set goes to nft in bounded lines", () => {
         push(prefixes, sprintf("10.%d.%d.1/32", i / 256, i % 256));
     seed([ section ]);
     run(() => sync.sync(snapshot({ [ALPHA]: provider(1, { ipv4: prefixes }) }), [ section ]));
-    let adds = filter(lines(transactions[0]), (line) => index(line, "add element inet ForkopTable forkop_rule_large_subnets ") == 0);
+    let adds = filter(lines(transactions[0]), (line) => index(line, "add element inet loki loki_rule_large_subnets ") == 0);
     t.eq(length(adds), 2);
     t.eq(length(filter(adds, (line) => length(line) > 8192)), 0);
-    t.eq(length(elements(transactions[0], "forkop_rule_large_subnets")), 300);
+    t.eq(length(elements(transactions[0], "loki_rule_large_subnets")), 300);
 });
 
 // The worker's loop with the controller answering from `answers` in turn: a body, false for a
@@ -281,7 +281,7 @@ t.test("the worker follows the provider events and asks a controller that is not
         "http://127.0.0.1:9090/providers/rules"
     ], "a timed-out wait is waited again, an event is synced from");
     t.eq(result.sleeps, [ 3000, 3000, 6000, 12000 ], "the retry waits double while the controller does not answer, and start over once it does");
-    t.eq(uniq(map(result.calls, (call) => call.secret)), [ "test-secret" ], "the secret sing-box runs with");
+    t.eq(uniq(map(result.calls, (call) => call.secret)), [ "test-secret" ], "the secret loki-core runs with");
     t.eq(uniq(map(result.calls, (call) => call.method + " " + call.seconds)), [ "GET 10", "GET 60" ], "a snapshot within 10 s, an event within a minute");
 });
 
@@ -324,8 +324,8 @@ t.test("a controller that stopped answering is looked up again before it is aske
 
 t.test("the rule-set worker is a respawning procd service run through the command line", () => {
     let payload = worker.payload(sync.worker_spec());
-    t.eq(payload.name, "forkop-ruleset-sync");
-    t.eq(payload.instances.sync.command, [ "/usr/bin/forkop", "sync_rule_sets" ]);
+    t.eq(payload.name, "loki-ruleset-sync");
+    t.eq(payload.instances.sync.command, [ "/usr/bin/loki", "sync_rule_sets" ]);
     t.eq(payload.instances.sync.respawn, [ "3600", "5", "0" ]);
     t.ok(!("data" in payload.instances.sync));
     t.eq(worker.payload(sync.worker_spec({ a: [ "x" ] })).instances.sync.data, { subnet_sources: { a: [ "x" ] } },
@@ -355,8 +355,8 @@ t.test("the worker is current while it runs with the providers each section read
 
 t.test("a running worker is current only while procd holds the data it was started with", () => {
     let own = filter(split(fs.readfile("/proc/self/cmdline"), "\0"), (arg) => arg != "");
-    let spec = { name: "forkop-probe", instance: "sync", command: slice(own, 1), pid_file: dir + "/probe.pid", data: { subnet_sources: { a: [ "x" ] } } };
-    let listed = (data) => [ [ "ubus call service list", { stdout: sprintf("%J", { "forkop-probe": { instances: { sync: { running: true, data } } } }) } ] ];
+    let spec = { name: "loki-probe", instance: "sync", command: slice(own, 1), pid_file: dir + "/probe.pid", data: { subnet_sources: { a: [ "x" ] } } };
+    let listed = (data) => [ [ "ubus call service list", { stdout: sprintf("%J", { "loki-probe": { instances: { sync: { running: true, data } } } }) } ] ];
 
     t.ok(!worker.current(spec), "no worker recorded");
     fs.writefile(spec.pid_file, require("core.common").own_pid() + "\n");
@@ -375,7 +375,7 @@ t.test("without a table section fed by a provider the worker is stopped and not 
         { ".name": "off", enabled: "0", action: "connection", rule_set_with_subnets: [ ALPHA ] } ]);
     stub.commands([ [ "ubus call service delete", {} ] ]);
     t.ok(sync.start_worker());
-    t.eq(stub.command_lines(), [ "ubus call service delete { \"name\": \"forkop-ruleset-sync\" }" ]);
+    t.eq(stub.command_lines(), [ "ubus call service delete { \"name\": \"loki-ruleset-sync\" }" ]);
     stub.restore();
 });
 

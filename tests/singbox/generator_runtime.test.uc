@@ -12,7 +12,7 @@ function build(data) {
 
 function settings(extra) {
     return {
-        config_path: "/tmp/sing-box/config.json",
+        config_path: "/tmp/loki-core/config.json",
         dns_server: "1.1.1.1",
         service_listen_address: "127.0.0.1",
         ...(extra ?? {})
@@ -134,7 +134,7 @@ t.test("inbounds, DNS servers and base routing of a matcher-heavy configuration"
 t.test("device-scoped sections keep FakeIP and their priority in DNS rules", () => {
     let m = matcher_fixture();
     t.ok(q.dns_rule(m, (r) => r.server == "fakeip-server" && has(r.domain_suffix, "example.org") && has(r.source_ip_cidr, "10.0.0.3/32")) != null,
-        "domain and port bypass keeps FakeIP so sing-box can match the destination port");
+        "domain and port bypass keeps FakeIP so loki-core can match the destination port");
     let port_ruleset = q.ruleset_url(m, "https://example.com/bypass-port.srs");
     let ruleset_dns = q.dns_rule(m, (r) => r.server == "fakeip-server" && has(r.rule_set, port_ruleset.tag) && has(r.source_ip_cidr, "10.0.0.4/32"));
     t.ok(ruleset_dns != null, "rule-set and port bypass keeps FakeIP domain identity");
@@ -216,7 +216,7 @@ t.test("route rules carry devices, addresses and ports, and never the System sen
         t.excludes(text, dropped, "comments are left out of the rule");
 });
 
-// sing-box merges only a rule set of one plain rule into the rule naming it, and discord has three.
+// loki-core merges only a rule set of one plain rule into the rule naming it, and discord has three.
 t.test("a section's own destinations and its rule sets each select traffic on their own", () => {
     let d = build({ settings: settings(), section: [ { ".name": "proxy", enabled: "1", action: "connection",
         outbound_jsons: [ "{\"type\":\"direct\"}" ], destinations: "own.example\n203.0.113.0/24",
@@ -525,7 +525,7 @@ t.test("fully routed devices follow their section at its priority", () => {
     t.excludes(sprintf("%J", f), "@system");
 });
 
-t.test("sing-box's own connections follow the routes unless an output interface is pinned", () => {
+t.test("loki-core's own connections follow the routes unless an output interface is pinned", () => {
     let base = {
         settings: settings(),
         section: [ { ".name": "proxy", enabled: "1", action: "connection", outbound_jsons: [ "{\"type\":\"direct\"}" ], destinations: "example.org" } ]

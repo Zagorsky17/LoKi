@@ -15,7 +15,7 @@ import sys
 import tarfile
 import tempfile
 
-ROLES = {"backend": "forkop", "luci": "luci-app-forkop", "locale": "luci-i18n-forkop-ru", "core": "sing-box-forkop"}
+ROLES = {"backend": "loki", "luci": "luci-app-loki", "locale": "luci-i18n-loki-ru", "core": "loki-core"}
 LIMIT = 536870912
 
 

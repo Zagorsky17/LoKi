@@ -1,7 +1,7 @@
 let t = require("t");
 let ip = require("core.ip");
 
-t.test("an address or a prefix is one sing-box and nft both read", () => {
+t.test("an address or a prefix is one loki-core and nft both read", () => {
     for (let value in [ "192.168.1.1", "0.0.0.0", "10.0.0.0/8", "0.0.0.0/0", "2001:db8::1", "::", "2001:db8::/32", "::ffff:192.0.2.1" ])
         t.ok(ip.ip_family(value) != 0, value);
     t.eq([ ip.ip_family("198.51.100.0/24"), ip.ip_family("fd00::/8") ], [ 4, 6 ]);

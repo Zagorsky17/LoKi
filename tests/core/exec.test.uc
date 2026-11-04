@@ -37,20 +37,20 @@ t.test("feed hands the text to the command's stdin", () => {
 
 t.test("a background child is detached from the procd lock descriptor", () => {
     stub.commands([ [ () => true, { status: 0 } ] ]);
-    exec.background([ "/etc/init.d/forkop", "reload", "pending" ]);
+    exec.background([ "/etc/init.d/loki", "reload", "pending" ]);
     t.contains(stub.calls()[0].command, "1000>&- &");
     stub.restore();
 });
 
 t.test("log tags the message with its level and gives syslog the matching priority", () => {
     stub.commands([ [ () => true, { status: 0 } ] ]);
-    exec.log("warn", "sing-box is slow");
-    exec.log("error", "sing-box is gone");
-    exec.log("info", "sing-box is back");
+    exec.log("warn", "loki-core is slow");
+    exec.log("error", "loki-core is gone");
+    exec.log("info", "loki-core is back");
     t.eq(stub.command_lines(), [
-        "logger -t forkop -p user.warning [warn] sing-box is slow",
-        "logger -t forkop -p user.err [error] sing-box is gone",
-        "logger -t forkop -p user.info [info] sing-box is back"
+        "logger -t loki -p user.warning [warn] loki-core is slow",
+        "logger -t loki -p user.err [error] loki-core is gone",
+        "logger -t loki -p user.info [info] loki-core is back"
     ]);
     stub.restore();
 });

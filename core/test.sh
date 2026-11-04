@@ -6,6 +6,7 @@ work=$(mktemp -d)
 trap 'rm -rf -- "$work"' EXIT
 "$HERE/prepare.sh" "$work/source"
 cd -- "$work/source"
+python3 -B "$HERE/tests/package_namespace.py" "$PWD"
 export GOTOOLCHAIN=local
 go mod verify
 unformatted=$(gofmt -l adapter/dns.go dns/router.go common/dialer/resolve*.go log/observable.go log/error_repeats*.go \

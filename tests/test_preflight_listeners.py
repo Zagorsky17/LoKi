@@ -39,7 +39,7 @@ class ListenerProbe(unittest.TestCase):
         path.chmod(0o644)
 
     def run_ucode(self, program, *args):
-        done = subprocess.run(['ucode', '-L', str(ROOT / 'forkop/files/usr/lib'), '-e',
+        done = subprocess.run(['ucode', '-L', str(ROOT / 'loki/files/usr/lib'), '-e',
                                'let fs=require("fs");let p=require("service.preflight_listeners");' + program,
                                *map(str, args)], capture_output=True, text=True, timeout=10)
         self.assertEqual(done.returncode, 0, done.stderr)
