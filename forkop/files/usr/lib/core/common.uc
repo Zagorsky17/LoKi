@@ -66,14 +66,27 @@ function write_file(path, text) {
     return fs.writefile(as_string(path), as_string(text)) != null;
 }
 
+function write_private_file(path, text) {
+    path = as_string(path);
+    text = as_string(text);
+    let file = fs.open(path, "wxe", 0600);
+    if (file == null)
+        return false;
+    let written = file.write(text) == length(text);
+    file.close();
+    // The pinned ucode flush() cannot report failure reliably; verify the closed file.
+    if (written && fs.readfile(path) == text)
+        return true;
+    fs.unlink(path);
+    return false;
+}
+
 function write_file_atomic(path, text) {
     path = as_string(path);
     let now = clock();
     let temporary = sprintf("%s.%d.%d.tmp", path, now[0], now[1]);
-    if (!ensure_dir(parent_dir(path)) || !write_file(temporary, text)) {
-        fs.unlink(temporary);
+    if (!ensure_dir(parent_dir(path)) || !write_private_file(temporary, text))
         return false;
-    }
     if (!fs.rename(temporary, path)) {
         fs.unlink(temporary);
         return false;
@@ -256,6 +269,7 @@ return {
     parent_dir,
     ensure_dir,
     write_file,
+    write_private_file,
     write_file_atomic,
     read_first_line,
     remove_tree,

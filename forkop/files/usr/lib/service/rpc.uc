@@ -67,13 +67,9 @@ function safe_directory(path) {
 }
 
 function write_private(path, value) {
-    let file = fs.open(path, "wx", 0600);
-    if (file == null)
+    if (!common.write_private_file(path, value))
         return false;
-    let written = file.write(value) == length(value);
-    file.close();
-    // The pinned ucode flush() reports success incorrectly; verify bytes and use BusyBox fsync.
-    if (written && fs.readfile(path) == value && exec.status([ ...paths.fsync, path ]) == 0)
+    if (exec.status([ ...paths.fsync, path ]) == 0)
         return true;
     fs.unlink(path);
     return false;
