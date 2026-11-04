@@ -368,4 +368,27 @@ t.test("socket discovery keeps mandatory ownership and namespace gaps", () => {
     t.ok(has(result, "incomplete", "listener-namespace-and-bind-configuration-unverified"));
 });
 
+t.test("process discovery reports unreadable procfs instead of granting installation", () => {
+    let root = fixture();
+    stub.commands([[ "exec timeout", { stdout: "{}" } ]]);
+    let result = preflight.collect(root);
+    stub.restore();
+    t.ok(has(result, "incomplete", "process-directory-unavailable"));
+    t.eq(result.complete, false);
+    t.eq(result.install_allowed, false);
+});
+
+t.test("an empty fixture procfs cannot prove system process or script coverage", () => {
+    let root = fixture();
+    fs.mkdir(root + "/proc", 0755);
+    stub.commands([[ "exec timeout", { stdout: "{}" } ]]);
+    let result = preflight.collect(root);
+    stub.restore();
+    t.ok(has(result, "checked", "process-directory-read-complete"));
+    t.ok(has(result, "incomplete", "process-namespace-and-visibility-unverified"));
+    t.ok(has(result, "incomplete", "process-script-and-package-origin-unverified"));
+    t.eq(result.complete, false);
+    t.eq(result.install_allowed, false);
+});
+
 t.done();
