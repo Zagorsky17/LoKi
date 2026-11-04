@@ -1,7 +1,9 @@
+// Modified for LoKi on 2026-11-03: validate private cache paths without changing the filesystem.
 // Modified for LoKi on 2026-11-03: product labels in user-facing messages.
 // Modified for LoKi on 2026-11-01: warn about known list overlaps after validating references.
 let fs = require("fs");
 let core_common = require("core.common");
+let cache_path = require("core.cache_path");
 let core_exec = require("core.exec");
 let core_url = require("core.url");
 let core_ip = require("core.ip");
@@ -956,6 +958,7 @@ function validate_core_features(settings, sections, core_tags) {
 
 function validate_runtime_config(context) {
     let settings = settings_section();
+    cache_path.validate(settings);
     let sections = sections_by_type("section");
 
     let display_names = {};

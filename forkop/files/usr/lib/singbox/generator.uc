@@ -1,3 +1,4 @@
+// Modified for LoKi on 2026-11-03: use a private LoKi cache path.
 // Modified for LoKi on 2026-11-01: resolve outbound hosts independently and constrain local PTR routing.
 let common = require("core.common");
 let core_ip = require("core.ip");
@@ -229,7 +230,7 @@ function apply_matchers(rule, matchers) {
 function base_config(settings, service_address) {
     let log_level = option(settings, "log_level", "warn");
     let rewrite_ttl = int_option(settings, "dns_rewrite_ttl", "60");
-    let cache_path = option(settings, "cache_path", "/tmp/sing-box/cache.db");
+    let cache_path = option(settings, "cache_path", "/tmp/loki/cache.db") || "/tmp/loki/cache.db";
     let dns_config = runtime_dns.config(settings);
     if (dns_config.unsupported)
         runtime_generate_unsupported(dns_config.unsupported);

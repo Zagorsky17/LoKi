@@ -169,7 +169,7 @@ def main(core, output, measure_sizes=False):
     keys = {name.strip().replace(' ', '').lower(): value.strip() for name, value in
             (line.split(':', 1) for line in keys.stdout.splitlines() if ':' in line)}
     assert 'privatekey' in keys and 'publickey' in keys, 'unexpected trusted key generator format'
-    results, measurements = [], []
+    results, measurements, capacity, capacity_secrets = [], [], [], []
     with contextlib.ExitStack() as stack:
         plain = links.serve(stack, selection.Proxy)
         plain.marker = 'http-authenticated'
@@ -395,6 +395,69 @@ def main(core, output, measure_sizes=False):
             check(3)
             subscription.responses['/two'] = valid
             refresh('Two')
+            # Exercise the owner's 30-per-provider/50-total workload and double-sized headroom.
+            # Unique authenticated markers prove that every advertised member remains usable.
+            for counts in [(30, 20), (60, 40)]:
+                baseline_memory = {line.split(':')[0]: int(line.split()[1]) for line in Path(f'/proc/{process.pid}/status').read_text().splitlines() if line.startswith(('VmRSS:', 'VmHWM:'))}
+                for peer in [plain, secure]:
+                    peer.auth_markers = {links.AUTH: peer.marker}
+                expected_capacity, documents = {}, []
+                for provider, count in zip(['One', 'Two'], counts):
+                    members = []
+                    for index in range(count):
+                        encrypted = index % 2 == 1
+                        peer = secure if encrypted else plain
+                        item = http_node(peer, encrypted)
+                        marker = f'capacity-{provider}-{index:03d}'
+                        item.update(tag=marker, username=marker + '-user', password=marker + '-password')
+                        capacity_secrets.extend([item['username'], item['password']])
+                        auth = 'Basic ' + base64.b64encode(f"{item['username']}:{item['password']}".encode()).decode()
+                        peer.auth_markers[auth] = marker
+                        expected_capacity[f'main/{provider}/{marker}'] = (peer, marker.encode())
+                        members.append(item)
+                    documents.append({'outbounds': members})
+                publish(documents)
+                refresh('One')
+                refresh('Two')
+                assert set(runtime.group()['all']) == set(expected_capacity), 'capacity workload lost or merged a member'
+                for tag, (peer, marker) in expected_capacity.items():
+                    runtime.choose(tag)
+                    before = len(peer.records)
+                    response = links.request(runtime.port, trap.server_address[1])
+                    assert response.split(b'\r\n\r\n', 1)[-1] == marker, 'capacity member reached another identity'
+                    assert len(peer.records) == before + 1, 'capacity traffic bypassed its authenticated peer'
+                    check_side_effects()
+                old_members = runtime.group()['all']
+                good = subscription.responses['/two']
+                subscription.responses['/two'] = (b'{"outbounds":[', {}, 0)
+                try:
+                    refresh('Two')
+                    raise AssertionError('capacity workload accepted a truncated update')
+                except HTTPError as error:
+                    assert error.code == 503
+                assert runtime.group()['all'] == old_members, 'failed capacity update replaced the old set'
+                last_peer, last_marker = expected_capacity[tag]
+                before = len(last_peer.records)
+                assert links.request(runtime.port, trap.server_address[1]).split(b'\r\n\r\n', 1)[-1] == last_marker
+                assert len(last_peer.records) == before + 1, 'failed update lost the selected working member'
+                subscription.responses['/two'] = good
+                refresh('Two')
+                memory = {line.split(':')[0]: int(line.split()[1]) for line in Path(f'/proc/{process.pid}/status').read_text().splitlines() if line.startswith(('VmRSS:', 'VmHWM:'))}
+                capacity.append({'provider_nodes': list(counts), 'total_nodes': sum(counts),
+                                 'protocols': ['http', 'https'],
+                                 'http_body_bytes': [len(subscription.responses[path][0]) for path in ['/one', '/two']],
+                                 'cache_logical_bytes': sum(path.stat().st_size for path in directory.rglob('*') if path.is_file() and path.relative_to(directory).parts[0].startswith('cache.db')),
+                                 'authenticated_connections': sum(counts), 'failed_update_retained': True,
+                                 'before_rss_kib': baseline_memory['VmRSS'], 'before_hwm_kib': baseline_memory['VmHWM'],
+                                 'rss_kib': memory['VmRSS'], 'hwm_kib': memory['VmHWM']})
+                publish(profiles)
+                refresh('One')
+                refresh('Two')
+                for peer in [plain, secure]:
+                    del peer.auth_markers
+                assert set(runtime.group()['all']) == set(expected), 'capacity cleanup did not restore the four-member fixture'
+                check(3)
+                check_dns()
             # Small bounded measurements expose amplification without imposing a new product cap.
             for decoded_size, encoding in [(65536, 'raw'), (262144, 'raw'), (1048576, 'raw'),
                                             (262144, 'gzip'), (262144, 'base64')] if measure_sizes else []:
@@ -406,7 +469,7 @@ def main(core, output, measure_sizes=False):
                 subscription.responses['/two'] = (body, headers, 0)
                 refresh('Two')
                 check(3)
-                cached = [path.read_bytes() for path in (directory / 'cache.db.rule-sets').iterdir() if path.is_file()]
+                cached = [path.read_bytes() for path in (directory / 'cache.db.subscriptions').iterdir() if path.is_file()]
                 matches = [value for value in cached if value.endswith(document)]
                 assert len(matches) == 1, 'cached provider content did not preserve the decoded fixture'
                 cached_body_bytes = len(matches[0].split(b'\n', 1)[1])
@@ -685,7 +748,7 @@ def main(core, output, measure_sizes=False):
     secrets = [links.USER, links.PASSWORD, links.AUTH, UUID, SHORT_ID, keys['publickey'], keys['privatekey'],
                'incorrect-account', '65f676b9-cb1f-45b4-a824-a0a5856cf009', 'client-api-key-must-not-apply',
                'synthetic-payload']
-    secrets += SS_PASSWORDS
+    secrets += SS_PASSWORDS + capacity_secrets
     for log in directory.glob('core-*.log'):
         content = log.read_text()
         for number, value in enumerate(secrets):
@@ -705,10 +768,12 @@ def main(core, output, measure_sizes=False):
     (output / 'masked-profile.json').write_bytes(masked)
     (output / 'masked-profile.json').chmod(0o600)
     private_json(output / 'results.json', results)
+    private_json(output / 'capacity-observations.json', capacity)
     if measure_sizes:
         private_json(output / 'size-observations.json', measurements)
     print(json.dumps({'connection_checks': len(results), 'oracle_controls': 3,
                       'peer_safety_controls': 4, 'size_observations': len(measurements),
+                      'capacity_workloads': len(capacity),
                       'formats': sorted({result['format'] for result in results})}))
 
 
