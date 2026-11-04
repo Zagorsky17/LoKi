@@ -195,6 +195,35 @@ class ManifestBoundary(ManifestHarness, unittest.TestCase):
         self.assertFalse(result["install_allowed"])
 
 
+    def test_shared_candidate_directories_are_checked_without_foreign_ownership_conflicts(self):
+        value = candidate()
+        value['components'][0]['files'] = [entry('/', True), entry('/synthetic-shared', True),
+                                            entry('/synthetic-shared/file')]
+        self.write(self.root / 'synthetic-shared/file', 'synthetic-secret-body')
+        result = self.invoke(canonical(value), collect=True)
+        self.assertFalse(result['install_allowed'])
+        self.assertTrue(any(item['kind'] == 'files' and item['object'].startswith('candidate-directory-')
+                            and item['reason'] == 'candidate-directory-safe' for item in result['observations']))
+        self.assertTrue(any(item['kind'] == 'files' and item['object'].startswith('candidate-file-')
+                            and item['reason'] == 'candidate-existing-file-origin-unverified' for item in result['observations']))
+        self.assertNotIn('synthetic-shared', json.dumps(result))
+        self.assertNotIn('synthetic-secret-body', json.dumps(result))
+
+    def test_catalog_cannot_relabel_a_critical_file_as_a_shared_directory(self):
+        value = candidate()
+        value['components'][0]['files'] = [entry('/', True), entry('/usr', True), entry('/usr/bin', True),
+                                            entry('/usr/bin/forkop', True)]
+        path = self.root / 'usr/bin/forkop'
+        path.mkdir(parents=True)
+        for parent in (path, path.parent, path.parent.parent):
+            parent.chmod(0o755)
+        result = self.invoke(canonical(value), collect=True)
+        self.assertEqual(result['result'], 'conflict')
+        self.assertTrue(any(item['reason'] == 'critical-file-target-type-mismatch' for item in result['observations']))
+        self.assertTrue(any(item['reason'] == 'candidate-target-type-conflict' for item in result['observations']))
+        self.assertFalse(result['install_allowed'])
+
+
 class ArtifactCatalog(ManifestHarness, unittest.TestCase):
     @staticmethod
     def outer_limits():
