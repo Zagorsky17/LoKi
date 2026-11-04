@@ -9,6 +9,7 @@ on:
     paths:
       - 'build.sh'
       - 'install.sh'
+      - 'preflight.sh'
       - 'forkop/files/etc/init.d/**'
       - 'luci-app-forkop/root/etc/uci-defaults/**'
       - 'tests/**/*.sh'
@@ -21,6 +22,7 @@ on:
     paths:
       - 'build.sh'
       - 'install.sh'
+      - 'preflight.sh'
       - 'forkop/files/etc/init.d/**'
       - 'luci-app-forkop/root/etc/uci-defaults/**'
       - 'tests/**/*.sh'
