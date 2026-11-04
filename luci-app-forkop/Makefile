@@ -1,3 +1,4 @@
+# Modified for LoKi on 2026-11-04: include the unchanged project license.
 # Modified for LoKi on 2026-10-31: identify the independently maintained package.
 include $(TOPDIR)/rules.mk
 
@@ -30,6 +31,8 @@ PKG_LICENSE:=GPL-2.0-or-later
 LUCI_LANGUAGES:=en ru
 
 define Build/Prepare/$(PKG_NAME)
+	$(INSTALL_DIR) $(PKG_BUILD_DIR)/root/usr/share/licenses/luci-app-forkop
+	$(INSTALL_DATA) ../LICENSE $(PKG_BUILD_DIR)/root/usr/share/licenses/luci-app-forkop/LICENSE
 	sed -i -e 's/__COMPILED_VERSION_VARIABLE__/$(FORKOP_COMPILED_VERSION)/g' $(PKG_BUILD_DIR)/htdocs/luci-static/resources/view/forkop/main.js
 endef
 

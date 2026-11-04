@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Modified for LoKi on 2026-11-03: verify and bound SDK downloads before extraction.
+# Modified for LoKi on 2026-11-04: ship the unchanged root license in each package.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -258,6 +259,9 @@ build_backend_root() {
   sed -i -e "s/__COMPILED_VERSION_VARIABLE__/${RELEASE_VERSION}/g" \
     "$output_root/usr/lib/forkop/core/constants.uc"
 
+  make_dir "$output_root/usr/share/licenses/forkop"
+  install -m 0644 "$ROOT_DIR/LICENSE" "$output_root/usr/share/licenses/forkop/LICENSE"
+
   normalize_package_root_modes "$output_root"
   chmod 0755 "$output_root/etc/init.d/forkop" "$output_root/etc/init.d/forkop-state" "$output_root/usr/bin/forkop"
 }
@@ -272,6 +276,9 @@ build_app_root() {
   cp -a "$ROOT_DIR/luci-app-forkop/root/." "$output_root/"
   sed -i -e "s/__COMPILED_VERSION_VARIABLE__/${RELEASE_VERSION}/g" \
     "$output_root/www/luci-static/resources/view/forkop/main.js"
+
+  make_dir "$output_root/usr/share/licenses/luci-app-forkop"
+  install -m 0644 "$ROOT_DIR/LICENSE" "$output_root/usr/share/licenses/luci-app-forkop/LICENSE"
 
   normalize_package_root_modes "$output_root"
   find "$output_root/etc/uci-defaults" -type f -exec chmod 0755 {} + 2>/dev/null || true
@@ -291,6 +298,9 @@ uci set luci.languages.ru='Русский (Russian)'; uci commit luci
 EOF
 
   "$po2lmo_bin" "$ROOT_DIR/luci-app-forkop/po/ru/forkop.po" "$lmo_path"
+
+  make_dir "$output_root/usr/share/licenses/luci-i18n-forkop-ru"
+  install -m 0644 "$ROOT_DIR/LICENSE" "$output_root/usr/share/licenses/luci-i18n-forkop-ru/LICENSE"
 
   normalize_package_root_modes "$output_root"
   find "$output_root/etc/uci-defaults" -type f -exec chmod 0755 {} + 2>/dev/null || true

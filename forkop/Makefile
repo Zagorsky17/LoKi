@@ -1,3 +1,4 @@
+# Modified for LoKi on 2026-11-04: include the unchanged project license.
 # Modified for LoKi on 2026-10-31: use the project release repository.
 include $(TOPDIR)/rules.mk
 
@@ -61,6 +62,9 @@ define Package/forkop/conffiles
 endef
 
 define Package/forkop/install
+	$(INSTALL_DIR) $(1)/usr/share/licenses/forkop
+	$(INSTALL_DATA) ../LICENSE $(1)/usr/share/licenses/forkop/LICENSE
+
 	$(INSTALL_DIR) $(1)/etc/init.d
 	$(INSTALL_BIN) ./files/etc/init.d/forkop $(1)/etc/init.d/forkop
 	$(INSTALL_BIN) ./files/etc/init.d/forkop-state $(1)/etc/init.d/forkop-state
