@@ -60,7 +60,9 @@ jobs:
 
       - name: Run tests
         shell: bash
-        run: tests/run.sh
+        run: |
+          tests/run.sh
+          python3 -B tests/test_cold_boot_init.py
 
       - name: Check SDK download integrity
         run: python3 -m unittest discover -s tests/packaging -p 'test_*.py'

@@ -10,6 +10,7 @@ let health = require("service.health");
 let ui = require("service.ui");
 let lifecycle = require("service.lifecycle");
 let initd = require("service.initd");
+let start_request = require("service.start_request");
 
 let me = common.own_pid();
 let calls = [];
@@ -25,9 +26,10 @@ function fresh(settings) {
     ui.paths.reload_lock = dir + "/forkop.reload.lock";
     ui.paths.pending_reload = dir + "/reload.pending";
     initd.paths.config = dir + "/forkop.config";
-    initd.paths.start_retry = dir + "/start.retry";
+    start_request.paths.pending = dir + "/start.retry";
+    start_request.paths.lock = dir + "/start-request.lock";
     initd.paths.internal_change = dir + "/internal-config-change";
-    initd.paths.autostart = dir + "/S99forkop";
+    start_request.paths.autostart = dir + "/S99forkop";
     fs.writefile(initd.paths.config, "config forkop\n");
     fixture.seed({ settings: settings ?? {} });
     calls = [];
@@ -41,7 +43,12 @@ function fresh(settings) {
         push(calls, "lifecycle restore routing");
         return restored;
     };
-    lifecycle.start = () => { push(calls, "lifecycle start"); return lifecycle_status; };
+    lifecycle.start = (guard) => {
+        if (guard != null && !guard())
+            return 0;
+        push(calls, "lifecycle start");
+        return lifecycle_status;
+    };
     lifecycle.stop = () => { push(calls, "lifecycle stop"); return lifecycle_status; };
     lifecycle.reload = (reason) => {
         push(calls, "lifecycle reload " + reason);
@@ -146,53 +153,60 @@ t.test("a reload that finds the reload lock taken queues itself", () => {
     lock.release(ui.paths.reload_lock, me);
 });
 
-t.test("a failed start leaves a retry for the next WAN-up, and a good one clears it", () => {
+t.test("a failed enabled start leaves its generation for retry and a good one clears it", () => {
     fresh();
+    fs.symlink("../init.d/forkop", start_request.paths.autostart);
     hooks(true);
     lifecycle_status = 1;
-    t.eq(stub.capture(() => initd.start("")).result, 1);
-    t.matches(fs.readfile(initd.paths.start_retry), /^reason=start_failed\n/);
-    stub.capture(() => initd.start("triggered"));
-    t.matches(fs.readfile(initd.paths.start_retry), /^reason=wan_retry_failed\n/);
+    t.eq(stub.capture(() => initd.start("boot")).result, 1);
+    let first = start_request.token();
+    t.ok(first != "");
+    t.eq(initd.retry_start(first), 1);
+    t.eq(start_request.token(), first, "a retry does not create a new intent");
     lifecycle_status = 0;
-    t.eq(stub.capture(() => initd.start("")).stdout, "", "at boot procd would write it into the syslog beside the log's own line");
-    t.ok(fs.stat(initd.paths.start_retry) == null);
+    t.eq(stub.capture(() => initd.retry_start(first)).stdout, "");
+    t.eq(start_request.token(), "");
     stub.restore();
 });
 
-t.test("a failed start says whether the WAN coming up tries it again", () => {
+t.test("failed manual starts describe only the retry that is actually armed", () => {
     fresh();
     let logs = [];
     stub.commands([ stub.logger(logs), [ "ubus call service list", { stdout: "{\"forkop\":{}}" } ] ]);
     lifecycle_status = 1;
     stub.capture(() => initd.start(""));
-    fs.writefile(initd.paths.autostart, "");
+    t.eq(start_request.token(), "", "enabling later must not resurrect a failed disabled start");
+    fs.symlink("../init.d/forkop", start_request.paths.autostart);
     stub.capture(() => initd.start(""));
     stub.restore();
-    t.eq(logs, [ "[warn] LoKi did not start", "[warn] LoKi did not start; it tries again when the WAN comes up" ]);
+    t.eq(logs, [ "[warn] LoKi did not start", "[warn] LoKi did not start; it retries while autostart remains enabled" ]);
 });
 
-t.test("a WAN coming up restarts only a failed start of an enabled service", () => {
+t.test("a retry needs a pending generation and our exact autostart link", () => {
     fresh();
-    let restarts = 0;
-    hooks(true, [ [ "/etc/init.d/forkop restart triggered", () => { restarts++; return {}; } ] ]);
-    lock.mark_request(initd.paths.start_retry, "start_failed");
+    hooks(true);
+    start_request.begin();
     running = true;
     initd.retry_start();
-    t.ok(fs.stat(initd.paths.start_retry) == null, "a running service needs no retry");
-
+    t.eq(start_request.token(), "");
     running = false;
-    lock.mark_request(initd.paths.start_retry, "start_failed");
+    for (let kind in [ "absent", "file", "foreign" ]) {
+        if (kind == "file")
+            fs.writefile(start_request.paths.autostart, "foreign");
+        if (kind == "foreign")
+            fs.symlink("../init.d/other", start_request.paths.autostart);
+        start_request.begin();
+        initd.retry_start();
+        t.eq(calls, [], kind);
+        t.eq(start_request.token(), "");
+        fs.unlink(start_request.paths.autostart);
+    }
+    fs.symlink("../init.d/forkop", start_request.paths.autostart);
     initd.retry_start();
-    t.eq(restarts, 0, "a disabled service stays down");
-    t.ok(fs.stat(initd.paths.start_retry) == null);
-
-    fs.writefile(initd.paths.autostart, "");
+    t.eq(calls, [], "an explicit stop stays stopped");
+    start_request.begin();
     initd.retry_start();
-    t.eq(restarts, 0, "a service stopped on purpose stays down");
-    lock.mark_request(initd.paths.start_retry, "start_failed");
-    initd.retry_start();
-    t.eq(restarts, 1);
+    t.eq(calls, [ "lifecycle start" ]);
     stub.restore();
 });
 
@@ -215,21 +229,21 @@ t.test("a WAN coming up after a network restart puts back the routing under a ta
     fresh({ enable_badwan_interface_monitoring: "1", badwan_monitored_interfaces: "wan" });
     let commands = [];
     hooks(true, [ [ "/etc/init.d/forkop", (argv) => { push(commands, argv[1] + " " + argv[2]); return {}; } ] ]);
-    fs.writefile(initd.paths.autostart, "");
-    lock.mark_request(initd.paths.start_retry, "start_failed");
+    fs.symlink("../init.d/forkop", start_request.paths.autostart);
+    start_request.begin();
     table = true;
     restored = true;
     initd.wan_up();
     t.eq(calls, [ "lifecycle restore routing" ]);
     t.eq(commands, [ "reload interface_up:wan" ], "a monitored WAN is reapplied as on any WAN-up");
-    t.ok(fs.stat(initd.paths.start_retry) == null, "no restart is left to try");
+    t.ok(fs.stat(start_request.paths.pending) == null, "no restart is left to try");
 
     calls = [];
     commands = [];
     restored = false;
-    lock.mark_request(initd.paths.start_retry, "start_failed");
+    start_request.begin();
     initd.wan_up();
-    t.eq([ calls, commands ], [ [ "lifecycle restore routing" ], [ "restart triggered" ] ], "a routing it could not restore leaves the failed start to retry");
+    t.eq([ calls, commands ], [ [ "lifecycle restore routing", "lifecycle start" ], [] ], "failed restoration retries without a stop/restart that could erase newer intent");
 
     calls = [];
     commands = [];
@@ -287,6 +301,199 @@ t.test("restart refuses an unsafe cache path before stopping the running service
     t.eq(ui.active_action(), "");
     t.eq(fs.stat(dir + "/public-cache").mode & 0777, 0755);
     t.ok(index(sprintf("%J", logs), dir) < 0, "the restart error masks the selected path");
+});
+
+t.test("boot refuses a disabled service but an explicit manual Start remains allowed", () => {
+    fresh();
+    hooks(true);
+    t.eq(initd.start("boot"), 0);
+    t.eq(calls, []);
+    t.eq(start_request.token(), "");
+    t.eq(initd.start(""), 0);
+    t.eq(calls, [ "lifecycle start" ]);
+    stub.restore();
+});
+
+t.test("an initial failed start cannot recreate a request cancelled while it ran", () => {
+    fresh();
+    hooks(true);
+    fs.symlink("../init.d/forkop", start_request.paths.autostart);
+    lifecycle.start = (guard) => {
+        t.ok(start_request.token() != "", "intent exists before lifecycle mutates anything");
+        t.eq(lock.held(start_request.paths.lock), false);
+        t.ok(guard());
+        start_request.cancel();
+        t.eq(guard(), false);
+        return 1;
+    };
+    t.eq(initd.start("boot"), 1);
+    t.eq(start_request.token(), "");
+    stub.restore();
+});
+
+t.test("old successful completion and queued retry leave a new Start generation alone", () => {
+    fresh();
+    hooks(true);
+    fs.symlink("../init.d/forkop", start_request.paths.autostart);
+    let old;
+    let next;
+    lifecycle.start = () => {
+        old = start_request.token();
+        next = start_request.begin();
+        return 0;
+    };
+    t.eq(initd.start("boot"), 0);
+    t.eq(start_request.token(), next);
+    t.eq(initd.retry_start(old), 0);
+    t.eq(start_request.token(), next);
+    stub.restore();
+});
+
+t.test("an intent write failure refuses before lifecycle and a clear failure remains an error", () => {
+    let dir = fresh();
+    hooks(true);
+    fs.writefile(dir + "/not-a-dir", "foreign");
+    start_request.paths.pending = dir + "/not-a-dir/request";
+    t.eq(initd.start(""), 1);
+    t.eq(calls, []);
+    start_request.paths.pending = dir + "/start.retry";
+    let unlink = fs.unlink;
+    fs.unlink = (path) => path == start_request.paths.pending ? false : unlink(path);
+    let status = initd.start("");
+    fs.unlink = unlink;
+    t.eq(status, 1);
+    t.ok(start_request.token() != "");
+    t.eq(ui.active_action(), "");
+    stub.restore();
+});
+
+t.test("late readiness retries on the timer without any WAN event and retires its own instance", () => {
+    fresh();
+    hooks(true);
+    fs.symlink("../init.d/forkop", start_request.paths.autostart);
+    let token = start_request.begin();
+    let uloop = require("uloop");
+    let ubus = require("ubus");
+    uloop.__reset();
+    ubus.__reset();
+    ubus.__on("service.delete", {});
+    lifecycle_status = 1;
+    uloop.__on_run(() => {
+        t.eq(uloop.__timers()[0].ms, 30000);
+        uloop.__fire("timer");
+        t.eq(start_request.token(), token);
+        t.eq(ubus.__calls(), []);
+        lifecycle_status = 0;
+        uloop.__fire("timer");
+    });
+    t.eq(initd.retry_monitor(token), 0);
+    t.eq(calls, [ "lifecycle start", "lifecycle start" ]);
+    t.eq(ubus.__calls(), [ { object: "service", method: "delete", args: {
+        name: "forkop", instance: "start-retry-" + token
+    } } ]);
+    t.eq(start_request.token(), "");
+    stub.restore();
+});
+
+t.test("timer cancellation and a newer generation cannot delete the newer instance", () => {
+    fresh();
+    hooks(true);
+    fs.symlink("../init.d/forkop", start_request.paths.autostart);
+    let old = start_request.begin();
+    let next;
+    let uloop = require("uloop");
+    let ubus = require("ubus");
+    uloop.__reset();
+    ubus.__reset();
+    ubus.__on("service.delete", {});
+    uloop.__on_run(() => {
+        start_request.cancel();
+        next = start_request.begin();
+        uloop.__fire("timer");
+    });
+    t.eq(initd.retry_monitor(old), 0);
+    t.eq(calls, []);
+    t.eq(start_request.token(), next);
+    t.eq(ubus.__calls()[0].args, { name: "forkop", instance: "start-retry-" + old });
+    stub.restore();
+});
+
+t.test("external rc.common Disable cancels a timer without invoking lifecycle", () => {
+    fresh();
+    hooks(true);
+    fs.symlink("../init.d/forkop", start_request.paths.autostart);
+    let token = start_request.begin();
+    let uloop = require("uloop");
+    let ubus = require("ubus");
+    uloop.__reset();
+    ubus.__reset();
+    ubus.__on("service.delete", {});
+    uloop.__on_run(() => {
+        fs.unlink(start_request.paths.autostart);
+        uloop.__fire("timer");
+    });
+    t.eq(initd.retry_monitor(token), 0);
+    t.eq(calls, []);
+    t.eq(start_request.token(), "");
+    fs.symlink("../init.d/forkop", start_request.paths.autostart);
+    initd.retry_start();
+    t.eq(calls, [], "Enable alone must not revive the cancelled retry");
+    stub.restore();
+});
+
+t.test("monitor errors and malformed generation never delete the whole service", () => {
+    fresh();
+    let uloop = require("uloop");
+    let ubus = require("ubus");
+    uloop.__reset();
+    ubus.__reset();
+    for (let token in [ "", "1-2-3;other", "1-2-3\n", null ])
+        t.eq(initd.retry_monitor(token), 1);
+    t.eq(ubus.__calls(), []);
+    ubus.__on("service.delete", ubus.__failure("temporary failure"));
+    t.eq(initd.retry_monitor("1-2-3"), 1);
+    t.eq(ubus.__calls()[0].args, { name: "forkop", instance: "start-retry-1-2-3" });
+});
+
+t.test("a persistent retry sees committed UCI changes before lifecycle validation", () => {
+    fresh({ cache_path: "first" });
+    hooks(true);
+    fs.symlink("../init.d/forkop", start_request.paths.autostart);
+    let uci = require("core.uci");
+    let seen = [];
+    lifecycle.start = () => { push(seen, uci.get("forkop.settings.cache_path")); return 1; };
+    initd.start("boot");
+    let editor = require("uci").cursor();
+    editor.set("forkop", "settings", "cache_path", "second");
+    editor.commit("forkop");
+    initd.retry_start();
+    t.eq(seen, [ "first", "second" ]);
+    stub.restore();
+});
+
+t.test("Stop cancellation during a timer callback retires without a retry child", () => {
+    fresh();
+    hooks(true);
+    fs.symlink("../init.d/forkop", start_request.paths.autostart);
+    let token = start_request.begin();
+    let uloop = require("uloop");
+    let ubus = require("ubus");
+    uloop.__reset();
+    ubus.__reset();
+    ubus.__on("service.delete", {});
+    lifecycle.start = (guard) => {
+        t.ok(guard());
+        start_request.cancel(token);
+        uloop.__raise("SIGTERM");
+        t.eq(guard(), false);
+        return 1;
+    };
+    uloop.__on_run(() => uloop.__fire("timer"));
+    t.eq(initd.retry_monitor(token), 0);
+    t.eq(start_request.token(), "");
+    t.eq(uloop.__processes(), []);
+    t.eq(ubus.__calls()[0].args.instance, "start-retry-" + token);
+    stub.restore();
 });
 
 t.done();

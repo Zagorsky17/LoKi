@@ -12,6 +12,7 @@ let nft_state = require("nft.state");
 let health = require("service.health");
 let lock = require("service.lock");
 let ui = require("service.ui");
+let start_request = require("service.start_request");
 
 const CONFIG_NAME = "forkop";
 const CONFIG_CHANGE = "on_config_change";
@@ -21,11 +22,9 @@ const SERVICE_INIT = constants.FORKOP_SERVICE_INIT;
 
 let paths = {
     config: "/etc/config/forkop",
-    start_retry: "/var/run/forkop/start.retry",
     // Written by the migration after it commits, so the reload its own commit
     // triggers is skipped.
-    internal_change: "/var/run/forkop.internal-config-change",
-    autostart: "/etc/rc.d/S" + constants.FORKOP_START_PRIORITY + "forkop"
+    internal_change: "/var/run/forkop.internal-config-change"
 };
 
 // Loaded only by the hooks that run it: the status and trigger hooks do not, the WAN hook only
@@ -74,21 +73,36 @@ function registered() {
     return type(services) != "object" || services.forkop != null;
 }
 
-function start(reason) {
+function attempt(token, automatic) {
     let job = begin("start");
-    let status = lifecycle().start();
-    if (status == 0)
-        lock.consume_request(paths.start_retry);
-    else {
-        lock.mark_request(paths.start_retry, reason == "triggered" ? "wan_retry_failed" : "start_failed");
-        exec.log("warn", "LoKi did not start" + (fs.stat(paths.autostart) != null ? "; it tries again when the WAN comes up" : ""));
+    let guard = () => start_request.current(token) && (!automatic || start_request.enabled());
+    uci.reset();
+    let status = lifecycle().start(guard);
+    if (status == 0 || !start_request.enabled()) {
+        if (!start_request.cancel(token)) {
+            exec.log("error", "Failed to clear the pending LoKi start");
+            status = 1;
+        }
     }
+    if (status != 0)
+        exec.log("warn", "LoKi did not start" + (start_request.current(token) && start_request.enabled()
+            ? "; it retries while autostart remains enabled" : ""));
     finish("start", job, status);
     return status;
 }
 
+function start(reason) {
+    if (reason == "boot" && !start_request.enabled())
+        return 0;
+    let token = start_request.begin();
+    if (token == "") {
+        exec.log("error", "Failed to record the LoKi start request");
+        return 1;
+    }
+    return attempt(token, reason == "boot");
+}
+
 function stop() {
-    lock.consume_request(paths.start_retry);
     let job = begin("stop");
     let status = lifecycle().stop();
     finish("stop", job, status);
@@ -161,15 +175,57 @@ function status() {
     return running ? 0 : 1;
 }
 
-function retry_start() {
-    if (runtime_running() || fs.stat(paths.autostart) == null) {
-        lock.consume_request(paths.start_retry);
+function retry_start(token) {
+    token = token ?? start_request.token();
+    if (!start_request.current(token))
         return 0;
+    if (!start_request.enabled() || runtime_running())
+        return start_request.cancel(token) ? 0 : 1;
+    exec.log("info", "Retrying the failed LoKi start");
+    return attempt(token, true);
+}
+
+function retry_token() {
+    return start_request.enabled() ? start_request.token() : "";
+}
+
+function retry_monitor(token) {
+    if (type(token) != "string" || match(token, /^[1-9][0-9]*-[0-9]+-[1-9][0-9]*$/) == null)
+        return 1;
+    let uloop = require("uloop");
+    uloop.init();
+    uloop.signal("SIGTERM", () => uloop.end());
+    let connection = require("ubus").connect();
+    if (connection == null)
+        return 1;
+    let status = 0;
+    let timer;
+    let retire = function() {
+        if (!start_request.cancel(token))
+            status = 1;
+        // Each generation removes only its own instance, even after a new Start.
+        connection.call("service", "delete", { name: "forkop", instance: "start-retry-" + token });
+        if (connection.error() != null)
+            status = 1;
+        uloop.end();
+    };
+    let pending = () => start_request.current(token) && start_request.enabled();
+    let step = function() {
+        if (pending())
+            retry_start(token);
+        if (pending())
+            timer.set(30000);
+        else
+            retire();
+    };
+    if (pending()) {
+        timer = uloop.timer(30000, step);
+        uloop.run();
     }
-    if (fs.stat(paths.start_retry) == null)
-        return 0;
-    exec.log("info", "The WAN came up; retrying the failed start");
-    return exec.run([ SERVICE_INIT, "restart", "triggered" ]);
+    else
+        retire();
+    connection.disconnect();
+    return status;
 }
 
 function monitored(interface_name) {
@@ -183,9 +239,11 @@ function routing_restored() {
 }
 
 function wan_up() {
+    let token = start_request.token();
     if (!runtime_running() && !routing_restored())
-        return retry_start();
-    lock.consume_request(paths.start_retry);
+        return retry_start(token);
+    if (!start_request.cancel(token))
+        return 1;
     if (!monitored("wan"))
         return 0;
     return exec.run([ SERVICE_INIT, "reload", INTERFACE_UP + "wan" ]);
@@ -207,4 +265,4 @@ function triggers() {
     return join("\n", lines) + "\n";
 }
 
-return { paths, start, stop, restart, reload, status, retry_start, wan_up, triggers };
+return { paths, start, stop, restart, reload, status, retry_start, retry_token, retry_monitor, wan_up, triggers };
