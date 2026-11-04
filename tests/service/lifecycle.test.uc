@@ -17,6 +17,8 @@ let watch = require("service.singbox_watch");
 let migration = require("config.migration");
 let fixture = require("fixture");
 let lifecycle = require("service.lifecycle");
+let start_request = require("service.start_request");
+let lock = require("service.lock");
 
 let world = null;
 let real_sleep = global.sleep;
@@ -30,6 +32,9 @@ function event(name) {
 
 function reset(options) {
     let dir = stub.tmpdir();
+    start_request.paths.pending = dir + "/start.retry";
+    start_request.paths.lock = dir + "/request.lock";
+    start_request.paths.autostart = dir + "/rc.d/S99forkop";
     lifecycle.paths.config = dir + "/forkop.config";
     lifecycle.paths.lock = dir + "/start.lock";
     lifecycle.paths.pending_reload = dir + "/reload.pending";
@@ -926,6 +931,96 @@ t.test("repeated service cycles cannot prepare retired servers or tunnels", () =
     t.eq(filter(commands, (line) => match(line, /firewall|reality-keypair|server-certs|forkop-servers|tailscale|warp-profile/) != null), []);
     t.eq(uci.__commits(), [], "server defaults are never written");
     t.excludes(join("\n", world.logs), "private-");
+});
+
+t.test("a cancelled start does no work before or after waiting for the lifecycle lock", () => {
+    reset();
+    t.eq(run(() => lifecycle.start(() => false)).result, 0);
+    t.eq(world.events, []);
+    t.eq(world.migration_checks, null);
+    reset();
+    t.eq(run(() => lifecycle.start(() => !lock.held(lifecycle.paths.lock))).result, 0);
+    t.eq(world.events, []);
+    t.eq(world.migration_checks, null);
+});
+
+t.test("cancellation during readiness stops the new core without applying interception", () => {
+    reset();
+    let token = start_request.begin();
+    world.on_sleep = () => start_request.cancel(token);
+    t.eq(run(() => lifecycle.start(() => start_request.current(token))).result, 1);
+    t.ok(index(world.events, "sing-box started") >= 0);
+    t.ok(index(world.events, "nft applied") < 0);
+    t.eq(world.pid, 0);
+    t.eq(world.network, false);
+    t.ok(world.slept < 8, "cancellation interrupts the bounded readiness wait");
+});
+
+t.test("a cancellation after the readiness observation is checked before nft apply", () => {
+    reset();
+    let cancelled = false;
+    health.sing_box_runtime_ports_ready = () => {
+        if (world.slept >= 8)
+            cancelled = true;
+        return true;
+    };
+    t.eq(run(() => lifecycle.start(() => !cancelled)).result, 1);
+    t.ok(cancelled);
+    t.ok(index(world.events, "nft applied") < 0);
+    t.eq(world.pid, 0);
+});
+
+t.test("Stop cancels pending intent before waiting for lifecycle and releases the request lock", () => {
+    running();
+    start_request.begin();
+    let acquire = lock.acquire_wait;
+    let observed = false;
+    lock.acquire_wait = (path, owner, timeout, grace) => {
+        if (path == lifecycle.paths.lock) {
+            observed = true;
+            t.eq(start_request.token(), "");
+            t.eq(lock.held(start_request.paths.lock), false);
+        }
+        return acquire(path, owner, timeout, grace);
+    };
+    let result = run(() => lifecycle.stop());
+    lock.acquire_wait = acquire;
+    t.eq(result.result, 0);
+    t.ok(observed);
+    t.eq(world.pid, 0);
+});
+
+t.test("Disable cancels retry without stopping an already healthy runtime", () => {
+    running();
+    lifecycle.enable();
+    start_request.begin();
+    t.eq(lifecycle.disable(), 0);
+    t.eq(start_request.token(), "");
+    t.eq(world.events, []);
+    t.eq(world.pid, 4242);
+    t.ok(world.network);
+    finish();
+});
+
+t.test("Stop and Disable expose failed cancellation instead of reporting success", () => {
+    for (let action in [ "stop", "disable" ]) {
+        running();
+        lifecycle.enable();
+        let token = start_request.begin();
+        let unlink = fs.unlink;
+        fs.unlink = (path) => path == start_request.paths.pending ? false : unlink(path);
+        let result = stub.capture(() => lifecycle[action]());
+        fs.unlink = unlink;
+        t.eq(result.result, 1, action);
+        t.eq(start_request.token(), token);
+        if (action == "disable") {
+            t.eq(world.events, []);
+            t.eq(fs.readlink(start_request.paths.autostart), "../init.d/forkop");
+        }
+        else
+            t.eq(world.pid, 0, "Stop still cleans up the current runtime");
+        finish();
+    }
 });
 
 t.done();

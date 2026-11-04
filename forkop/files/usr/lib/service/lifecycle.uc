@@ -19,6 +19,7 @@ let rulesets = require("nft.ruleset_sync");
 let health = require("service.health");
 let lock = require("service.lock");
 let watch = require("service.singbox_watch");
+let start_request = require("service.start_request");
 
 const CONFIG_NAME = "forkop";
 const RT_TABLE = constants.RT_TABLE_NAME;
@@ -110,12 +111,14 @@ function validate() {
 
 // Dated from the call, since a live reload keeps the process. The process is pinned by its
 // start ticks from the first look (procd answers before it forks); one replaced mid-wait fails.
-function wait_ready(window, hold, with_network) {
+function wait_ready(window, hold, with_network, guard) {
     let pid = 0;
     let ticks = null;
     let waited = 0;
     let held = 0;
     while (true) {
+        if (guard != null && !guard())
+            return false;
         if (pid <= 0) {
             let found = health.sing_box_service_pid_runtime();
             if (found > 0 && health.pid_is_sing_box(found)) {
@@ -261,13 +264,17 @@ function nothing_to_run() {
 let start_fingerprint = "";
 
 // Every step that gives up logs one error line, which the page raises as an alert.
-function start_runtime() {
+function start_runtime(guard) {
+    if (guard != null && !guard())
+        return false;
     if (runtime.process_running()) {
         log("error", "Another sing-box process is running outside LoKi; stop it before starting LoKi");
         return false;
     }
 
     if (!validate() || !validate_cache_path(true))
+        return false;
+    if (guard != null && !guard())
         return false;
     start_fingerprint = config_fingerprint();
     if (!nft.ensure_bridge_netfilter_disabled()) {
@@ -289,17 +296,21 @@ function start_runtime() {
         return false;
     if (!clash_controller_free())
         return false;
+    if (guard != null && !guard())
+        return false;
 
     if (!exec.ok([ paths.sing_box_init, "start" ])) {
         log("error", "Failed to start sing-box");
         return false;
     }
-    if (!wait_ready(START_READY_WINDOW, READY_HOLD, false)) {
-        log("error", not_ready("started"));
+    if (!wait_ready(START_READY_WINDOW, READY_HOLD, false, guard)) {
+        log("error", guard != null && !guard() ? "LoKi start was cancelled" : not_ready("started"));
         return false;
     }
 
     // Only once sing-box answers does the table start sending it traffic.
+    if (guard != null && !guard())
+        return false;
     try {
         apply_nft(built);
     }
@@ -327,7 +338,7 @@ function start_runtime() {
         log("error", "Failed to arm the sing-box crash watcher");
         return false;
     }
-    return true;
+    return guard == null || guard();
 }
 
 function locked(action) {
@@ -345,12 +356,16 @@ function forkop_running() {
     return health.forkop_running(RT_TABLE, NFT_TABLE, FAKEIP_MARK);
 }
 
-function start() {
+function start(guard) {
+    if (guard != null && !guard())
+        return 0;
     if (forkop_running()) {
         log("info", "LoKi is already running");
         return 0;
     }
     return locked(function() {
+        if (guard != null && !guard())
+            return 0;
         if (forkop_running()) {
             log("info", "LoKi is already running");
             return 0;
@@ -368,7 +383,7 @@ function start() {
             log("error", "A sing-box left from an earlier run could not be stopped; not starting a second one");
             return 1;
         }
-        if (!start_runtime()) {
+        if (!start_runtime(guard)) {
             cleanup_failed_runtime();
             return 1;
         }
@@ -379,7 +394,10 @@ function start() {
 }
 
 function stop() {
-    return locked(function() {
+    let cancelled = start_request.cancel();
+    if (!cancelled)
+        log("error", "Failed to cancel the pending LoKi start");
+    let status = locked(function() {
         let active = health.sing_box_service_running() || nft_state.table_present(NFT_TABLE);
         if (active)
             log("info", "Stopping LoKi");
@@ -392,6 +410,7 @@ function stop() {
             log("info", "LoKi stopped");
         return 0;
     });
+    return cancelled ? status : 1;
 }
 
 // Called by the crash watcher once procd gave up on sing-box.
@@ -620,6 +639,8 @@ function disable() {
         if (entry == null ? fs.error() != absent : fs.readlink(link) != "../init.d/forkop")
             return 1;
     }
+    if (!start_request.cancel())
+        return 1;
     for (let link in links)
         if (fs.readlink(link) == "../init.d/forkop" && !fs.unlink(link))
             return 1;

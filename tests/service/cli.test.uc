@@ -29,6 +29,9 @@ t.test("autostart answers the page whether the switch moved or not", () => {
     let lifecycle = require("service.lifecycle");
     let dir = stub.tmpdir();
     lifecycle.paths.rc_dir = dir + "/rc.d";
+    let request = require("service.start_request");
+    request.paths.pending = dir + "/start.retry";
+    request.paths.lock = dir + "/request.lock";
     let on = stub.capture(() => cli.main([ "enable" ], "/lib"));
     let off = stub.capture(() => cli.main([ "disable" ], "/lib"));
     t.eq([ on.result, json(on.stdout) ], [ 0, { success: true } ]);
@@ -69,6 +72,8 @@ t.test("the help lists the public commands and hides the package hooks", () => {
     t.contains(help, "    ui_action_ack <job>");
     t.excludes(help, "package_postinst");
     t.excludes(help, "sing_box_crash_cleanup");
+    t.excludes(help, "initd_retry_monitor");
+    t.excludes(help, "initd_retry_token");
 });
 
 t.test("report defaults to masked JSON and only an explicit raw request returns secrets with a warning", () => {
@@ -99,6 +104,13 @@ t.test("retired server commands with arbitrary arguments have no side effects", 
         t.eq(result.result, 1, command);
         t.eq(result.commands, [], command);
         t.excludes(result.stdout + result.stderr, "private-argument");
+    }
+});
+
+t.test("retry hooks cannot be dispatched by either RPC role", () => {
+    for (let args in [ [ "initd_retry_start" ], [ "initd_retry_token" ], [ "initd_retry_monitor", "1-2-3" ] ]) {
+        t.eq(cli.read_allowed(args), false);
+        t.eq(cli.write_allowed(args), false);
     }
 });
 

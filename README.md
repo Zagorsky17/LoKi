@@ -58,6 +58,10 @@ The LoKi core folds exact ERROR repeats from the same component within a 10-seco
 
 A shared SSH/LuCI update mechanism is under development. Its scope is a compatible set of LoKi backend, LuCI, core, translations, YACD and bundled helpers. It must not change OS/firmware versions, shared system packages or settings, including through package-manager dependencies. System requirements are checked before changes; incompatibility must stop the update with a specific reason. Full preflight, recovery and actual OpenWrt upgrades are not verified yet.
 
+## Startup recovery
+
+With autostart enabled, a failed boot or manual start is retried after 30 seconds without waiting for a new WAN event. Retries stop after success, Stop or Disable; Disable leaves an already healthy runtime running. The core must become ready before traffic interception is applied. Recovery uses a temporary procd instance and does not require the LuCI state service. Physical power-loss recovery and flash persistence still require OpenWrt laboratory tests.
+
 ## Configuration backups
 
 LoKi configurations carry `option config_format 'loki'` alongside their schema version. A matching version number alone does not make a Forkop or Podkop configuration compatible. Installation, startup and backup restoration refuse foreign, unsupported or malformed schemas without moving or resetting the file. Intermediate development configurations without the LoKi marker are not converted automatically.
