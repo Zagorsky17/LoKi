@@ -584,15 +584,27 @@ const AUTOSTART_PRIORITY = constants.FORKOP_START_PRIORITY;
 
 function enable() {
     let link = paths.rc_dir + "/S" + AUTOSTART_PRIORITY + "forkop";
-    common.ensure_dir(paths.rc_dir);
-    fs.unlink(link);
-    return fs.symlink("../init.d/forkop", link) ? 0 : 1;
+    if (fs.readlink(link) == "../init.d/forkop")
+        return 0;
+    if (fs.lstat(link) != null || !common.ensure_dir(paths.rc_dir))
+        return 1;
+    return fs.symlink("../init.d/forkop", link) || fs.readlink(link) == "../init.d/forkop" ? 0 : 1;
 }
 
 function disable() {
-    fs.unlink(paths.rc_dir + "/K" + AUTOSTART_PRIORITY + "forkop");
-    fs.unlink(paths.rc_dir + "/S" + AUTOSTART_PRIORITY + "forkop");
-    return fs.stat(paths.rc_dir + "/S" + AUTOSTART_PRIORITY + "forkop") == null ? 0 : 1;
+    let links = map([ "K", "S" ], (prefix) => paths.rc_dir + "/" + prefix + AUTOSTART_PRIORITY + "forkop");
+    // fs.error() exposes translated text, so obtain ENOENT from this interpreter.
+    fs.lstat("");
+    let absent = fs.error();
+    for (let link in links) {
+        let entry = fs.lstat(link);
+        if (entry == null ? fs.error() != absent : fs.readlink(link) != "../init.d/forkop")
+            return 1;
+    }
+    for (let link in links)
+        if (fs.readlink(link) == "../init.d/forkop" && !fs.unlink(link))
+            return 1;
+    return 0;
 }
 
 function remove_package(name) {
