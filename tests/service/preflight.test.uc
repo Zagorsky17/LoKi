@@ -321,4 +321,51 @@ t.test("disabled init leftovers alone are not conflicting or executed", () => {
     t.excludes(sprintf("%J", result), "synthetic-unused-init-body");
 });
 
+function listener_fixture(root, broken) {
+    stub.real.system("umask 022; mkdir -p '" + root + "/proc/self/net'");
+    for (let name in [ "tcp", "tcp6", "udp", "udp6" ]) {
+        let v6 = substr(name, -1) == "6";
+        let udp = substr(name, 0, 3) == "udp";
+        let header = "sl local_address " + (v6 ? "remote_address" : "rem_address") +
+            " st tx_queue rx_queue tr tm->when retrnsmt uid timeout inode" + (udp ? " ref pointer drops" : "") + "\n";
+        let address = v6 ? "00000000000000000000000000000000" : "00000000";
+        let row = "0: " + address + ":0035 " + address + ":0000 " + (udp ? "07" : "0A") +
+            " 00000000:00000000 00:00000000 00000000 0 0 12345 1 0000000000000000" + (udp ? " 0" : "") + "\n";
+        write(root + "/proc/self/net/" + name, broken == name ? header + "malformed-private-row\n" : header + row);
+    }
+}
+
+t.test("standalone collector includes all four bounded listener snapshots", () => {
+    let root = fixture();
+    listener_fixture(root);
+    stub.commands([[ "exec timeout", { stdout: "{}" } ]]);
+    let result = preflight.collect(root);
+    stub.restore();
+    t.eq(length(filter(result.observations, (item) => item.kind == "listeners" &&
+        item.reason == "listener-table-read-complete")), 4);
+    t.ok(has(result, "incomplete", "listener-candidate-port-occupied-unverified"));
+    t.eq(result.install_allowed, false);
+});
+
+t.test("a malformed socket table is incomplete rather than an empty listener inventory", () => {
+    let root = fixture();
+    listener_fixture(root, "udp6");
+    stub.commands([[ "exec timeout", { stdout: "{}" } ]]);
+    let result = preflight.collect(root);
+    stub.restore();
+    t.ok(has(result, "incomplete", "listener-table-row-invalid"));
+    t.excludes(sprintf("%J", result), "malformed-private-row");
+    t.eq(result.complete, false);
+});
+
+t.test("socket discovery keeps mandatory ownership and namespace gaps", () => {
+    let root = fixture();
+    listener_fixture(root);
+    stub.commands([[ "exec timeout", { stdout: "{}" } ]]);
+    let result = preflight.collect(root);
+    stub.restore();
+    t.ok(has(result, "incomplete", "listener-process-ownership-unverified"));
+    t.ok(has(result, "incomplete", "listener-namespace-and-bind-configuration-unverified"));
+});
+
 t.done();

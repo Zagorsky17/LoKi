@@ -3,6 +3,7 @@ let apk_reader = require("service.preflight_apk");
 let manifest_reader = require("service.preflight_manifest");
 let files_reader = require("service.preflight_files");
 let services_reader = require("service.preflight_services");
+let listeners_reader = require("service.preflight_listeners");
 
 // Critical current package targets, not yet a complete install manifest.
 const TARGETS = [
@@ -305,8 +306,10 @@ function collect(root, manifest_path) {
         push(observations, observation("files", labels[item.path], item.state, item.reason));
     for (let item in services_reader.collect(root || "/"))
         push(observations, item);
+    for (let item in listeners_reader.collect(root || "/"))
+        push(observations, item);
     // Unimplemented domains are mandatory; a partial inventory never grants permission.
-    for (let kind in [ "hooks", "listeners",
+    for (let kind in [ "hooks",
         "dns-committed", "dns-pending", "dns-runtime", "nft-loaded", "nft-persisted",
         "ipv4-routes-rules", "ipv6-routes-rules", "dependencies", "resources", "configuration", "core-check" ])
         push(observations, observation(kind, kind, "incomplete", "not-implemented"));
