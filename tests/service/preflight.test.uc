@@ -198,4 +198,69 @@ t.test("status and ownership-list size limits have distinct reasons", () => {
     t.ok(has(preflight.collect(root), "incomplete", "status-size-limit"));
 });
 
+t.test("a directory at a critical file target is a conflict even without a package owner", () => {
+    let root = fixture();
+    stub.real.system("umask 022; mkdir -p '" + root + "/usr/bin/forkop'");
+    let result = preflight.collect(root);
+    t.eq(result.result, "conflict");
+    t.ok(has(result, "conflict", "candidate-target-type-conflict"));
+    t.eq(result.install_allowed, false);
+});
+
+t.test("a candidate symlink never opens or reports its private target", () => {
+    let root = fixture();
+    stub.real.system("umask 022; mkdir -p '" + root + "/usr/bin'");
+    let secret = root + "/synthetic-private-target";
+    write(secret, "synthetic-secret-must-stay-private");
+    fs.symlink(secret, root + "/usr/bin/forkop");
+    let open = fs.open;
+    let opened = false;
+    fs.open = (path, mode) => {
+        if (path == secret || path == root + "/usr/bin/forkop") opened = true;
+        return open(path, mode);
+    };
+    let result = preflight.collect(root);
+    fs.open = open;
+    t.ok(has(result, "conflict", "candidate-path-symlink"));
+    t.eq(opened, false);
+    t.excludes(sprintf("%J", result), "synthetic-private-target");
+    t.excludes(sprintf("%J", result), "synthetic-secret-must-stay-private");
+    t.eq(fs.readfile(secret), "synthetic-secret-must-stay-private");
+});
+
+t.test("symlink and writable parent paths cannot become checked absence", () => {
+    for (let kind in [ "link", "writable" ]) {
+        let root = fixture();
+        if (kind == "link") fs.symlink(root + "/private-parent", root + "/usr/bin");
+        else {
+            fs.mkdir(root + "/usr/bin", 0777);
+            fs.chmod(root + "/usr/bin", 0777);
+        }
+        let result = preflight.collect(root);
+        t.ok(has(result, "incomplete", kind == "link" ? "candidate-parent-symlink" : "candidate-parent-unsafe"));
+        t.eq(result.install_allowed, false);
+        t.excludes(sprintf("%J", result), "private-parent");
+    }
+});
+
+t.test("unowned regular files are origin unverified and are not read or removed", () => {
+    let root = fixture();
+    stub.real.system("umask 022; mkdir -p '" + root + "/usr/bin'");
+    let path = root + "/usr/bin/forkop";
+    write(path, "synthetic-private-existing-file");
+    let result = preflight.collect(root);
+    t.ok(has(result, "incomplete", "candidate-existing-file-origin-unverified"));
+    t.eq(fs.readfile(path), "synthetic-private-existing-file");
+    t.excludes(sprintf("%J", result), "synthetic-private-existing-file");
+    t.eq(preflight.collect(root), result);
+});
+
+t.test("missing paths have bounded checked absence but the full installation gate stays closed", () => {
+    let result = preflight.collect(fixture());
+    t.ok(has(result, "checked", "candidate-path-absent"));
+    t.eq(result.complete, false);
+    t.eq(result.install_allowed, false);
+    t.eq(result.result, "incomplete");
+});
+
 t.done();

@@ -1,6 +1,7 @@
 let fs = require("fs");
 let apk_reader = require("service.preflight_apk");
 let manifest_reader = require("service.preflight_manifest");
+let files_reader = require("service.preflight_files");
 
 // Critical current package targets, not yet a complete install manifest.
 const TARGETS = [
@@ -152,7 +153,11 @@ function collect(root, manifest_path) {
     let observations = [];
     let targets = map(TARGETS, (path) => path);
     let labels = {};
-    for (let path in TARGETS) labels[path] = path;
+    let file_targets = {};
+    for (let path in TARGETS) {
+        labels[path] = path;
+        file_targets[path] = "file";
+    }
     if (manifest_path == null) {
         push(observations, observation("candidate-manifest", "candidate-manifest", "incomplete", "manifest-not-provided"));
     }
@@ -163,14 +168,25 @@ function collect(root, manifest_path) {
             push(observations, observation("candidate-manifest", "candidate-manifest", "incomplete", manifest.error));
         else {
             let ordinal = 0;
+            let directories = 0;
             for (let path in sort(keys(manifest.paths))) {
-                // Shared directories do not imply conflicting files; host types remain pending.
-                if (manifest.paths[path].type != "file") continue;
+                let expected = manifest.paths[path].type;
+                if (expected == "directory") {
+                    directories++;
+                    if (exists(file_targets, path) && file_targets[path] != expected)
+                        push(observations, observation("candidate-manifest", labels[path], "conflict", "critical-file-target-type-mismatch"));
+                    else {
+                        file_targets[path] = expected;
+                        labels[path] = "candidate-directory-" + directories;
+                    }
+                    continue;
+                }
                 ordinal++;
                 if (!exists(labels, path)) {
                     push(targets, path);
                     labels[path] = "candidate-file-" + ordinal;
                 }
+                file_targets[path] = "file";
             }
             push(observations, observation("candidate-manifest", "candidate-manifest", "incomplete", "artifact-provenance-unverified"));
             push(observations, observation("candidate-manifest", "candidate-manifest", "incomplete", "artifact-content-unverified"));
@@ -284,8 +300,10 @@ function collect(root, manifest_path) {
         if (complete)
             push(observations, observation("ownership", "installed-opkg-candidate-files", "checked", "metadata-read-complete"));
     }
+    for (let item in files_reader.collect(root || "/", file_targets))
+        push(observations, observation("files", labels[item.path], item.state, item.reason));
     // Unimplemented domains are mandatory; a partial inventory never grants permission.
-    for (let kind in [ "files", "services", "autostart", "hooks", "listeners",
+    for (let kind in [ "services", "autostart", "hooks", "listeners",
         "dns-committed", "dns-pending", "dns-runtime", "nft-loaded", "nft-persisted",
         "ipv4-routes-rules", "ipv6-routes-rules", "dependencies", "resources", "configuration", "core-check" ])
         push(observations, observation(kind, kind, "incomplete", "not-implemented"));
