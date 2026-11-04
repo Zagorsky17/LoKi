@@ -110,6 +110,10 @@ function start_worker() {
     return worker.start(spec());
 }
 
+function worker_current() {
+    return worker.current(spec());
+}
+
 function stop_worker() {
     if (!worker.stop(spec()))
         return false;
@@ -117,4 +121,4 @@ function stop_worker() {
     return true;
 }
 
-return { paths, spec, should_cleanup, cleanup_event_key, failed_exit_code, monitor, start_worker, stop_worker };
+return { paths, spec, should_cleanup, cleanup_event_key, failed_exit_code, monitor, start_worker, worker_current, stop_worker };

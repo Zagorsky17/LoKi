@@ -210,6 +210,39 @@ t.test("a retry needs a pending generation and our exact autostart link", () => 
     stub.restore();
 });
 
+t.test("a retry with a healthy core still reaches shared watcher repair before clearing intent", () => {
+    fresh();
+    fs.symlink("../init.d/forkop", start_request.paths.autostart);
+    hooks(true);
+    running = true;
+    let token = start_request.begin();
+    lifecycle_status = 1;
+    t.eq(initd.retry_start(token), 1);
+    t.eq(calls, [ "lifecycle start" ]);
+    t.eq(start_request.token(), token, "failed repair must remain retryable");
+    lifecycle_status = 0;
+    t.eq(initd.retry_start(token), 0);
+    t.eq(start_request.token(), "");
+    stub.restore();
+});
+
+t.test("a healthy WAN event cannot discard failed watcher repair or skip its eventual retry", () => {
+    fresh();
+    fs.symlink("../init.d/forkop", start_request.paths.autostart);
+    hooks(true);
+    running = true;
+    let token = start_request.begin();
+    lifecycle_status = 1;
+    t.eq(initd.wan_up(), 1);
+    t.eq(start_request.token(), token);
+    t.eq(calls, [ "lifecycle start" ]);
+    lifecycle_status = 0;
+    t.eq(initd.wan_up(), 0);
+    t.eq(start_request.token(), "");
+    t.eq(calls, [ "lifecycle start", "lifecycle start" ]);
+    stub.restore();
+});
+
 t.test("a monitored WAN coming back reapplies a running configuration", () => {
     fresh({ enable_badwan_interface_monitoring: "1", badwan_monitored_interfaces: "wan wwan" });
     let reloads = [];
@@ -234,7 +267,8 @@ t.test("a WAN coming up after a network restart puts back the routing under a ta
     table = true;
     restored = true;
     initd.wan_up();
-    t.eq(calls, [ "lifecycle restore routing" ]);
+    t.eq(calls, [ "lifecycle restore routing", "lifecycle start" ],
+        "restored routing still completes shared watcher repair before clearing pending intent");
     t.eq(commands, [ "reload interface_up:wan" ], "a monitored WAN is reapplied as on any WAN-up");
     t.ok(fs.stat(start_request.paths.pending) == null, "no restart is left to try");
 
