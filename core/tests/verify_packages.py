@@ -1,5 +1,7 @@
 """Verify a local LoKi build before uploading its package assets."""
+# Modified for LoKi on 2026-11-04: verify binary-specific third-party notices.
 import io
+import hashlib
 import json
 from pathlib import Path
 import platform
@@ -8,6 +10,10 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from notices import verify_notice_bundle
 
 if len(sys.argv) != 2:
     raise SystemExit(f'Usage: {sys.argv[0]} PACKAGE-DIRECTORY')
@@ -29,6 +35,17 @@ with tarfile.open(root / f"core-source-{core['version']}.tar.gz") as source:
     assert 'log/error_repeats.go' in names and 'log/error_repeats_test.go' in names
     assert 'go.mod' in names and 'go.sum' in names and 'LICENSE' in names
     assert not any(name == '.git' or name.startswith('.git/') for name in names)
+    source_hash = hashlib.sha256()
+    source_files = 0
+    for member in sorted(source.getmembers(), key=lambda m: m.name.removeprefix('./')):
+        if member.isdir():
+            continue
+        assert member.isfile(), 'core source archive contains a non-regular entry'
+        name = member.name.removeprefix('./')
+        source_hash.update(name.encode() + b'\0' + hashlib.sha256(source.extractfile(member).read()).digest())
+        source_files += 1
+    source_receipt = {'sha256': source_hash.hexdigest(), 'files': source_files}
+
 packages = sorted(root.glob('sing-box-forkop_*.ipk'))
 assert packages, 'no core packages'
 native = None
@@ -53,6 +70,16 @@ for package in packages:
         assert 'In addition, no derivative work' in license_text
         assert '29 June 2007' in license_text
         binary = data.extractfile(members['usr/bin/sing-box']).read()
+        notice_info = json.loads(data.extractfile(members['usr/share/licenses/sing-box/build-info.json']).read())
+        notices = data.extractfile(members['usr/share/licenses/sing-box/THIRD_PARTY_NOTICES']).read()
+        with tempfile.TemporaryDirectory() as work:
+            metadata_binary = Path(work) / 'core'
+            metadata_binary.write_bytes(binary)
+            build_info = json.loads(subprocess.check_output(
+                ['go', 'version', '-m', '-json', str(metadata_binary)], text=True))
+        verify_notice_bundle(notice_info, notices, binary, source_receipt, build_info)
+        for name in ('build-info.json', 'THIRD_PARTY_NOTICES'):
+            assert members['usr/share/licenses/sing-box/' + name].mode == 0o644
         assert binary[:4] == b'\x7fELF'
         machine = int.from_bytes(binary[18:20], 'little' if binary[5] == 1 else 'big')
         if architecture == 'x86_64':
@@ -69,6 +96,17 @@ for package in packages:
     assert re.search(r'^  maintainer: Zagorsky17$', metadata, re.M)
     owners = re.findall(r'^\s+(?:user|group): (\S+)$', metadata, re.M)
     assert owners and all(value == 'root' for value in owners)
+    with tempfile.TemporaryDirectory() as extracted:
+        subprocess.run(['apk', 'extract', '--allow-untrusted', '--no-chown', '--destination', extracted, str(apk)],
+                       check=True, capture_output=True)
+        tree = Path(extracted)
+        assert (tree / 'usr/bin/sing-box').read_bytes() == binary, 'IPK/APK binary mismatch'
+        for name, expected in [('build-info.json', json.dumps(notice_info, sort_keys=True, indent=2).encode() + b'\n'),
+                               ('THIRD_PARTY_NOTICES', notices)]:
+            notice_file = tree / 'usr/share/licenses/sing-box' / name
+            assert notice_file.read_bytes() == expected, 'IPK/APK notice mismatch'
+            assert notice_file.stat().st_mode & 0o777 == 0o644
+
 if native is not None:
     with tempfile.TemporaryDirectory() as work:
         executable = Path(work) / 'sing-box'
