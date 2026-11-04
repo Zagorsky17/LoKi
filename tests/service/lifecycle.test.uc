@@ -740,6 +740,7 @@ t.test("re-enabling autostart keeps its existing entry when a new symlink cannot
     t.eq(lifecycle.enable(), 0);
     let link = lifecycle.paths.rc_dir + "/S99forkop";
     let before = fs.lstat(link);
+    t.ok(type(before.inode) == "int" && before.inode > 0, "native inode is available");
     let symlink = fs.symlink;
     let attempts = 0;
     let status;
@@ -755,7 +756,7 @@ t.test("re-enabling autostart keeps its existing entry when a new symlink cannot
     t.eq(status, 0);
     t.eq(attempts, 0, "an already enabled service needs no replacement");
     t.eq(fs.readlink(link), "../init.d/forkop");
-    t.eq(fs.lstat(link)?.ino, before.ino, "the durable entry was not replaced");
+    t.eq(fs.lstat(link)?.inode, before.inode, "the durable entry was not replaced");
 });
 
 t.test("unexpected autostart objects are refused without deleting their data", () => {
@@ -777,8 +778,9 @@ t.test("unexpected autostart objects are refused without deleting their data", (
         else
             fs.symlink(kind == "dangling" ? world.dir + "/missing" : victim, link);
         let before = fs.lstat(link);
+        t.ok(type(before.inode) == "int" && before.inode > 0, "native inode is available");
         t.eq(lifecycle.enable(), 1, kind);
-        t.eq(fs.lstat(link)?.ino, before.ino, kind);
+        t.eq(fs.lstat(link)?.inode, before.inode, kind);
         t.eq(fs.readfile(victim), "preserved synthetic data", kind);
         if (kind == "file") t.eq(fs.readfile(link), "preserved");
         if (kind == "directory") t.eq(fs.readfile(link + "/keep"), "preserved");
@@ -805,8 +807,9 @@ t.test("disabling autostart preserves an unexpected entry, including a dangling 
             else
                 fs.symlink(kind == "dangling" ? world.dir + "/missing" : victim, link);
             let before = fs.lstat(link);
+            t.ok(type(before.inode) == "int" && before.inode > 0, "native inode is available");
             t.eq(lifecycle.disable(), 1, prefix + ":" + kind);
-            t.eq(fs.lstat(link)?.ino, before.ino, prefix + ":" + kind);
+            t.eq(fs.lstat(link)?.inode, before.inode, prefix + ":" + kind);
             t.eq(fs.readfile(victim), "preserved synthetic data");
         }
     }
