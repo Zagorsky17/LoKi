@@ -25,9 +25,15 @@ if (( ${#packages[@]} == 0 )); then
     echo "The core build produced no packages" >&2
     exit 1
 fi
-cp -- "${packages[@]}" "$output/"
 tar -C "$work/source" --exclude=./.git --sort=name --mtime="@$CORE_SOURCE_DATE_EPOCH" \
-    --owner=0 --group=0 --numeric-owner -cf - . | gzip -9n > "$output/core-source-$CORE_VERSION.tar.gz"
+    --owner=0 --group=0 --numeric-owner -cf - . | gzip -9n > "$work/core-source-$CORE_VERSION.tar.gz"
+mapfile -d '' binaries < <(find "$work/output/build" -type f -name sing-box -print0 | LC_ALL=C sort -z)
+python3 -B "$HERE/module_sources.py" "$work/source" "$work/core-module-sources-$CORE_VERSION.tar.gz" "${binaries[@]}"
+module_digest=$(sha256sum "$work/core-module-sources-$CORE_VERSION.tar.gz" | cut -d ' ' -f1)
+# A failed source collection must not publish a new partial package set.
+cp -- "${packages[@]}" "$work/core-source-$CORE_VERSION.tar.gz" "$output/"
+# Different build profiles must retain their matching module sources in a combined release.
+cp -- "$work/core-module-sources-$CORE_VERSION.tar.gz" "$output/core-module-sources-$CORE_VERSION-$module_digest.tar.gz"
 python3 - "$output" "$tag" "$CORE_VERSION" <<'PY'
 import json
 from pathlib import Path
@@ -42,5 +48,6 @@ manifest = {
 PY
 cd -- "$output"
 find . -maxdepth 1 -type f \( -name '*.ipk' -o -name '*.apk' -o -name release.json \
-    -o -name core-release.json -o -name install.sh -o -name 'core-source-*.tar.gz' \) -printf '%f\0' |
+    -o -name core-release.json -o -name install.sh -o -name 'core-source-*.tar.gz' \
+    -o -name 'core-module-sources-*.tar.gz' \) -printf '%f\0' |
     LC_ALL=C sort -z | xargs -0 sha256sum -- > SHA256SUMS

@@ -14,6 +14,7 @@ import tempfile
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from notices import verify_notice_bundle
+from module_sources import verify_archive
 
 if len(sys.argv) != 2:
     raise SystemExit(f'Usage: {sys.argv[0]} PACKAGE-DIRECTORY')
@@ -49,6 +50,7 @@ with tarfile.open(root / f"core-source-{core['version']}.tar.gz") as source:
 packages = sorted(root.glob('sing-box-forkop_*.ipk'))
 assert packages, 'no core packages'
 native = None
+binary_inventories = {}
 for package in packages:
     _, version, variant, architecture = package.stem.split('_', 3)
     assert version == core['version']
@@ -78,6 +80,7 @@ for package in packages:
             build_info = json.loads(subprocess.check_output(
                 ['go', 'version', '-m', '-json', str(metadata_binary)], text=True))
         verify_notice_bundle(notice_info, notices, binary, source_receipt, build_info)
+        binary_inventories[notice_info['binary_sha256']] = notice_info
         for name in ('build-info.json', 'THIRD_PARTY_NOTICES'):
             assert members['usr/share/licenses/sing-box/' + name].mode == 0o644
         assert binary[:4] == b'\x7fELF'
@@ -106,6 +109,23 @@ for package in packages:
             notice_file = tree / 'usr/share/licenses/sing-box' / name
             assert notice_file.read_bytes() == expected, 'IPK/APK notice mismatch'
             assert notice_file.stat().st_mode & 0o777 == 0o644
+
+covered = set()
+source_assets = sorted(root.glob(f"core-module-sources-{core['version']}-*.tar.gz"))
+assert source_assets, 'no offline Go module sources'
+for asset in source_assets:
+    with asset.open('rb') as stream:
+        digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+    assert asset.name == f"core-module-sources-{core['version']}-{digest}.tar.gz"
+    with tarfile.open(asset) as archive:
+        member = archive.getmember('SOURCES.json')
+        assert member.isfile() and member.size <= 4194304
+        manifest = json.loads(archive.extractfile(member).read())
+    hashes = [profile['sha256'] for profile in manifest['binaries']]
+    assert hashes and len(set(hashes)) == len(hashes) and set(hashes) <= binary_inventories.keys()
+    verify_archive(asset, source_receipt, [binary_inventories[h] for h in hashes])
+    covered.update(hashes)
+assert covered == binary_inventories.keys(), 'package profiles are missing their module source assets'
 
 if native is not None:
     with tempfile.TemporaryDirectory() as work:
