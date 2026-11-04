@@ -24,6 +24,12 @@ The local HTTP transport accepts at most 64 KiB of response headers and 4 MiB of
 
 The source still uses the technical names `forkop`, `luci-app-forkop` and `/etc/config/forkop`. Their coordinated replacement is planned. LoKi targets clean installation with its own configuration; migration from Forkop, Podkop or other applications is not supported. Migrations from Forkop 1.0.x and automatic takeover of another project’s packages/configuration have been removed. The required standalone pre-install conflict check is not implemented yet; installation is not ready for production use.
 
+## Standalone preflight: initial implementation
+
+Run `sh preflight.sh` from a trusted unpacked source tree. LoKi need not be installed; existing `ucode` with its `fs` module and `timeout` are required. The script installs nothing and invokes no package manager. It reads bounded local opkg metadata to identify owners of critical paths in the current packages. A matching package name does not prove LoKi provenance. Unused backup files outside those paths are not conflicts by themselves.
+
+This initial check always refuses installation: exit 1 reports a detected conflict and exit 2 an incomplete check. Its JSON contains `complete: false` and `install_allowed: false`; the complete file manifest, APK, services, networking, configuration and core checks are still unimplemented. It is an initial diagnostic tool, not permission to install packages directly. The existing installer remains gated. Reads are limited to 4 MiB for status, 1 MiB per file list, 16 MiB in total and 4096 packages; the process is limited to 64 MiB virtual memory, 10 CPU seconds and 15 elapsed seconds. Errors, unsupported input and exceeded limits produce an incomplete result without disclosing source contents.
+
 ## Planned scope
 
 LoKi will retain connection links, subscriptions, routing sections, DNS, monitoring and diagnostics. Hosting VPN/proxy servers on the router has been removed: there is no server tab, server listener generation, client profile issuance, server key generation or server diagnostics. Built-in DNS/TProxy listeners and outbound connections remain. Built-in client VPN tunnels (WireGuard, AmneziaWG, WARP, Tailscale, OpenVPN and OpenConnect) and JSON endpoints have also been removed. Connection links, subscriptions, JSON outbounds and existing network interfaces remain; custom JSON outbounds cannot restore the removed VPN types. Only the framework for future LoKi migrations remains.
