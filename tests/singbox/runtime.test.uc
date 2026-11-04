@@ -153,6 +153,45 @@ t.test("the service runs the generated file as root, committed only when somethi
     stub.restore();
 });
 
+t.test("native UCI failures stop service setup before reporting success or disabling autostart", () => {
+    let real_cursor = uci.cursor;
+    for (let failure in [ "load", "section", "set", "commit" ]) {
+        let dir = stub.tmpdir();
+        fixture.seed(configuration(dir));
+        let previous = failure == "section" ? [] : [
+            { ".name": "main", ".type": "sing-box", enabled: "0", user: "sing-box", conffile: "/etc/sing-box/config.json" }
+        ];
+        uci.__seed("sing-box", previous);
+        previous = uci.__sections("sing-box");
+        core_uci.reset();
+        tools();
+        uci.cursor = (...args) => {
+            let c = real_cursor(...args);
+            if (failure == "load") {
+                let real_load = c.load;
+                c.load = (name) => name == "sing-box" ? null : real_load(name);
+            }
+            else {
+                c[failure == "section" ? "set" : failure] = () => null;
+            }
+            return c;
+        };
+        let error = null;
+        try { runtime.configure_service(); }
+        catch (e) { error = e; }
+        let commands = stub.command_lines();
+        uci.cursor = real_cursor;
+        core_uci.reset();
+        stub.restore();
+        t.ok(error != null, "native " + failure + " failure must abort service setup");
+        t.matches(error.message, /^Failed to (create|set|save)/);
+        t.eq(uci.__commits(), []);
+        t.eq(uci.__sections("sing-box"), previous);
+        t.eq(logs, [], "failed setup cannot report completed settings");
+        t.eq(commands, [], "failed setup cannot disable the core's autostart");
+    }
+});
+
 t.test("the devices the core binds are the default interface and every bind_interface of the running file", () => {
     let dir = stub.tmpdir();
     fixture.seed(configuration(dir));

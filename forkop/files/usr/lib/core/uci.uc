@@ -114,7 +114,9 @@ function load(package_name) {
         return false;
 
     try {
-        c.load(package_name);
+        // Native UCI returns null for API failures.
+        if (c.load(package_name) !== true)
+            return false;
         loaded_packages[package_name] = true;
         return true;
     }
@@ -160,7 +162,8 @@ function get_all(package_name, section_name) {
         return null;
 
     try {
-        load(package_name);
+        if (!load(package_name))
+            return null;
         section_name = resolve_section_name(c, package_name, section_name);
         if (section_name == "")
             return null;
@@ -202,10 +205,8 @@ function delete_path(path) {
 
     try {
         if (parts.option == "")
-            c.delete(parts.package, parts.section);
-        else
-            c.delete(parts.package, parts.section, parts.option);
-        return true;
+            return c.delete(parts.package, parts.section) === true;
+        return c.delete(parts.package, parts.section, parts.option) === true;
     }
     catch (e) {
         return false;
@@ -225,8 +226,7 @@ function set_section(path, type_name) {
         return false;
 
     try {
-        c.set(parts.package, parts.section, as_string(type_name));
-        return true;
+        return c.set(parts.package, parts.section, as_string(type_name)) === true;
     }
     catch (e) {
         return false;
@@ -239,7 +239,8 @@ function add(package_name, type_name) {
         return "";
 
     try {
-        load(package_name);
+        if (!load(package_name))
+            return "";
         let section = c.add(as_string(package_name), as_string(type_name));
         return as_string(section);
     }
@@ -261,8 +262,7 @@ function set(path, value) {
         return false;
 
     try {
-        c.set(parts.package, parts.section, parts.option, type(value) == "array" ? value : as_string(value));
-        return true;
+        return c.set(parts.package, parts.section, parts.option, type(value) == "array" ? value : as_string(value)) === true;
     }
     catch (e) {
         return false;
@@ -284,8 +284,7 @@ function add_list(path, value) {
     try {
         let values = value_to_list(c.get(parts.package, parts.section, parts.option));
         push(values, as_string(value));
-        c.set(parts.package, parts.section, parts.option, values);
-        return true;
+        return c.set(parts.package, parts.section, parts.option, values) === true;
     }
     catch (e) {
         return false;
@@ -319,10 +318,8 @@ function del_list(path, value) {
 
     try {
         if (length(values) == 0)
-            c.delete(parts.package, parts.section, parts.option);
-        else
-            c.set(parts.package, parts.section, parts.option, values);
-        return true;
+            return c.delete(parts.package, parts.section, parts.option) === true;
+        return c.set(parts.package, parts.section, parts.option, values) === true;
     }
     catch (e) {
         return false;
@@ -331,11 +328,11 @@ function del_list(path, value) {
 
 function commit(package_name) {
     let c = cursor();
-    if (c == null)
+    if (c == null || !load(package_name))
         return false;
 
     try {
-        return c.commit(package_name) != false;
+        return c.commit(package_name) === true;
     }
     catch (e) {
         return false;
@@ -355,7 +352,8 @@ function sections(package_name, type_name) {
 
     let result = [];
     try {
-        load(package_name);
+        if (!load(package_name))
+            return [];
         c.foreach(package_name, as_string(type_name), function(section) {
             let name = section_name(section);
             if (name != "")
@@ -375,7 +373,8 @@ function section_objects(package_name, type_name) {
 
     let result = [];
     try {
-        load(package_name);
+        if (!load(package_name))
+            return [];
         c.foreach(package_name, type_name == null ? null : as_string(type_name), function(section) {
             if (type(section) == "object")
                 push(result, section);
