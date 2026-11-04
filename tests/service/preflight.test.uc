@@ -95,9 +95,11 @@ t.test("untrusted file and ancestor permissions refuse before open", () => {
 t.test("real collector reports only the implemented coverage and never permits install", () => {
     let root = fixture();
     let before = fs.readfile(root + "/usr/lib/opkg/status");
-    stub.commands([]);
+    stub.commands([[ "exec timeout", { stdout: "{}" } ]]);
     let result = preflight.collect(root);
-    t.eq(stub.calls(), []);
+    let again = preflight.collect(root);
+    t.eq(stub.command_lines(), [ "exec timeout -s KILL 5 ubus call service list {\"verbose\":true}",
+        "exec timeout -s KILL 5 ubus call service list {\"verbose\":true}" ]);
     stub.restore();
     t.eq(result.result, "incomplete");
     t.eq(result.complete, false);
@@ -105,7 +107,7 @@ t.test("real collector reports only the implemented coverage and never permits i
     t.ok(has(result, "checked", "metadata-read-complete"));
     t.ok(has(result, "incomplete", "not-implemented"));
     t.eq(fs.readfile(root + "/usr/lib/opkg/status"), before);
-    t.eq(preflight.collect(root), result, "repeat reads have identical results");
+    t.eq(again, result, "repeat reads have identical results");
 });
 
 t.test("foreign installed owners block planned paths without reading their contents", () => {
@@ -261,6 +263,62 @@ t.test("missing paths have bounded checked absence but the full installation gat
     t.eq(result.complete, false);
     t.eq(result.install_allowed, false);
     t.eq(result.result, "incomplete");
+});
+
+t.test("active foreign service metadata is bounded and never exposes commands or environment", () => {
+    let root = fixture();
+    stub.commands([[ "exec timeout", { stdout: sprintf("%J", { podkop: { instances: { main: {
+        running: true, pid: 123, command: [ "synthetic-private-command", "synthetic-secret" ],
+        env: { TOKEN: "synthetic-secret" }
+    } } } }) } ]]);
+    let result = preflight.collect(root);
+    let commands = stub.command_lines();
+    stub.restore();
+    t.ok(has(result, "incomplete", "foreign-service-active-unverified"));
+    t.eq(commands, [ "exec timeout -s KILL 5 ubus call service list {\"verbose\":true}" ]);
+    t.excludes(sprintf("%J", result), "synthetic-secret");
+    t.excludes(sprintf("%J", result), "synthetic-private-command");
+    t.eq(result.install_allowed, false);
+});
+
+t.test("service query errors do not become an empty service inventory", () => {
+    let root = fixture();
+    stub.commands([[ "exec timeout", { status: 2, stdout: "synthetic-private-query-error" } ]]);
+    let result = preflight.collect(root);
+    stub.restore();
+    t.ok(has(result, "incomplete", "service-query-failed"));
+    t.excludes(sprintf("%J", result), "synthetic-private-query-error");
+    t.eq(result.install_allowed, false);
+});
+
+t.test("enabled competing init links are inspected without executing or stopping their scripts", () => {
+    let root = fixture();
+    stub.real.system("umask 022; mkdir -p '" + root + "/etc/init.d' '" + root + "/etc/rc.d'");
+    let script = root + "/etc/init.d/podkop";
+    let marker = root + "/must-not-exist";
+    write(script, "#!/bin/sh\ntouch '" + marker + "'\n");
+    fs.chmod(script, 0755);
+    fs.symlink("../init.d/podkop", root + "/etc/rc.d/S95podkop");
+    stub.commands([[ "exec timeout", { stdout: "{}" } ]]);
+    let result = preflight.collect(root);
+    let commands = stub.command_lines();
+    stub.restore();
+    t.ok(has(result, "incomplete", "enabled-service-origin-unverified"));
+    t.eq(fs.lstat(marker), null);
+    t.eq(commands, [ "exec timeout -s KILL 5 ubus call service list {\"verbose\":true}" ]);
+    t.eq(result.install_allowed, false);
+});
+
+t.test("disabled init leftovers alone are not conflicting or executed", () => {
+    let root = fixture();
+    stub.real.system("umask 022; mkdir -p '" + root + "/etc/init.d' '" + root + "/etc/rc.d'");
+    write(root + "/etc/init.d/podkop", "synthetic-unused-init-body");
+    stub.commands([[ "exec timeout", { stdout: "{}" } ]]);
+    let result = preflight.collect(root);
+    stub.restore();
+    t.ok(has(result, "checked", "autostart-directory-read-complete"));
+    t.eq(result.result, "incomplete");
+    t.excludes(sprintf("%J", result), "synthetic-unused-init-body");
 });
 
 t.done();

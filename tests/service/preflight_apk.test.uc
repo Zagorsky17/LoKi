@@ -77,7 +77,7 @@ t.test("APK collector compares exact candidate paths and does not execute PM or 
     let root = fixture(record("base-files", "F:etc\nR:banner\nR:forkop.backup\n"));
     let path = root + "/lib/apk/db/installed";
     let before = fs.readfile(path);
-    stub.commands([]);
+    stub.commands([[ "exec timeout", { stdout: "{}" } ]]);
     let first = preflight.collect(root);
     let second = preflight.collect(root);
     t.eq(first, second);
@@ -85,7 +85,8 @@ t.test("APK collector compares exact candidate paths and does not execute PM or 
     t.eq(first.install_allowed, false);
     t.ok(has(first, "checked", "metadata-read-complete"));
     t.eq(fs.readfile(path), before);
-    t.eq(stub.calls(), []);
+    t.eq(stub.command_lines(), [ "exec timeout -s KILL 5 ubus call service list {\"verbose\":true}",
+        "exec timeout -s KILL 5 ubus call service list {\"verbose\":true}" ]);
 });
 
 t.test("APK conflicting owners survive and names never establish own provenance", () => {
