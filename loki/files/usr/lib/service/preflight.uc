@@ -6,6 +6,7 @@ let services_reader = require("service.preflight_services");
 let listeners_reader = require("service.preflight_listeners");
 let processes_reader = require("service.preflight_processes");
 let rules_reader = require("service.preflight_rules");
+let nft_reader = require("service.preflight_nft");
 let resources_reader = require("service.preflight_resources");
 
 // Critical current package targets, not yet a complete install manifest.
@@ -315,11 +316,13 @@ function collect(root, manifest_path) {
         push(observations, item);
     for (let item in rules_reader.collect())
         push(observations, item);
+    for (let item in nft_reader.collect())
+        push(observations, item);
     for (let item in resources_reader.collect(root || "/"))
         push(observations, item);
     // Unimplemented domains are mandatory; a partial inventory never grants permission.
     for (let kind in [ "hooks",
-        "dns-committed", "dns-pending", "dns-runtime", "nft-loaded", "nft-persisted",
+        "dns-committed", "dns-pending", "dns-runtime", "nft-persisted",
         "ipv4-routes-rules", "ipv6-routes-rules", "dependencies", "configuration", "core-check" ])
         push(observations, observation(kind, kind, "incomplete", "not-implemented"));
     let conflict = false;

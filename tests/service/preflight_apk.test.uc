@@ -80,8 +80,10 @@ t.test("APK collector compares exact candidate paths and does not execute PM or 
     let query4 = "exec /usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin LC_ALL=C timeout -s KILL 2 /sbin/ip -Numeric -j -4 rule list";
     let query6 = replace(query4, "-j -4", "-j -6");
     let resources = "exec /usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin LC_ALL=C timeout -s KILL 2 /bin/df -Pk / /tmp";
+    let nft = "exec /usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin LC_ALL=C timeout -s KILL 1 /usr/sbin/nft -j list tables";
     stub.commands([[ resources, { stdout: "Filesystem 1024-blocks Used Available Capacity Mounted on\nrootfs 1000 400 500 45% /\ntmpfs 2000 100 1900 5% /tmp\n" } ],
         [ query4, { stdout: "[]" } ], [ query6, { stdout: "[]" } ],
+        [ nft, { stdout: '{"nftables":[{"metainfo":{"json_schema_version":1}}]}' } ],
         [ "exec timeout", { stdout: "{}" } ]]);
     let first = preflight.collect(root);
     let second = preflight.collect(root);
@@ -91,8 +93,8 @@ t.test("APK collector compares exact candidate paths and does not execute PM or 
     t.ok(has(first, "checked", "metadata-read-complete"));
     t.eq(fs.readfile(path), before);
     t.eq(stub.command_lines(), [ "exec timeout -s KILL 5 ubus call service list {\"verbose\":true}",
-        query4, query4, query6, query6, resources,
-        "exec timeout -s KILL 5 ubus call service list {\"verbose\":true}", query4, query4, query6, query6, resources ]);
+        query4, query4, query6, query6, nft, nft, resources,
+        "exec timeout -s KILL 5 ubus call service list {\"verbose\":true}", query4, query4, query6, query6, nft, nft, resources ]);
 });
 
 t.test("APK conflicting owners survive and names never establish own provenance", () => {

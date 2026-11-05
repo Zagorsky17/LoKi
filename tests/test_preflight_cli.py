@@ -45,7 +45,8 @@ class PreflightCLI(unittest.TestCase):
         first = self.run_check(command)
         self.assertEqual(self.run_check(command), first)
         pending = {item["kind"] for item in first["observations"] if item["reason"] == "not-implemented"}
-        self.assertTrue({"configuration", "core-check", "nft-loaded"} <= pending)
+        self.assertTrue({"configuration", "core-check", "nft-persisted"} <= pending)
+        self.assertTrue(any(item["kind"] == "nft-loaded" for item in first["observations"]))
 
     def test_wrapper_rejects_arguments_without_echoing_them(self):
         report = self.run_check(["/bin/sh", str(ROOT / "preflight.sh"), "--force=synthetic-secret"])
