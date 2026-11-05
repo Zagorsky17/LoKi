@@ -83,6 +83,9 @@ jobs:
       - name: Check bounded process discovery
         run: python3 -B tests/test_preflight_processes.py
 
+      - name: Check bounded resource snapshots
+        run: python3 -B tests/test_preflight_resources.py
+
       - name: Check bounded policy rule discovery
         shell: bash
         run: |

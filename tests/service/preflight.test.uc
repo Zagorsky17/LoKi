@@ -5,15 +5,17 @@ let preflight = require("service.preflight");
 
 const RULE_QUERY4 = "exec /usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin LC_ALL=C timeout -s KILL 2 /sbin/ip -Numeric -j -4 rule list";
 const RULE_QUERY6 = replace(RULE_QUERY4, "-j -4", "-j -6");
+const RESOURCE_QUERY = "exec /usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin LC_ALL=C timeout -s KILL 2 /bin/df -Pk / /tmp";
+const RESOURCE_DF = "Filesystem 1024-blocks Used Available Capacity Mounted on\nprivate-device 1000 400 500 45% /\ntmpfs 2000 100 1900 5% /tmp\n";
 
 function readonly_probes(service_reply) {
-    return stub.commands([[ RULE_QUERY4, { stdout: "[]" } ], [ RULE_QUERY6, { stdout: "[]" } ],
+    return stub.commands([[ RESOURCE_QUERY, { stdout: RESOURCE_DF } ], [ RULE_QUERY4, { stdout: "[]" } ], [ RULE_QUERY6, { stdout: "[]" } ],
         [ "exec timeout", service_reply ]]);
 }
 
 function expected_probes() {
     return [ 'exec timeout -s KILL 5 ubus call service list {"verbose":true}',
-        RULE_QUERY4, RULE_QUERY4, RULE_QUERY6, RULE_QUERY6 ];
+        RULE_QUERY4, RULE_QUERY4, RULE_QUERY6, RULE_QUERY6, RESOURCE_QUERY ];
 }
 
 function write(path, data) {
@@ -430,6 +432,18 @@ t.test("ambiguous policy rule JSON is incomplete and never exposes raw private v
     t.ok(has(result, "incomplete", "policy-rule-json-invalid"));
     t.excludes(sprintf("%J", result), "0x100000");
     t.eq(result.install_allowed, false);
+});
+
+t.test("resource observations distinguish readable snapshots from unverified transaction budgets", () => {
+    let root = fixture();
+    readonly_probes({ stdout: "{}" });
+    let result = preflight.collect(root);
+    t.ok(has(result, "incomplete", "resource-memory-unavailable"));
+    t.ok(has(result, "checked", "resource-filesystem-snapshot-read-complete"));
+    t.ok(has(result, "incomplete", "resource-transaction-budget-namespace-unverified"));
+    t.eq([ result.result, result.complete, result.install_allowed ], [ "incomplete", false, false ]);
+    t.excludes(sprintf("%J", result), "private-device");
+    t.eq(stub.command_lines(), expected_probes());
 });
 
 t.done();
