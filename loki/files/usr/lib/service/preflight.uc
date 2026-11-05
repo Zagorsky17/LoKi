@@ -5,6 +5,7 @@ let files_reader = require("service.preflight_files");
 let services_reader = require("service.preflight_services");
 let listeners_reader = require("service.preflight_listeners");
 let processes_reader = require("service.preflight_processes");
+let rules_reader = require("service.preflight_rules");
 
 // Critical current package targets, not yet a complete install manifest.
 const TARGETS = [
@@ -310,6 +311,8 @@ function collect(root, manifest_path) {
     for (let item in listeners_reader.collect(root || "/"))
         push(observations, item);
     for (let item in processes_reader.collect(root || "/"))
+        push(observations, item);
+    for (let item in rules_reader.collect())
         push(observations, item);
     // Unimplemented domains are mandatory; a partial inventory never grants permission.
     for (let kind in [ "hooks",

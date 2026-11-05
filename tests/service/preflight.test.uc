@@ -3,6 +3,19 @@ let stub = require("stub");
 let fs = require("fs");
 let preflight = require("service.preflight");
 
+const RULE_QUERY4 = "exec /usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin LC_ALL=C timeout -s KILL 2 /sbin/ip -Numeric -j -4 rule list";
+const RULE_QUERY6 = replace(RULE_QUERY4, "-j -4", "-j -6");
+
+function readonly_probes(service_reply) {
+    return stub.commands([[ RULE_QUERY4, { stdout: "[]" } ], [ RULE_QUERY6, { stdout: "[]" } ],
+        [ "exec timeout", service_reply ]]);
+}
+
+function expected_probes() {
+    return [ 'exec timeout -s KILL 5 ubus call service list {"verbose":true}',
+        RULE_QUERY4, RULE_QUERY4, RULE_QUERY6, RULE_QUERY6 ];
+}
+
 function write(path, data) {
     fs.writefile(path, data);
     fs.chmod(path, 0644);
@@ -95,11 +108,10 @@ t.test("untrusted file and ancestor permissions refuse before open", () => {
 t.test("real collector reports only the implemented coverage and never permits install", () => {
     let root = fixture();
     let before = fs.readfile(root + "/usr/lib/opkg/status");
-    stub.commands([[ "exec timeout", { stdout: "{}" } ]]);
+    readonly_probes({ stdout: "{}" });
     let result = preflight.collect(root);
     let again = preflight.collect(root);
-    t.eq(stub.command_lines(), [ "exec timeout -s KILL 5 ubus call service list {\"verbose\":true}",
-        "exec timeout -s KILL 5 ubus call service list {\"verbose\":true}" ]);
+    t.eq(stub.command_lines(), [ ...expected_probes(), ...expected_probes() ]);
     stub.restore();
     t.eq(result.result, "incomplete");
     t.eq(result.complete, false);
@@ -267,15 +279,15 @@ t.test("missing paths have bounded checked absence but the full installation gat
 
 t.test("active foreign service metadata is bounded and never exposes commands or environment", () => {
     let root = fixture();
-    stub.commands([[ "exec timeout", { stdout: sprintf("%J", { podkop: { instances: { main: {
+    readonly_probes({ stdout: sprintf("%J", { podkop: { instances: { main: {
         running: true, pid: 123, command: [ "synthetic-private-command", "synthetic-secret" ],
         env: { TOKEN: "synthetic-secret" }
-    } } } }) } ]]);
+    } } } }) });
     let result = preflight.collect(root);
     let commands = stub.command_lines();
     stub.restore();
     t.ok(has(result, "incomplete", "foreign-service-active-unverified"));
-    t.eq(commands, [ "exec timeout -s KILL 5 ubus call service list {\"verbose\":true}" ]);
+    t.eq(commands, expected_probes());
     t.excludes(sprintf("%J", result), "synthetic-secret");
     t.excludes(sprintf("%J", result), "synthetic-private-command");
     t.eq(result.install_allowed, false);
@@ -283,7 +295,7 @@ t.test("active foreign service metadata is bounded and never exposes commands or
 
 t.test("service query errors do not become an empty service inventory", () => {
     let root = fixture();
-    stub.commands([[ "exec timeout", { status: 2, stdout: "synthetic-private-query-error" } ]]);
+    readonly_probes({ status: 2, stdout: "synthetic-private-query-error" });
     let result = preflight.collect(root);
     stub.restore();
     t.ok(has(result, "incomplete", "service-query-failed"));
@@ -299,13 +311,13 @@ t.test("enabled competing init links are inspected without executing or stopping
     write(script, "#!/bin/sh\ntouch '" + marker + "'\n");
     fs.chmod(script, 0755);
     fs.symlink("../init.d/podkop", root + "/etc/rc.d/S95podkop");
-    stub.commands([[ "exec timeout", { stdout: "{}" } ]]);
+    readonly_probes({ stdout: "{}" });
     let result = preflight.collect(root);
     let commands = stub.command_lines();
     stub.restore();
     t.ok(has(result, "incomplete", "enabled-service-origin-unverified"));
     t.eq(fs.lstat(marker), null);
-    t.eq(commands, [ "exec timeout -s KILL 5 ubus call service list {\"verbose\":true}" ]);
+    t.eq(commands, expected_probes());
     t.eq(result.install_allowed, false);
 });
 
@@ -313,7 +325,7 @@ t.test("disabled init leftovers alone are not conflicting or executed", () => {
     let root = fixture();
     stub.real.system("umask 022; mkdir -p '" + root + "/etc/init.d' '" + root + "/etc/rc.d'");
     write(root + "/etc/init.d/podkop", "synthetic-unused-init-body");
-    stub.commands([[ "exec timeout", { stdout: "{}" } ]]);
+    readonly_probes({ stdout: "{}" });
     let result = preflight.collect(root);
     stub.restore();
     t.ok(has(result, "checked", "autostart-directory-read-complete"));
@@ -338,7 +350,7 @@ function listener_fixture(root, broken) {
 t.test("standalone collector includes all four bounded listener snapshots", () => {
     let root = fixture();
     listener_fixture(root);
-    stub.commands([[ "exec timeout", { stdout: "{}" } ]]);
+    readonly_probes({ stdout: "{}" });
     let result = preflight.collect(root);
     stub.restore();
     t.eq(length(filter(result.observations, (item) => item.kind == "listeners" &&
@@ -350,7 +362,7 @@ t.test("standalone collector includes all four bounded listener snapshots", () =
 t.test("a malformed socket table is incomplete rather than an empty listener inventory", () => {
     let root = fixture();
     listener_fixture(root, "udp6");
-    stub.commands([[ "exec timeout", { stdout: "{}" } ]]);
+    readonly_probes({ stdout: "{}" });
     let result = preflight.collect(root);
     stub.restore();
     t.ok(has(result, "incomplete", "listener-table-row-invalid"));
@@ -361,7 +373,7 @@ t.test("a malformed socket table is incomplete rather than an empty listener inv
 t.test("socket discovery keeps mandatory ownership and namespace gaps", () => {
     let root = fixture();
     listener_fixture(root);
-    stub.commands([[ "exec timeout", { stdout: "{}" } ]]);
+    readonly_probes({ stdout: "{}" });
     let result = preflight.collect(root);
     stub.restore();
     t.ok(has(result, "incomplete", "listener-process-ownership-unverified"));
@@ -370,7 +382,7 @@ t.test("socket discovery keeps mandatory ownership and namespace gaps", () => {
 
 t.test("process discovery reports unreadable procfs instead of granting installation", () => {
     let root = fixture();
-    stub.commands([[ "exec timeout", { stdout: "{}" } ]]);
+    readonly_probes({ stdout: "{}" });
     let result = preflight.collect(root);
     stub.restore();
     t.ok(has(result, "incomplete", "process-directory-unavailable"));
@@ -381,13 +393,42 @@ t.test("process discovery reports unreadable procfs instead of granting installa
 t.test("an empty fixture procfs cannot prove system process or script coverage", () => {
     let root = fixture();
     fs.mkdir(root + "/proc", 0755);
-    stub.commands([[ "exec timeout", { stdout: "{}" } ]]);
+    readonly_probes({ stdout: "{}" });
     let result = preflight.collect(root);
     stub.restore();
     t.ok(has(result, "checked", "process-directory-read-complete"));
     t.ok(has(result, "incomplete", "process-namespace-and-visibility-unverified"));
     t.ok(has(result, "incomplete", "process-script-and-package-origin-unverified"));
     t.eq(result.complete, false);
+    t.eq(result.install_allowed, false);
+});
+
+t.test("policy rule snapshots cover both families and retain mandatory ownership gaps", () => {
+    let root = fixture();
+    stub.commands([
+        [ (argv) => index(argv, "/sbin/ip") >= 0, { stdout: "[]\n" } ],
+        [ "exec timeout", { stdout: "{}" } ]
+    ]);
+    let result = preflight.collect(root);
+    stub.restore();
+    t.eq(length(filter(result.observations, (item) => item.reason == "policy-rule-snapshot-read-complete")), 2);
+    t.ok(has(result, "incomplete", "policy-rules-ownership-configuration-unverified"));
+    t.ok(has(result, "incomplete", "policy-routes-and-namespace-unverified"));
+    t.eq(result.complete, false);
+    t.eq(result.install_allowed, false);
+});
+
+t.test("ambiguous policy rule JSON is incomplete and never exposes raw private values", () => {
+    let root = fixture();
+    stub.commands([
+        [ (argv) => index(argv, "/sbin/ip") >= 0,
+          { stdout: '[{"priority":105,"src":"all","table":"105","fwmark":"0x4000000","fwmark":"0x100000"}]' } ],
+        [ "exec timeout", { stdout: "{}" } ]
+    ]);
+    let result = preflight.collect(root);
+    stub.restore();
+    t.ok(has(result, "incomplete", "policy-rule-json-invalid"));
+    t.excludes(sprintf("%J", result), "0x100000");
     t.eq(result.install_allowed, false);
 });
 
