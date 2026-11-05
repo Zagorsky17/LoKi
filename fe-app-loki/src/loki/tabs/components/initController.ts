@@ -1,5 +1,6 @@
 // Modified for LoKi on 2026-11-03: product labels in user-facing messages.
 import { copyToClipboard } from '../../../helpers/copyToClipboard';
+import { pageLanguage } from '../../../helpers/appLanguage';
 import { E } from '../../../helpers/element';
 import { showToast } from '../../../helpers/showToast';
 import {
@@ -45,9 +46,7 @@ let controllerInitialized = false;
 
 // install.sh speaks Russian or English; the page asks in its own language.
 function installerLanguage() {
-  return document.documentElement.lang.toLowerCase().startsWith('ru')
-    ? 'ru'
-    : 'en';
+  return pageLanguage()?.toLowerCase().startsWith('ru') ? 'ru' : 'en';
 }
 
 function componentsTabShown() {

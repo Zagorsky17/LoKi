@@ -32,6 +32,15 @@ t.test("the core version comes from what the core records while the package mana
     t.eq([ info.sing_box_version, info.sing_box_variant, info.luci_app_version ], [ "1.14.4-r6", "full", "runtime-test" ]);
 });
 
+t.test("system info exposes only LoKi's validated page language", () => {
+    fixture.seed({ settings: { ui_language: "ru" } });
+    t.eq(diagnostics.system_info().ui_language, "ru");
+    fixture.seed({ settings: { ui_language: "../de" } });
+    t.eq(diagnostics.system_info().ui_language, "auto");
+    fixture.seed({ settings: {} });
+    t.eq(diagnostics.system_info().ui_language, "auto");
+});
+
 t.test("a masked configuration loses the server addresses the generated one names, and reads line by line", () => {
     let config = { outbounds: [ { type: "parser", tag: "Main/Vless node.example", link: "vless://uuid@node.example:443?security=reality#Vless" } ] };
     fs.writefile(dir + "/config.json", sprintf("%.2J\n", config));

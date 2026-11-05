@@ -83,6 +83,8 @@ build_i18n_root "$2/i18n" "$2/po2lmo"
                     self.assertNotIn(forbidden, scripts)
                 self.assertFalse((work / 'app/www/cgi-bin/luci/loki-gateway').exists())
                 self.assertTrue((work / 'i18n/usr/lib/lua/luci/i18n/loki.ru.lmo').is_file())
+                self.assertFalse((work / 'i18n/etc/uci-defaults').exists(),
+                                 'installing the LoKi locale must not write global LuCI settings')
                 installed = {str(path.relative_to(work / 'backend')) for path in (work / 'backend').rglob('*')}
                 self.assertTrue({'usr/bin/loki', 'etc/init.d/loki', 'etc/init.d/loki-state', 'etc/config/loki',
                                  'usr/lib/loki/service/lifecycle.uc', 'usr/libexec/loki-gateway'} <= installed,

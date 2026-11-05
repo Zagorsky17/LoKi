@@ -1,7 +1,6 @@
-// LuCI sets the document language to the one the page is shown in.
-export function pageLanguage() {
-  return document.documentElement.lang || undefined;
-}
+import { pageLanguage } from './appLanguage';
+
+export { pageLanguage };
 
 const TIME_UNITS: Array<[Intl.RelativeTimeFormatUnit, number]> = [
   ['year', 31536000],

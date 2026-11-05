@@ -7,8 +7,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: LOKI\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-05 09:58+0300\n"
-"PO-Revision-Date: 2026-11-05 09:58+0300\n"
+"POT-Creation-Date: 2026-11-06 01:18+0300\n"
+"PO-Revision-Date: 2026-11-06 01:18+0300\n"
 "Last-Translator: ushan0v <ushanov2204@gmail.com>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
 "Language: \n"
@@ -181,11 +181,11 @@ msgstr ""
 msgid "Add a domain, built-in list, rule set or device"
 msgstr ""
 
-#: fe-app-loki/src/loki/entry/view.ts:66
+#: fe-app-loki/src/loki/entry/view.ts:70
 msgid "Add a section"
 msgstr ""
 
-#: fe-app-loki/src/loki/entry/view.ts:73
+#: fe-app-loki/src/loki/entry/view.ts:77
 msgid "Add a section to configure routing"
 msgstr ""
 
@@ -284,7 +284,7 @@ msgstr ""
 msgid "Availability check for every server"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/components/initController.ts:246
+#: fe-app-loki/src/loki/tabs/components/initController.ts:247
 #: fe-app-loki/src/loki/tabs/diagnostic/partials/renderAvailableActions.ts:49
 msgid "Available actions"
 msgstr ""
@@ -347,7 +347,7 @@ msgstr ""
 msgid "Cascade connection"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/components/initController.ts:278
+#: fe-app-loki/src/loki/tabs/components/initController.ts:279
 msgid "Change the build"
 msgstr ""
 
@@ -364,7 +364,7 @@ msgstr ""
 msgid "Check again"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/components/initController.ts:257
+#: fe-app-loki/src/loki/tabs/components/initController.ts:258
 msgid "Check for updates"
 msgstr ""
 
@@ -488,7 +488,7 @@ msgstr ""
 msgid "Collapse section"
 msgstr ""
 
-#: fe-app-loki/src/loki/entry/view.ts:97
+#: fe-app-loki/src/loki/entry/view.ts:101
 msgid "Components"
 msgstr ""
 
@@ -500,7 +500,7 @@ msgstr ""
 msgid "Config File Path"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/components/initController.ts:336
+#: fe-app-loki/src/loki/tabs/components/initController.ts:337
 msgid "Configuration"
 msgstr ""
 
@@ -570,8 +570,8 @@ msgstr ""
 msgid "Copy proxy link"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/components/initController.ts:111
 #: fe-app-loki/src/loki/tabs/components/initController.ts:112
+#: fe-app-loki/src/loki/tabs/components/initController.ts:113
 msgid "Copy the output"
 msgstr ""
 
@@ -608,7 +608,7 @@ msgstr ""
 msgid "Currently unavailable"
 msgstr ""
 
-#: fe-app-loki/src/loki/entry/view.ts:94
+#: fe-app-loki/src/loki/entry/view.ts:98
 msgid "Dashboard"
 msgstr ""
 
@@ -721,7 +721,7 @@ msgstr ""
 msgid "Domains only"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/components/initController.ts:79
+#: fe-app-loki/src/loki/tabs/components/initController.ts:80
 msgid "done"
 msgstr ""
 
@@ -734,7 +734,7 @@ msgstr ""
 msgid "Downlink"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/components/initController.ts:340
+#: fe-app-loki/src/loki/tabs/components/initController.ts:341
 #: fe-app-loki/src/loki/tabs/logs/initController.ts:62
 #: fe-app-loki/src/loki/tabs/logs/render.ts:43
 #: fe-app-loki/src/partials/modal/renderModal.ts:36
@@ -811,6 +811,10 @@ msgstr ""
 msgid "Encrypted DNS protocol"
 msgstr ""
 
+#: fe-app-loki/src/loki/tabs/settings/form.ts:15
+msgid "English"
+msgstr ""
+
 #: fe-app-loki/src/loki/tabs/sections/serverFilters.ts:184
 #: fe-app-loki/src/loki/tabs/sections/serverFilters.ts:208
 msgid "Exclude by pattern"
@@ -868,7 +872,7 @@ msgstr ""
 msgid "External list %s uses the same source as %s; review the section lists"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/components/initController.ts:84
+#: fe-app-loki/src/loki/tabs/components/initController.ts:85
 msgid "failed"
 msgstr ""
 
@@ -1028,7 +1032,7 @@ msgstr ""
 msgid "goes through LoKi"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/components/initController.ts:90
+#: fe-app-loki/src/loki/tabs/components/initController.ts:91
 msgid "going to the LuCI home page"
 msgstr ""
 
@@ -1099,7 +1103,7 @@ msgstr ""
 msgid "Idle timeout"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/components/initController.ts:70
+#: fe-app-loki/src/loki/tabs/components/initController.ts:71
 msgid "in progress"
 msgstr ""
 
@@ -1123,13 +1127,13 @@ msgstr ""
 msgid "Installed versions"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/components/initController.ts:134
 #: fe-app-loki/src/loki/tabs/components/initController.ts:135
-#: fe-app-loki/src/loki/tabs/components/initController.ts:203
+#: fe-app-loki/src/loki/tabs/components/initController.ts:136
+#: fe-app-loki/src/loki/tabs/components/initController.ts:204
 msgid "Installer log"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/components/initController.ts:101
+#: fe-app-loki/src/loki/tabs/components/initController.ts:102
 msgid "Installer output"
 msgstr ""
 
@@ -1163,12 +1167,12 @@ msgstr ""
 msgid "Interrupt connections"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/components/initController.ts:123
 #: fe-app-loki/src/loki/tabs/components/initController.ts:124
+#: fe-app-loki/src/loki/tabs/components/initController.ts:125
 msgid "Interrupt the installer"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/components/initController.ts:84
+#: fe-app-loki/src/loki/tabs/components/initController.ts:85
 msgid "interrupted"
 msgstr ""
 
@@ -1337,7 +1341,7 @@ msgstr ""
 msgid "Log Level"
 msgstr ""
 
-#: fe-app-loki/src/loki/entry/view.ts:96
+#: fe-app-loki/src/loki/entry/view.ts:100
 msgid "Logs"
 msgstr ""
 
@@ -1355,6 +1359,10 @@ msgstr ""
 
 #: fe-app-loki/src/loki/tabs/settings/form/network.ts:15
 msgid "LoKi ignores these devices entirely: their traffic is not routed and their DNS is not captured"
+msgstr ""
+
+#: fe-app-loki/src/loki/tabs/settings/form.ts:13
+msgid "LoKi interface language"
 msgstr ""
 
 #: fe-app-loki/src/loki/tabs/logs/render.ts:53
@@ -1414,7 +1422,7 @@ msgstr ""
 msgid "Monitored Interfaces"
 msgstr ""
 
-#: fe-app-loki/src/loki/entry/view.ts:95
+#: fe-app-loki/src/loki/entry/view.ts:99
 msgid "Monitoring"
 msgstr ""
 
@@ -1474,7 +1482,7 @@ msgstr ""
 msgid "no answer"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/components/initController.ts:72
+#: fe-app-loki/src/loki/tabs/components/initController.ts:73
 msgid "no answer from the router"
 msgstr ""
 
@@ -1577,7 +1585,7 @@ msgstr ""
 msgid "Nothing after %s"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/components/initController.ts:409
+#: fe-app-loki/src/loki/tabs/components/initController.ts:410
 msgid "Nothing to upload: the file holds the current configuration"
 msgstr ""
 
@@ -1619,7 +1627,7 @@ msgstr ""
 msgid "Output Network Interface"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/components/initController.ts:250
+#: fe-app-loki/src/loki/tabs/components/initController.ts:251
 msgid "Package changes are disabled in this development build until preflight and recovery are implemented."
 msgstr ""
 
@@ -1700,11 +1708,11 @@ msgstr ""
 msgid "Remove"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/components/initController.ts:284
+#: fe-app-loki/src/loki/tabs/components/initController.ts:285
 msgid "Remove LoKi"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/components/initController.ts:430
+#: fe-app-loki/src/loki/tabs/components/initController.ts:431
 msgid "Remove LoKi?"
 msgstr ""
 
@@ -1794,7 +1802,7 @@ msgstr ""
 msgid "Routing rules"
 msgstr ""
 
-#: fe-app-loki/src/loki/entry/view.ts:60
+#: fe-app-loki/src/loki/entry/view.ts:64
 msgid "Routing rules are checked from top to bottom"
 msgstr ""
 
@@ -1828,6 +1836,10 @@ msgstr ""
 msgid "running for %s"
 msgstr ""
 
+#: fe-app-loki/src/loki/tabs/settings/form.ts:16
+msgid "Russian"
+msgstr ""
+
 #: fe-app-loki/src/loki/cbi/modal.ts:210
 #: fe-app-loki/src/loki/tabs/settings/staticHosts.ts:83
 msgid "Save"
@@ -1838,7 +1850,7 @@ msgstr ""
 msgid "Search"
 msgstr ""
 
-#: fe-app-loki/src/loki/entry/view.ts:65
+#: fe-app-loki/src/loki/entry/view.ts:69
 msgid "Section"
 msgstr ""
 
@@ -1850,7 +1862,7 @@ msgstr ""
 msgid "Section unavailable"
 msgstr ""
 
-#: fe-app-loki/src/loki/entry/view.ts:59
+#: fe-app-loki/src/loki/entry/view.ts:63
 #: fe-app-loki/src/loki/tabs/diagnostic/checks/groups.ts:25
 msgid "Sections"
 msgstr ""
@@ -1962,7 +1974,7 @@ msgstr ""
 
 #: fe-app-loki/src/loki/cbi/dynamicList.ts:196
 #: fe-app-loki/src/loki/cbi/dynamicList.ts:197
-#: fe-app-loki/src/loki/entry/view.ts:83
+#: fe-app-loki/src/loki/entry/view.ts:87
 msgid "Settings"
 msgstr ""
 
@@ -2041,7 +2053,7 @@ msgstr ""
 msgid "Static DNS records"
 msgstr ""
 
-#: fe-app-loki/src/loki/entry/view.ts:93
+#: fe-app-loki/src/loki/entry/view.ts:97
 msgid "Status"
 msgstr ""
 
@@ -2054,7 +2066,7 @@ msgid "stopped"
 msgstr ""
 
 #: fe-app-loki/src/loki/helpers/serviceStatusDisplay.ts:12
-#: fe-app-loki/src/loki/tabs/components/initController.ts:74
+#: fe-app-loki/src/loki/tabs/components/initController.ts:75
 msgid "stopping..."
 msgstr ""
 
@@ -2120,7 +2132,7 @@ msgstr ""
 msgid "System information"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/components/initController.ts:150
+#: fe-app-loki/src/loki/tabs/components/initController.ts:151
 msgid "Terminal"
 msgstr ""
 
@@ -2179,7 +2191,7 @@ msgstr ""
 msgid "The file is not a UCI configuration"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/components/initController.ts:396
+#: fe-app-loki/src/loki/tabs/components/initController.ts:397
 msgid "The file is over 1 MB, far larger than a LoKi configuration"
 msgstr ""
 
@@ -2199,7 +2211,7 @@ msgstr ""
 msgid "The interface the traffic comes from"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/components/initController.ts:89
+#: fe-app-loki/src/loki/tabs/components/initController.ts:90
 msgid "the page reloads"
 msgstr ""
 
@@ -2301,12 +2313,12 @@ msgstr ""
 msgid "Update lists"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/components/initController.ts:263
+#: fe-app-loki/src/loki/tabs/components/initController.ts:264
 #: fe-app-loki/src/loki/tabs/components/updateCheck.ts:72
 msgid "Update LoKi"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/components/initController.ts:269
+#: fe-app-loki/src/loki/tabs/components/initController.ts:270
 msgid "Update LoKi?"
 msgstr ""
 
@@ -2336,11 +2348,11 @@ msgid "Uplink"
 msgstr ""
 
 #: fe-app-loki/src/loki/tabs/components/configFile.ts:217
-#: fe-app-loki/src/loki/tabs/components/initController.ts:346
+#: fe-app-loki/src/loki/tabs/components/initController.ts:347
 msgid "Upload"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/components/initController.ts:414
+#: fe-app-loki/src/loki/tabs/components/initController.ts:415
 msgid "Upload the configuration?"
 msgstr ""
 
