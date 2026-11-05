@@ -983,14 +983,14 @@ function validate_runtime_config(context) {
     }
 }
 
-function context_from_runtime() {
+function context_from_runtime(core_tags) {
     return {
         nft_fakeip_mark: as_string(constants.NFT_FAKEIP_MARK),
         nft_outbound_mark: as_string(constants.NFT_OUTBOUND_MARK),
         nft_router_mark: as_string(constants.NFT_ROUTER_MARK),
         sing_box_required_version: as_string(constants.SB_REQUIRED_VERSION),
         // Unknown without a core to ask, which the requirement check refuses first.
-        core_tags: features.tags()
+        core_tags: core_tags ?? features.tags()
     };
 }
 
@@ -1049,8 +1049,9 @@ function check_requirements() {
 // Throws the reason when loki-core could not run the configuration. overrides replace values
 // of the runtime context.
 function validate(overrides) {
+    overrides = object_or_empty(overrides);
     connections.load();
-    validate_runtime_config({ ...context_from_runtime(), ...object_or_empty(overrides) });
+    validate_runtime_config({ ...context_from_runtime(overrides.core_tags), ...overrides });
 }
 
 return { validate, check_requirements, connection_sections_proxy_nothing };
