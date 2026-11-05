@@ -1,5 +1,4 @@
 let fs = require("fs");
-let migration = require("config.migration");
 
 const CONFIG_LIMIT = 1048576;
 
@@ -55,6 +54,7 @@ function check(data, scratch) {
                     if (loaded) {
                         let decision = null;
                         try {
+                            let migration = require("config.migration");
                             let model = migration.model_from_cursor(native, "loki");
                             if (model != null) decision = migration.decide(model);
                         }
