@@ -1,6 +1,6 @@
 # LoKi
 
-[Русский](README.ru.md) · English
+[Русский](README.ru.md) · English · [简体中文](README.zh.md)
 
 > **This application is under active development.** Development stages are checked on Linux before review and merge. Router testing follows completion of the software stages. Stability on OpenWrt and behavior during DNS/TLS failures have not yet been confirmed in laboratory tests.
 
@@ -10,7 +10,7 @@ Project: [Zagorsky17/LoKi](https://github.com/Zagorsky17/LoKi). Report bugs and 
 
 ## Development status
 
-As of November 5, 2026, this repository has no LoKi release. The installer obtains the application and patched core from **`Zagorsky17/LoKi`**, without falling back to Forkop releases. Installation needs package assets, `release.json`, `core-release.json` and `SHA256SUMS`; publishing source to `main` is not enough. The application requires the LoKi core build `1.14.4-r8` or newer; the package is named `loki-core` and its binary is `/usr/bin/loki-core`. Router installation and upgrades have not been tested.
+As of November 6, 2026, this repository has no LoKi release. The installer obtains the application and patched core from **`Zagorsky17/LoKi`**, without falling back to Forkop releases. Installation needs package assets, `release.json`, `core-release.json` and `SHA256SUMS`; publishing source to `main` is not enough. The application requires the LoKi core build `1.14.4-r8` or newer; the package is named `loki-core` and its binary is `/usr/bin/loki-core`. Router installation and upgrades have not been tested.
 
 The technical names are CLI `loki`, packages `loki` and `luci-app-loki`, services `loki`, `loki-state` and `loki-core`, and UCI packages `loki` and `loki-core`. No old Forkop or stock sing-box command aliases are provided; the core is invoked only through `/usr/bin/loki-core`.
 
@@ -167,7 +167,7 @@ Own mutable configuration files under `/etc` are installed with mode `0600`. New
 
 ## Documentation and testing
 
-The public project documentation is maintained in this README and [README.ru.md](README.ru.md). The inherited documentation site and its GitHub Pages workflow have been removed.
+The public project documentation is maintained in this README, [README.ru.md](README.ru.md) and [README.zh.md](README.zh.md). The inherited documentation site and its GitHub Pages workflow have been removed.
 
 Run tests and package builds on a dedicated Linux development server. DNS failures, traffic interception and installation must also be tested on a laboratory OpenWrt router before a release. Use synthetic credentials and local test endpoints for security tests.
 
@@ -181,6 +181,6 @@ LoKi retains the project's [GPL-2.0-or-later license](LICENSE). The core patch a
 
 When distributing modified versions or binary packages, retain the applicable notices and license, identify modified files and their change dates, and provide the corresponding source as required by the [GNU GPL version 2](https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html). The software is provided without warranty under the license terms.
 
-This README was rewritten for LoKi on October 31, 2026, and updated on November 5, 2026.
+This README was rewritten for LoKi on October 31, 2026, and updated on November 6, 2026.
 
 The binary-release license audit remains open. YACD is vendored from [MetaCubeX/Yacd-meta commit `24151c3`](https://github.com/MetaCubeX/Yacd-meta/tree/24151c331027ff176b45ed417180c6f1220474a3); its source, lockfile and MIT license text are kept in `yacd-loki/`. The LuCI package includes the MIT text and Inter/Roboto Mono OFL notices. A release still needs separate notice checks for other YACD dependencies, font provenance, linked Go code and corresponding sources for every variant. The inherited main frontend license remains a separate review item.
