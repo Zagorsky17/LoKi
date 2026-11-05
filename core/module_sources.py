@@ -382,8 +382,8 @@ def collect(source, binaries, output):
         os.unlink(temporary)
 
 
-def verify_archive(path, source_tree, binaries):
-    """Check a local source asset against already verified package notice inventories."""
+def read_archive(path):
+    """Read source metadata within the same limits before choosing binary profiles."""
     actual, payloads, total, metadata_bytes = {}, {}, 0, 0
     archive_limit = ZIP_LIMIT + GO_SOURCE['size'] + METADATA_TOTAL_LIMIT + 8388608
     with input_file(path, archive_limit) as (stream, _):
@@ -414,6 +414,12 @@ def verify_archive(path, source_tree, binaries):
                     payloads[member.name] = bytes(data)
     manifest = json.loads(payloads.pop('SOURCES.json'))
     actual.pop('SOURCES.json')
+    return manifest, actual, payloads
+
+
+def verify_archive(path, source_tree, binaries):
+    """Check a local source asset against already verified package notice inventories."""
+    manifest, actual, payloads = read_archive(path)
     modules = {}
     for binary in binaries:
         for module in binary['modules']:

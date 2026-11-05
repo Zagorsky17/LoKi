@@ -14,7 +14,7 @@ import tempfile
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from notices import verify_notice_bundle
-from module_sources import verify_archive
+from module_sources import read_archive, verify_archive
 
 if len(sys.argv) != 2:
     raise SystemExit(f'Usage: {sys.argv[0]} PACKAGE-DIRECTORY')
@@ -143,10 +143,7 @@ for asset in source_assets:
     with asset.open('rb') as stream:
         digest = hashlib.file_digest(stream, 'sha256').hexdigest()
     assert asset.name == f"core-module-sources-{core['version']}-{digest}.tar.gz"
-    with tarfile.open(asset) as archive:
-        member = archive.getmember('SOURCES.json')
-        assert member.isfile() and member.size <= 4194304
-        manifest = json.loads(archive.extractfile(member).read())
+    manifest = read_archive(asset)[0]
     hashes = [profile['sha256'] for profile in manifest['binaries']]
     assert hashes and len(set(hashes)) == len(hashes) and set(hashes) <= binary_inventories.keys()
     verify_archive(asset, source_receipt, [binary_inventories[h] for h in hashes])
