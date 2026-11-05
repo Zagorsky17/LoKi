@@ -36,6 +36,8 @@ class PreflightCLI(unittest.TestCase):
         (tree / "preflight.uc").write_text(entry if entry is not None else (ROOT / "preflight.uc").read_text())
         (tree / "loki/files").mkdir(parents=True)
         (tree / "loki/files/usr").symlink_to(ROOT / "loki/files/usr", target_is_directory=True)
+        (tree / "loki/files/etc/config").mkdir(parents=True)
+        (tree / "loki/files/etc/config/loki").write_text("config settings 'settings'\n")
         return ["/bin/sh", str(tree / "preflight.sh")]
 
     def test_original_native_entry(self):
@@ -66,8 +68,12 @@ class PreflightCLI(unittest.TestCase):
 
     def test_wrapper_with_fixed_linux_tool_directory(self):
         with tempfile.TemporaryDirectory() as directory:
+            before = set(Path("/tmp").glob("loki-preflight.*"))
             report = self.run_check(self.harness(directory))
             self.assertIn("observations", report)
+            self.assertTrue(any(item["kind"] == "configuration" and item["reason"] != "not-implemented"
+                                for item in report["observations"]))
+            self.assertEqual(set(Path("/tmp").glob("loki-preflight.*")), before)
 
     def test_wrapper_masks_reader_exception(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -76,8 +82,12 @@ class PreflightCLI(unittest.TestCase):
 
     def test_wrapper_deadline(self):
         with tempfile.TemporaryDirectory() as directory:
-            report = self.run_check(self.harness(directory, "sleep(30000);\n"))
+            before = set(Path("/tmp").glob("loki-preflight.*"))
+            entry = 'require("fs").writefile(ARGV[2] + "/synthetic-secret", "synthetic-secret"); sleep(30000);\n'
+            report = self.run_check(self.harness(directory, entry))
             self.assertEqual(report["reason"], "reader-failed-or-timeout")
+            self.assertNotIn("synthetic-secret", json.dumps(report))
+            self.assertEqual(set(Path("/tmp").glob("loki-preflight.*")), before)
 
 
 if __name__ == "__main__":

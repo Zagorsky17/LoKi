@@ -12,11 +12,18 @@ incomplete() {
 command -v ucode >/dev/null 2>&1 || incomplete ucode-unavailable
 command -v timeout >/dev/null 2>&1 || incomplete timeout-unavailable
 root=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd -P) || incomplete source-directory-unavailable
+umask 077
+scratch=$(mktemp -d /tmp/loki-preflight.XXXXXX) || incomplete scratch-unavailable
+trap 'rm -rf -- "$scratch"' EXIT
+trap 'exit 2' HUP INT TERM
 result=$(
     ulimit -v 65536 && ulimit -t 10 || exit 3
-    exec env -i PATH="$PATH" timeout -s KILL 15 ucode -L "$root/loki/files/usr/lib" "$root/preflight.uc" "$root/candidate-manifest.json"
+    exec env -i PATH="$PATH" timeout -s KILL 15 ucode -L "$root/loki/files/usr/lib" "$root/preflight.uc" \
+        "$root/candidate-manifest.json" "$root/loki/files/etc/config/loki" "$scratch" "$root"
 ) 2>/dev/null
 status=$?
+rm -rf -- "$scratch" || incomplete scratch-cleanup-failed
+trap - EXIT HUP INT TERM
 case "$status" in
     1|2) [ -n "$result" ] || incomplete reader-failed ;;
     *) incomplete reader-failed-or-timeout ;;
