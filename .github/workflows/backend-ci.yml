@@ -83,6 +83,12 @@ jobs:
       - name: Check bounded process discovery
         run: python3 -B tests/test_preflight_processes.py
 
+      - name: Check bounded policy rule discovery
+        shell: bash
+        run: |
+          parent_ns=$(readlink /proc/self/ns/net)
+          sudo unshare --net -- python3 -B tests/test_preflight_rules.py --prepare "$parent_ns" "$(id -un)"
+
       - name: Check candidate manifest boundaries
         run: python3 -B tests/test_preflight_manifest.py
 

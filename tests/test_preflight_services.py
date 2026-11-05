@@ -122,7 +122,11 @@ sys.stdout.write(Path(os.environ['SERVICE_TEST_RESPONSE']).read_text())
         pid = int(self.pid.read_text())
         stat = Path(f'/proc/{pid}/stat')
         for _ in range(50):
-            if not stat.exists() or stat.read_text().split(') ', 1)[1].startswith('Z'):
+            try:
+                state = stat.read_text().split(') ', 1)[1]
+            except FileNotFoundError:
+                break
+            if state.startswith('Z'):
                 break
             time.sleep(0.02)
         else:
@@ -137,6 +141,28 @@ sys.stdout.write(Path(os.environ['SERVICE_TEST_RESPONSE']).read_text())
         result, _ = self.invoke()
         self.assertIn('enabled-service-origin-unverified', self.reasons(result))
         self.assertFalse(marker.exists())
+
+    def test_stat_disappearing_after_existence_check_is_finished(self):
+        from unittest.mock import patch
+        original_read = Path.read_text
+        original_exists = Path.exists
+        seen = []
+
+        def is_our_stat(path):
+            return self.pid.is_file() and path == Path('/proc') / original_read(self.pid).strip() / 'stat'
+
+        def exists(path):
+            return True if is_our_stat(path) else original_exists(path)
+
+        def read(path, *args, **kwargs):
+            if is_our_stat(path):
+                seen.append(True)
+                raise FileNotFoundError('synthetic child exited between lookup and read')
+            return original_read(path, *args, **kwargs)
+
+        with patch.object(Path, 'exists', exists), patch.object(Path, 'read_text', read):
+            self.test_timeout_terminates_the_synthetic_child_without_disclosing_its_output()
+        self.assertTrue(seen, 'the read must encounter the controlled disappearance')
 
     def test_repeated_queries_leave_the_fixture_and_results_unchanged(self):
         result, _ = self.invoke()

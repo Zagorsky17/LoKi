@@ -77,7 +77,10 @@ t.test("APK collector compares exact candidate paths and does not execute PM or 
     let root = fixture(record("base-files", "F:etc\nR:banner\nR:loki.backup\n"));
     let path = root + "/lib/apk/db/installed";
     let before = fs.readfile(path);
-    stub.commands([[ "exec timeout", { stdout: "{}" } ]]);
+    let query4 = "exec /usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin LC_ALL=C timeout -s KILL 2 /sbin/ip -Numeric -j -4 rule list";
+    let query6 = replace(query4, "-j -4", "-j -6");
+    stub.commands([[ query4, { stdout: "[]" } ], [ query6, { stdout: "[]" } ],
+        [ "exec timeout", { stdout: "{}" } ]]);
     let first = preflight.collect(root);
     let second = preflight.collect(root);
     t.eq(first, second);
@@ -86,7 +89,8 @@ t.test("APK collector compares exact candidate paths and does not execute PM or 
     t.ok(has(first, "checked", "metadata-read-complete"));
     t.eq(fs.readfile(path), before);
     t.eq(stub.command_lines(), [ "exec timeout -s KILL 5 ubus call service list {\"verbose\":true}",
-        "exec timeout -s KILL 5 ubus call service list {\"verbose\":true}" ]);
+        query4, query4, query6, query6,
+        "exec timeout -s KILL 5 ubus call service list {\"verbose\":true}", query4, query4, query6, query6 ]);
 });
 
 t.test("APK conflicting owners survive and names never establish own provenance", () => {
