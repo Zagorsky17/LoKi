@@ -140,11 +140,13 @@ t.test("a supplied prepared config is read from its own root and remains nonauth
     let scratch = stub.tmpdir();
     fs.chmod(scratch, 0700);
     uci.__reset();
-    uci.__seed("loki", [ { ".name": "settings", ".type": "settings" } ]);
+    uci.__seed("loki", [ { ".name": "settings", ".type": "settings",
+        config_format: "loki", config_version: "2.0.0" } ]);
     readonly_probes({ stdout: "{}" });
     let result = preflight.collect(root, null, path, scratch, root);
     stub.restore();
     t.ok(has(result, "checked", "uci-syntax-checked"));
+    t.ok(has(result, "checked", "uci-schema-checked"));
     t.ok(has(result, "incomplete", "candidate-core-unverified"));
     t.eq(result.install_allowed, false);
     t.eq(fs.readfile(path), data);
