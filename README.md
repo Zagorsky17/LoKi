@@ -147,6 +147,8 @@ Run tests and package builds on a dedicated Linux development server. DNS failur
 
 ## Origin and license
 
+The core notice bundle includes the complete MPL 2.0 text and attribution for the pinned Public Suffix List source. The bundled flag font retains its [artwork attribution](luci-app-loki/htdocs/luci-static/resources/view/loki/fonts/LICENSE.md), [unmodified npm license](luci-app-loki/htdocs/luci-static/resources/view/loki/fonts/UPSTREAM_LICENSE.md) and [artifact provenance](luci-app-loki/htdocs/luci-static/resources/view/loki/fonts/PROVENANCE.md). The WOFF2 matches npm version 0.1.8; reproduction from its upstream TTF has not been verified.
+
 Forkop was developed by [ushan0v and its contributors](https://github.com/ushan0v/forkop/graphs/contributors). LoKi is maintained independently in [Zagorsky17/LoKi](https://github.com/Zagorsky17/LoKi); it is not an upstream Forkop release.
 
 LoKi retains the project's [GPL-2.0-or-later license](LICENSE). The core patch and resulting loki-core binary are distributed separately under [GPL-3.0-or-later](core/COPYING); the build produces `core-source-VERSION.tar.gz` with the patched core checkout, including its local `third_party` replacements, and separate `core-module-sources-*` archives described above. Distributing a binary also requires the matching build materials and the applicable dependency sources and notices; these archives alone are not a completed corresponding-source audit. Preserve existing copyright, license and attribution notices. Third-party components retain their own notices, including the [bundled font assets](luci-app-loki/htdocs/luci-static/resources/view/loki/fonts/LICENSE.md).

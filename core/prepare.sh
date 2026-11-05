@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Modified for LoKi on 2026-11-04: include the reviewed notice recipe in core sources.
+# Modified for LoKi on 2026-11-05: include the reviewed notice recipe and PSL notices in core sources.
 set -euo pipefail
 
 HERE=$(cd -- "$(dirname -- "$0")" && pwd)
@@ -30,6 +30,9 @@ for patch in "$HERE"/patches/*.patch; do
 done
 cp -- "$HERE/COPYING" "$destination/LICENSE"
 cp -- "$HERE/notices.py" "$HERE/notice-files.json" "$destination/release/forkop/"
+mkdir -- "$destination/release/forkop/source-data"
+cp -- "$HERE/source-data/MPL-2.0.txt" "$HERE/source-data/publicsuffix-NOTICE.txt" \
+    "$destination/release/forkop/source-data/"
 # The inherited builder checks indexed files for CRLF; no commit or remote is needed.
 git -C "$destination" init --quiet --initial-branch=vendor
 git -C "$destination" add .
