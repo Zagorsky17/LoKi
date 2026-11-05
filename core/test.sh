@@ -16,7 +16,7 @@ go mod verify
 unformatted=$(gofmt -l adapter/dns.go dns/router.go common/dialer/resolve*.go log/observable.go log/error_repeats*.go \
     adapter/provider.go adapter/experimental.go adapter/provider/{adapter,graph}.go \
     adapter/provider/{adapter_test.go,identity_test.go,identity_utf8_test.go} experimental/cachefile/{cache.go,selector_state_test.go} \
-    protocol/group/{selector.go,selector_identity_test.go} experimental/clashapi/proxies.go \
+    protocol/group/{selector.go,selector_identity_test.go,fallback.go,fallback_test.go} experimental/clashapi/proxies.go \
     adapter/outbound/{manager.go,commit_test.go} provider/remote/*.go \
     experimental/cachefile/*.go dns/transport/fakeip/store_cachefile_test.go box.go \
     common/lokicontroller/*.go common/lokigateway/*.go cmd/sing-box/cmd_gateway_linux.go \

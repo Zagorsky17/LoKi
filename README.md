@@ -10,7 +10,7 @@ Project: [Zagorsky17/LoKi](https://github.com/Zagorsky17/LoKi). Report bugs and 
 
 ## Development status
 
-As of November 5, 2026, this repository has no LoKi release. The installer obtains the application and patched core from **`Zagorsky17/LoKi`**, without falling back to Forkop releases. Installation needs package assets, `release.json`, `core-release.json` and `SHA256SUMS`; publishing source to `main` is not enough. The application requires the LoKi core build `1.14.4-r7` or newer; the package is named `loki-core` and its binary is `/usr/bin/loki-core`. Router installation and upgrades have not been tested.
+As of November 5, 2026, this repository has no LoKi release. The installer obtains the application and patched core from **`Zagorsky17/LoKi`**, without falling back to Forkop releases. Installation needs package assets, `release.json`, `core-release.json` and `SHA256SUMS`; publishing source to `main` is not enough. The application requires the LoKi core build `1.14.4-r8` or newer; the package is named `loki-core` and its binary is `/usr/bin/loki-core`. Router installation and upgrades have not been tested.
 
 The technical names are CLI `loki`, packages `loki` and `luci-app-loki`, services `loki`, `loki-state` and `loki-core`, and UCI packages `loki` and `loki-core`. No old Forkop or stock sing-box command aliases are provided; the core is invoked only through `/usr/bin/loki-core`.
 
@@ -68,7 +68,9 @@ The built-in lists from [forkop-lists](https://github.com/ushan0v/forkop-lists) 
 
 ## The LoKi core
 
-The loki-core base is `ushan0v/sing-box-forkop`, pinned in `core/upstream.env`; that base supplies subscription providers, connection-format parsing and DNS extensions. LoKi patches are in `core/patches/`. The current build is `1.14.4-r7`, with the technical package name `loki-core`. The package, service, CLI, UCI and path rename is implemented; configurations from other applications are not supported.
+The loki-core base is `ushan0v/sing-box-forkop`, pinned in `core/upstream.env`; that base supplies subscription providers, connection-format parsing and DNS extensions. LoKi patches are in `core/patches/`. The current build is `1.14.4-r8`, with the technical package name `loki-core`. The package, service, CLI, UCI and path rename is implemented; configurations from other applications are not supported.
+
+In r8, fallback health checks probe an underlying node once per sweep even when several group members refer to it. A fast reply in r7 could cause a second probe in the same sweep. The configuration format is unchanged. The application requires r8 so its package manifest matches the corrected core; router behavior remains untested.
 
 In r7, LoKi uses the fixed Unix controller socket `/tmp/loki/controller.sock` in a private directory. The gateway and backend RPC check endpoint ownership and permissions, then verify the peer UID before sending the controller credential. The browser never receives that credential. Browser access uses a separate HTTPS/WSS gateway with LuCI authorization; local YACD assets have passed Linux checks, while real OpenWrt validation remains pending.
 
