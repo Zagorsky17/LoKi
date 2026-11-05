@@ -297,6 +297,48 @@ class ModuleSourcesTests(unittest.TestCase):
     def test_go_mod_hash_matches_pinned_independent_source_sum(self):
         self.assertEqual(sources.mod_sum(self.mod), self.mod_hash)
 
+    def test_preliminary_reader_shares_metadata_and_does_not_buffer_source_blobs(self):
+        manifest = self.collect()
+        parsed, entries, payloads = sources.read_archive(self.output)
+        self.assertEqual(parsed, manifest)
+        self.assertEqual(entries, {row['path']: row for row in manifest['entries']})
+        self.assertTrue(payloads)
+        self.assertFalse(any(name.endswith(('.zip', '.tar.gz')) for name in payloads))
+        self.assertNotIn('SOURCES.json', entries)
+        self.assertNotIn('SOURCES.json', payloads)
+
+    def test_preliminary_reader_rejects_member_excess_even_with_the_manifest_first(self):
+        with tarfile.open(self.output, 'w:gz') as archive:
+            body = b'{"binaries":[]}'
+            entry = tarfile.TarInfo('SOURCES.json')
+            entry.size, entry.mode = len(body), 0o644
+            archive.addfile(entry, io.BytesIO(body))
+            for index in range(20001):
+                entry = tarfile.TarInfo('empty/%05d' % index)
+                entry.mode = 0o644
+                archive.addfile(entry)
+        calls = []
+        original = tarfile.TarFile.next
+        def counted(archive):
+            calls.append(True)
+            return original(archive)
+        with mock.patch.object(tarfile.TarFile, 'next', counted):
+            with self.assertRaisesRegex(sources.SourceError, 'source-archive-resource-limit'):
+                sources.read_archive(self.output)
+        self.assertLessEqual(len(calls), 20002)
+
+    def test_preliminary_reader_refuses_oversized_headers_before_reading_payloads(self):
+        for name, limit in [('SOURCES.json', 4194304), ('modules/large.zip', sources.ZIP_LIMIT),
+                            ('toolchain/' + self.go_archive.name, self.go_pin['size'])]:
+            with self.subTest(name=name):
+                with tarfile.open(self.output, 'w:gz') as archive:
+                    entry = tarfile.TarInfo(name)
+                    entry.size, entry.mode = limit + 1, 0o644
+                    archive.addfile(entry)
+                self.assertLess(self.output.stat().st_size, 1024)
+                with self.assertRaisesRegex(sources.SourceError, 'invalid-source-archive-member'):
+                    sources.read_archive(self.output)
+
     def test_asset_is_reproducible_bound_and_has_only_portable_metadata(self):
         manifest = self.collect()
         self.assertEqual(sources.verify_archive(self.output, manifest['source_tree'],
