@@ -1,6 +1,7 @@
 let t = require("t");
 let v = require("validation");
 let fixture = require("fixture");
+let features = require("singbox.features");
 
 const BASE = [ "badlinkname", "tfogo_checklinkname0", "with_anytls", "with_clash_api", "with_gvisor", "with_openvpn",
     "with_quic", "with_trusttunnel", "with_utls", "with_vmess", "with_wireguard" ];
@@ -65,6 +66,16 @@ t.test("DNS over QUIC and HTTP/3 need QUIC", () => {
 t.test("a DNS section's servers need QUIC for DNS over QUIC too", () => {
     needs({ section: [ { ".name": "dns", enabled: "1", action: "dns", dns_server: [ "quic://dns.example.com" ], destinations: "example.org" } ] },
         without(BASE, "with_quic"), "A configured DNS server uses DNS over QUIC");
+});
+
+t.test("an explicit core tag set does not inspect the installed core", () => {
+    let original = features.tags;
+    let calls = 0;
+    features.tags = () => { calls++; die("host-core-read"); };
+    let result = v.run({ settings: {} }, { core_tags: FULL });
+    features.tags = original;
+    t.eq(calls, 0);
+    t.eq(result.error, null);
 });
 
 
