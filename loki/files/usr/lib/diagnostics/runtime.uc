@@ -56,6 +56,7 @@ function openwrt_release() {
 
 function system_info() {
     let installed = sing_box_installed();
+    let ui_language = common.option(settings(), "ui_language", "auto");
     return {
         loki_version: constants.LOKI_VERSION,
         luci_app_version: luci_app_version(),
@@ -63,6 +64,7 @@ function system_info() {
         sing_box_variant: installed ? packages.sing_box_variant() : "",
         openwrt_version: openwrt_release(),
         device_model: common.read_first_line("/tmp/sysinfo/model") || "unknown",
+        ui_language: index([ "en", "ru" ], ui_language) >= 0 ? ui_language : "auto",
         generated_at: common.now_seconds()
     };
 }

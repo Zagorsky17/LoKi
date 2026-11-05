@@ -16,6 +16,7 @@ export default defineConfig({
     },
     esbuildOptions(options) {
         options.legalComments = 'none';
+        options.inject = ['./src/helpers/appLanguage.ts'];
         // shortcut: Preserve identifiers; handle export aliases before enabling name mangling.
         options.minifyWhitespace = true;
         options.minifySyntax = true;

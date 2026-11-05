@@ -353,6 +353,23 @@ t.test("the installed versions are read again as soon as the package database ch
     stub.restore();
 });
 
+t.test("the page language is reread when LoKi's own configuration changes", () => {
+    let config = stub.tmpdir() + "/loki";
+    fs.writefile(config, "option ui_language 'en'\n");
+    let service = fresh_service();
+    service.paths.config = config;
+    service.paths.package_databases = [];
+    let language = "en";
+    stub.commands([ [ "/usr/bin/loki get_system_info", () => ({ stdout: sprintf("%J", { ui_language: language }) }) ] ]);
+    let asked = () => service.object_methods().system_info.call({ args: {} }).system_info.ui_language;
+    t.eq(asked(), "en");
+    language = "ru";
+    fs.writefile(config + ".new", "option ui_language 'ru'\n");
+    fs.rename(config + ".new", config);
+    t.eq(asked(), "ru");
+    stub.restore();
+});
+
 t.test("an uploaded configuration is checked and staged by commands of their own, which get the caller's session in their environment", () => {
     let dir = stub.tmpdir();
     let seen = {};

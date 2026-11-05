@@ -1,10 +1,13 @@
 import { LOKI_LUCI_APP_VERSION, LOKI_UCI_PACKAGE } from '../../constants';
 import { injectGlobalStyles } from '../../helpers/injectGlobalStyles';
+import { loadAppLanguage } from '../../helpers/appLanguage';
 import { coreService } from '../services/core.service';
 import { loadCoreFeatures } from '../services/coreFeatures.service';
+import { store } from '../services/store.service';
 import { ComponentsTab } from '../tabs/components';
 import { DashboardTab } from '../tabs/dashboard';
 import { DiagnosticTab } from '../tabs/diagnostic';
+import { getDiagnosticsChecks } from '../tabs/diagnostic/diagnostic.store';
 import { LogsTab } from '../tabs/logs';
 import { MonitoringTab } from '../tabs/monitoring';
 import { mountTabOption } from '../tabs/mountTab';
@@ -35,8 +38,12 @@ function addMountedTab(
 
 export const LokiView = {
   // The forms offer only what the installed core can run, so its features load first.
-  load() {
-    return loadCoreFeatures().catch((error) => {
+  async load() {
+    await loadAppLanguage().catch((error) => {
+      console.warn('[APP_LANGUAGE]', error);
+    });
+    store.set({ diagnosticsChecks: getDiagnosticsChecks(_('Not running')) });
+    await loadCoreFeatures().catch((error) => {
       console.warn('[CORE_FEATURES]', error);
     });
   },

@@ -7,6 +7,16 @@ import { addUpdateOptions } from './form/updates';
 // The Settings tab is one flat section, so the order below is the order the
 // page shows.
 export function createSettingsContent(section: CBISection) {
+  const language = section.option(
+    form.ListValue,
+    'ui_language',
+    _('LoKi interface language'),
+  );
+  language.value('en', _('English'));
+  language.value('ru', _('Russian'));
+  language.default = 'en';
+  language.rmempty = false;
+
   addDnsOptions(section);
   addNetworkOptions(section);
   addTrafficOptions(section);

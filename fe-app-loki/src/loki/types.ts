@@ -437,6 +437,7 @@ export namespace Loki {
     sing_box_variant?: string;
     openwrt_version: string;
     device_model: string;
+    ui_language?: 'auto' | 'en' | 'ru';
     generated_at?: number;
   }
 

@@ -298,12 +298,7 @@ build_i18n_root() {
   local lmo_path="$output_root/usr/lib/lua/luci/i18n/loki.ru.lmo"
 
   rm -rf "$output_root"
-  make_dir "$output_root/etc/uci-defaults"
   make_dir "$(dirname "$lmo_path")"
-
-  cat > "$output_root/etc/uci-defaults/luci-i18n-loki-ru" <<'EOF'
-uci set luci.languages.ru='Русский (Russian)'; uci commit luci
-EOF
 
   "$po2lmo_bin" "$ROOT_DIR/luci-app-loki/po/ru/loki.po" "$lmo_path"
 
@@ -311,7 +306,6 @@ EOF
   install -m 0644 "$ROOT_DIR/LICENSE" "$output_root/usr/share/licenses/luci-i18n-loki-ru/LICENSE"
 
   normalize_package_root_modes "$output_root"
-  find "$output_root/etc/uci-defaults" -type f -exec chmod 0755 {} + 2>/dev/null || true
 }
 
 generate_apk_metadata_files() {

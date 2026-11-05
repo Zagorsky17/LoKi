@@ -28,7 +28,8 @@ LUCI_DESCRIPTION:=Web interface for LoKi
 LUCI_MINIFY_JS:=0
 
 PKG_LICENSE:=GPL-2.0-or-later AND MIT AND OFL-1.1
-LUCI_LANGUAGES:=en ru
+# LuCI's automatic locale packages write luci.languages.*; LoKi owns its locale.
+override LUCI_LANGUAGES :=
 
 define Build/Prepare/$(PKG_NAME)
 	$(INSTALL_DIR) $(PKG_BUILD_DIR)/root/usr/share/licenses/luci-app-loki
@@ -40,5 +41,29 @@ define Build/Prepare/$(PKG_NAME)
 endef
 
 include $(TOPDIR)/feeds/luci/luci.mk
+
+# The locale belongs to LoKi; installing it must not edit shared LuCI settings.
+define Package/luci-i18n-loki-ru
+	SECTION:=luci
+	CATEGORY:=LuCI
+	TITLE:=LoKi - Russian translation
+	HIDDEN:=1
+	DEPENDS:=luci-app-loki
+	VERSION:=$(PKG_PO_VERSION)
+	PKGARCH:=all
+endef
+
+define Package/luci-i18n-loki-ru/description
+	Russian translation for the LoKi page
+endef
+
+define Package/luci-i18n-loki-ru/install
+	$(INSTALL_DIR) $(1)$(LUCI_LIBRARYDIR)/i18n
+	po2lmo $(CURDIR)/po/ru/loki.po $(1)$(LUCI_LIBRARYDIR)/i18n/loki.ru.lmo
+	$(INSTALL_DIR) $(1)/usr/share/licenses/luci-i18n-loki-ru
+	$(INSTALL_DATA) ../LICENSE $(1)/usr/share/licenses/luci-i18n-loki-ru/LICENSE
+endef
+
+$(eval $(call BuildPackage,luci-i18n-loki-ru))
 
 # call BuildPackage - OpenWrt buildroot signature

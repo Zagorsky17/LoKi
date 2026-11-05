@@ -59,7 +59,7 @@ function path_signature(path) {
     let stat = fs.stat(path);
     if (stat == null)
         return "-";
-    return stat.mtime + ":" + stat.size;
+    return stat.inode + ":" + stat.ctime + ":" + stat.mtime + ":" + stat.size;
 }
 
 // Everything that can change the state without this process being told, compared by a few
@@ -203,7 +203,7 @@ function log_is_watched() {
 }
 
 function package_db_signature() {
-    let signature = "";
+    let signature = path_signature(paths.config) + "|";
     for (let path in paths.package_databases)
         signature += path_signature(path) + "|";
     return signature;

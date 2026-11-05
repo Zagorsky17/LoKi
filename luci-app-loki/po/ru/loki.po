@@ -7,8 +7,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: LOKI\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-05 09:58+0300\n"
-"PO-Revision-Date: 2026-11-05 09:58+0300\n"
+"POT-Creation-Date: 2026-11-06 01:18+0300\n"
+"PO-Revision-Date: 2026-11-06 01:18+0300\n"
 "Last-Translator: ushan0v\n"
 "Language-Team: none\n"
 "Language: ru\n"
@@ -569,6 +569,9 @@ msgstr "Включено"
 msgid "Encrypted DNS protocol"
 msgstr "Протокол шифрования DNS"
 
+msgid "English"
+msgstr "Английский"
+
 msgid "Exclude by pattern"
 msgstr "Исключить по шаблону"
 
@@ -950,6 +953,9 @@ msgstr "Ошибка LoKi"
 msgid "LoKi ignores these devices entirely: their traffic is not routed and their DNS is not captured"
 msgstr "LoKi полностью игнорирует эти устройства, их трафик не маршрутизируется, а DNS не перехватывается"
 
+msgid "LoKi interface language"
+msgstr "Язык интерфейса LoKi"
+
 msgid "LoKi system logs"
 msgstr "Системные логи LoKi"
 
@@ -1288,6 +1294,9 @@ msgstr "работает"
 
 msgid "running for %s"
 msgstr "работает %s"
+
+msgid "Russian"
+msgstr "Русский"
 
 msgid "Save"
 msgstr "Сохранить"

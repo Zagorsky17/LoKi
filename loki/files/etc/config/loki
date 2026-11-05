@@ -3,6 +3,7 @@
 config settings 'settings'
         option config_format 'loki'
         option config_version '2.0.0'
+        option ui_language 'en'
         option dns_encryption '0'
         list dns_server '77.88.8.8'
         list bootstrap_dns_server '77.88.8.8'

@@ -2,18 +2,20 @@ import { LokiShellMethods } from '../methods';
 import { logger } from './logger.service';
 import { store, StoreType } from './store.service';
 
-const UNKNOWN_SYSTEM_INFO: StoreType['diagnosticsSystemInfo'] = {
-  loading: false,
-  loaded: false,
-  capabilitiesLoaded: false,
-  loki_version: _('unknown'),
-  luci_app_version: _('unknown'),
-  sing_box_version: _('unknown'),
-  sing_box_variant: '',
-  sections_enabled_count: -1,
-  openwrt_version: _('unknown'),
-  device_model: _('unknown'),
-};
+function unknownSystemInfo(): StoreType['diagnosticsSystemInfo'] {
+  return {
+    loading: false,
+    loaded: false,
+    capabilitiesLoaded: false,
+    loki_version: _('unknown'),
+    luci_app_version: _('unknown'),
+    sing_box_version: _('unknown'),
+    sing_box_variant: '',
+    sections_enabled_count: -1,
+    openwrt_version: _('unknown'),
+    device_model: _('unknown'),
+  };
+}
 
 let systemInfoPromise: Promise<StoreType['diagnosticsSystemInfo']> | null =
   null;
@@ -62,7 +64,7 @@ export async function ensureSystemInfo({
 
       if (systemInfo.success) {
         const nextSystemInfo: StoreType['diagnosticsSystemInfo'] = {
-          ...UNKNOWN_SYSTEM_INFO,
+          ...unknownSystemInfo(),
           loading: false,
           loaded: true,
           capabilitiesLoaded: true,
@@ -83,7 +85,7 @@ export async function ensureSystemInfo({
     if (requestId === latestSystemInfoRequestId && !silent) {
       const latestSystemInfo = store.get().diagnosticsSystemInfo;
       const nextSystemInfo = {
-        ...UNKNOWN_SYSTEM_INFO,
+        ...unknownSystemInfo(),
         loading: false,
         loaded: false,
         capabilitiesLoaded: latestSystemInfo.capabilitiesLoaded,

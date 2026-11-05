@@ -553,7 +553,10 @@ function buildForm(uciData) {
 
 /* ----------------------------------------------------------------- harness */
 
-export function createHarness(packageName = 'loki', { writable = true } = {}) {
+export function createHarness(
+  packageName = 'loki',
+  { writable = true, configureGlobals } = {},
+) {
   const messages = [];
 
   const store = new Map();
@@ -754,6 +757,7 @@ export function createHarness(packageName = 'loki', { writable = true } = {}) {
         },
     },
     console: {
+      debug: (...args) => messages.push(args.join(' ')),
       log: (...args) => messages.push(args.join(' ')),
       info: (...args) => messages.push(args.join(' ')),
       warn: (...args) => messages.push(args.join(' ')),
@@ -761,6 +765,7 @@ export function createHarness(packageName = 'loki', { writable = true } = {}) {
     },
   };
 
+  configureGlobals?.(moduleGlobals);
   const bundle = loadBundle(moduleGlobals);
 
   const main = new Proxy(
