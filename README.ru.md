@@ -147,6 +147,8 @@ FakeIP связывает синтетический IP-адрес с домен
 
 ## Происхождение и лицензия
 
+Комплект уведомлений ядра включает полный текст MPL 2.0 и сведения о закреплённом источнике Public Suffix List. У встроенного шрифта флагов сохранены [уведомление об авторстве](luci-app-loki/htdocs/luci-static/resources/view/loki/fonts/LICENSE.md), [неизменённая npm-лицензия](luci-app-loki/htdocs/luci-static/resources/view/loki/fonts/UPSTREAM_LICENSE.md) и [происхождение артефакта](luci-app-loki/htdocs/luci-static/resources/view/loki/fonts/PROVENANCE.md). WOFF2 совпадает с npm-версией0.1.8; его воспроизведение из исходного TTF не проверено.
+
 Исходный Forkop разработан [ushan0v и участниками проекта](https://github.com/ushan0v/forkop/graphs/contributors). LoKi развивается независимо в [Zagorsky17/LoKi](https://github.com/Zagorsky17/LoKi) и не является релизом исходного Forkop.
 
 LoKi сохраняет лицензию проекта [GPL-2.0-or-later](LICENSE). Патч ядра и собираемое ядро loki-core распространяются отдельно по [GPL-3.0-or-later](core/COPYING); сборка создаёт `core-source-VERSION.tar.gz` с пропатченным деревом ядра, включая локальные замены зависимостей в `third_party`, и отдельные архивы `core-module-sources-*`, описанные выше. Для распространения бинарника также нужны соответствующие сборочные материалы и применимые исходники и уведомления зависимостей; эти архивы сами по себе не закрывают аудит соответствующих исходников. Существующие уведомления об авторских правах, лицензиях и авторстве необходимо сохранять. У сторонних компонентов действуют собственные уведомления, в том числе у [встроенных файлов шрифта](luci-app-loki/htdocs/luci-static/resources/view/loki/fonts/LICENSE.md).

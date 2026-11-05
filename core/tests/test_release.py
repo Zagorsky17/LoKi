@@ -344,6 +344,27 @@ class NoticeTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'Unreviewed'):
             self.verify(manifest)
 
+    def test_core_data_notices_are_required_byte_exact_and_cannot_be_omitted(self):
+        import copy
+        for name in ('MPL-2.0.txt', 'publicsuffix-NOTICE.txt'):
+            path = self.source / 'release/forkop/source-data' / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes((ROOT / 'core/source-data' / name).read_bytes())
+            self.profile['core'][str(path.relative_to(self.source))] = self.notices.digest(path.read_bytes())
+        self.profile_path.write_text(json.dumps(self.profile))
+        manifest = self.collect()
+        self.verify(manifest)
+        self.assertEqual(len(manifest['sections']), 6)
+        omitted = copy.deepcopy(manifest)
+        omitted['sections'] = [x for x in omitted['sections'] if not x['path'].endswith('MPL-2.0.txt')]
+        with self.assertRaisesRegex(ValueError, 'Incomplete'):
+            self.verify(omitted)
+        self.destination = self.work / 'corrupt-data-notices'
+        (self.source / 'release/forkop/source-data/MPL-2.0.txt').write_bytes(b'corrupt')
+        with self.assertRaisesRegex(ValueError, 'Changed reviewed notice'):
+            self.collect()
+        self.assertFalse(self.destination.exists())
+
     def test_unknown_replacement_is_private_and_cannot_bypass_release_gate(self):
         self.info['Deps'][0]['Replace'] = {'Path': str(self.work / 'private-replacement')}
         manifest = self.collect()

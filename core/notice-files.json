@@ -1,6 +1,8 @@
 {
   "core": {
-    "common/ja3/LICENSE": "31cbb9419e5fbd3fe353eb5b5efb2667d5969f42e44f976e8c0b3a28893b3c09"
+    "common/ja3/LICENSE": "31cbb9419e5fbd3fe353eb5b5efb2667d5969f42e44f976e8c0b3a28893b3c09",
+    "release/forkop/source-data/MPL-2.0.txt": "66a3107d5ad6a058aab753eaac2047ccb2ed0e39465dd0fe5844da3e300d5172",
+    "release/forkop/source-data/publicsuffix-NOTICE.txt": "6d4d7c950781e8e3d88d8482e29bb9f2e404792ef7fc10a5b97c2e8a2cd43f9a"
   },
   "go": {
     "files": {
@@ -619,7 +621,7 @@
       "version": "v1.3.0"
     }
   },
-  "reviewed_binary_sha256": "6b55c85e88225714392b344aa0b7c98d4d574dbb83ae848c4bf6d45a4a94c744",
-  "reviewed_on": "2026-11-04",
+  "reviewed_binary_sha256": "8eed6909c6a05b7d227a5db1a06091c9a856fb6f8a036e8e87021acb357b288d",
+  "reviewed_on": "2026-11-05",
   "schema": 1
 }
