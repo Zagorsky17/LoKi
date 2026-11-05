@@ -2,6 +2,7 @@ let t = require("t");
 let stub = require("stub");
 let fs = require("fs");
 let preflight = require("service.preflight");
+let uci = require("uci");
 
 const RULE_QUERY4 = "exec /usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin LC_ALL=C timeout -s KILL 2 /sbin/ip -Numeric -j -4 rule list";
 const RULE_QUERY6 = replace(RULE_QUERY4, "-j -4", "-j -6");
@@ -125,6 +126,35 @@ t.test("real collector reports only the implemented coverage and never permits i
     t.ok(has(result, "incomplete", "not-implemented"));
     t.eq(fs.readfile(root + "/usr/lib/opkg/status"), before);
     t.eq(again, result, "repeat reads have identical results");
+});
+
+t.test("a supplied prepared config is read from its own root and remains nonauthorizing", () => {
+    let root = fixture();
+    fs.mkdir(root + "/loki");
+    fs.mkdir(root + "/loki/files");
+    fs.mkdir(root + "/loki/files/etc");
+    fs.mkdir(root + "/loki/files/etc/config");
+    let path = root + "/loki/files/etc/config/loki";
+    let data = "config settings 'settings'\n";
+    write(path, data);
+    let scratch = stub.tmpdir();
+    fs.chmod(scratch, 0700);
+    uci.__reset();
+    uci.__seed("loki", [ { ".name": "settings", ".type": "settings" } ]);
+    readonly_probes({ stdout: "{}" });
+    let result = preflight.collect(root, null, path, scratch, root);
+    stub.restore();
+    t.ok(has(result, "checked", "uci-syntax-checked"));
+    t.ok(has(result, "incomplete", "candidate-core-unverified"));
+    t.eq(result.install_allowed, false);
+    t.eq(fs.readfile(path), data);
+    t.eq(fs.lstat(scratch + "/config"), null);
+
+    fs.unlink(path);
+    fs.symlink(root + "/usr/lib/opkg/status", path);
+    let unsafe = preflight.collect(root, null, path, scratch, root);
+    t.ok(has(unsafe, "incomplete", "candidate-config-not-regular-file"));
+    t.excludes(sprintf("%J", unsafe), data);
 });
 
 t.test("foreign installed owners block planned paths without reading their contents", () => {

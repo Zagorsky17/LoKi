@@ -8,6 +8,7 @@ let processes_reader = require("service.preflight_processes");
 let rules_reader = require("service.preflight_rules");
 let nft_reader = require("service.preflight_nft");
 let resources_reader = require("service.preflight_resources");
+let config_reader = require("service.preflight_config");
 
 // Critical current package targets, not yet a complete install manifest.
 const TARGETS = [
@@ -153,7 +154,7 @@ function observation(kind, object, state, reason) {
     return { kind, object, state, reason };
 }
 
-function collect(root, manifest_path) {
+function collect(root, manifest_path, config_path, scratch, source_root) {
     // The CLI always passes "/". A fixture root is only an in-process test seam.
     root = root == "/" ? "" : root;
     let observations = [];
@@ -320,11 +321,25 @@ function collect(root, manifest_path) {
         push(observations, item);
     for (let item in resources_reader.collect(root || "/"))
         push(observations, item);
+    if (config_path != null) {
+        if (type(source_root) != "string" || config_path != source_root + "/loki/files/etc/config/loki")
+            push(observations, observation("configuration", "candidate-config", "incomplete", "unsupported-candidate-config-path"));
+        else {
+            let read = read_metadata(config_path, 1048576, source_root);
+            if (read.error != null)
+                push(observations, observation("configuration", "candidate-config", "incomplete", "candidate-config-" + read.error));
+            else
+                for (let item in config_reader.check(read.data, scratch, null))
+                    push(observations, item);
+        }
+    }
     // Unimplemented domains are mandatory; a partial inventory never grants permission.
     for (let kind in [ "hooks",
         "dns-committed", "dns-pending", "dns-runtime", "nft-persisted",
-        "ipv4-routes-rules", "ipv6-routes-rules", "dependencies", "configuration", "core-check" ])
+        "ipv4-routes-rules", "ipv6-routes-rules", "dependencies", "core-check" ])
         push(observations, observation(kind, kind, "incomplete", "not-implemented"));
+    if (config_path == null)
+        push(observations, observation("configuration", "configuration", "incomplete", "not-implemented"));
     let conflict = false;
     for (let item in observations)
         if (item.state == "conflict")
