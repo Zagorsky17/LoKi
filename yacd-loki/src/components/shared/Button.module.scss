@@ -1,0 +1,74 @@
+@use '~/styles/utils/custom-media' as *;
+
+.btn {
+  -webkit-appearance: none;
+  outline: none;
+  user-select: none;
+  position: relative;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  // 与顶栏的 .btnGhost 同一套：卡片色底 + 卡片边框色描边，
+  // 悬停是蓝描边而不是整块填蓝
+  color: var(--color-text);
+  background: var(--color-card);
+  border: 1px solid var(--color-card-border);
+  border-radius: 100px;
+  transition:
+    color 0.2s ease,
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+
+  &:focus-visible {
+    border-color: var(--color-focus-blue);
+    box-shadow: 0 0 0 3px var(--color-accent-soft-bg);
+  }
+  &:hover:not(:disabled) {
+    color: var(--color-focus-blue);
+    border-color: var(--color-focus-blue);
+  }
+
+  font-size: 0.75em;
+  padding: 4px 7px;
+  @media (--breakpoint-not-small) {
+    font-size: small;
+    padding: 6px 12px;
+  }
+
+  &.minimal {
+    border-color: transparent;
+    background: none;
+    &:hover:not(:disabled) {
+      color: var(--color-focus-blue);
+      background: var(--color-hover-soft);
+      border-color: transparent;
+    }
+  }
+}
+
+.btn:disabled {
+  opacity: 0.5;
+}
+
+.btnInternal {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  column-gap: 4px;
+}
+
+.btnStart {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.loadingContainer {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: inline-flex;
+}

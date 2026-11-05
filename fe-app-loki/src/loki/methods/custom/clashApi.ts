@@ -44,10 +44,6 @@ function getSettingsSection(configSections: Loki.ConfigSection[]) {
   return configSections.find((section) => section['.type'] === 'settings');
 }
 
-function getClashApiSecret(configSections: Loki.ConfigSection[]) {
-  return getSettingsSection(configSections)?.yacd_secret_key || '';
-}
-
 function canReachClashApiFromBrowser() {
   return canUseDirectClashApi() && typeof fetch === 'function';
 }
@@ -128,26 +124,25 @@ async function ensureClashApiConfigSections() {
 }
 
 async function fetchClashApiDirectly(
-  configSections: Loki.ConfigSection[],
   path: string,
   init?: RequestInit,
   timeout?: number,
 ): Promise<DirectClashApiOutcome> {
-  const secret = getClashApiSecret(configSections);
   const controller = timeout ? new AbortController() : undefined;
   const timeoutId = timeout
     ? setTimeout(() => controller?.abort(), timeout)
     : undefined;
   const headers: Record<string, string> = {
     ...(init?.headers as Record<string, string> | undefined),
+    'X-Loki-CSRF': '1',
   };
-
-  if (secret) headers.Authorization = `Bearer ${secret}`;
 
   try {
     const response = await fetch(`${getClashApiUrl()}${path}`, {
       ...init,
       headers,
+      credentials: 'include',
+      redirect: 'error',
       signal: controller?.signal,
     });
 
@@ -183,7 +178,7 @@ async function fetchClashApiThroughCli<T>(
   );
 }
 
-// Any answer proves the controller is reachable, even one refusing the secret.
+// A live session refusal is an answer, so it must not trigger a second write transport.
 function probeDirectClashApi() {
   if (directClashApiProbe) {
     return directClashApiProbe;
@@ -193,15 +188,11 @@ function probeDirectClashApi() {
   }
 
   directClashApiProbeAt = Date.now() + DIRECT_CLASH_API_PROBE_INTERVAL_MS;
-  directClashApiProbe = ensureClashApiConfigSections()
-    .then((configSections) =>
-      fetchClashApiDirectly(
-        configSections,
-        '/version',
-        undefined,
-        DIRECT_CLASH_API_PROBE_TIMEOUT_MS,
-      ),
-    )
+  directClashApiProbe = fetchClashApiDirectly(
+    '/version',
+    undefined,
+    DIRECT_CLASH_API_PROBE_TIMEOUT_MS,
+  )
     .then((outcome) => {
       if (outcome.kind === 'response') {
         directClashApiSuspended = false;
@@ -237,12 +228,7 @@ async function requestClashApi<T>(
   }
 
   if (canFetchClashApiDirectly()) {
-    const outcome = await fetchClashApiDirectly(
-      await ensureClashApiConfigSections(),
-      path,
-      init,
-      timeout,
-    );
+    const outcome = await fetchClashApiDirectly(path, init, timeout);
 
     if (outcome.kind === 'response') {
       directClashApiSuspended = false;

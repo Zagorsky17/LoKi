@@ -1,5 +1,5 @@
-// controller_server.uc DIR PID: the process behind controller.uc. It listens on a loopback port
-// it writes to DIR/port, keeps each request as DIR/request.N and answers with DIR/reply: its raw
+// controller_server.uc DIR PID: the process behind controller.uc. Its Unix socket is private
+// to DIR, with readiness in DIR/port. It records requests and answers with DIR/reply: its raw
 // text, or its status and body after delay_ms, then closes as an HTTP/1.0 server does. It leaves
 // once the test process PID is gone.
 
@@ -8,8 +8,9 @@ let fs = require("fs");
 
 let dir = ARGV[0];
 let owner = ARGV[1];
-let server = socket.listen("127.0.0.1", 0, { socktype: socket.SOCK_STREAM }, 16, true);
-fs.writefile(dir + "/port.tmp", "" + server.sockname().port);
+let server = socket.listen({ path: dir + "/controller.sock" }, null, { socktype: socket.SOCK_STREAM }, 16);
+fs.chmod(dir + "/controller.sock", 0600);
+fs.writefile(dir + "/port.tmp", "unix");
 fs.rename(dir + "/port.tmp", dir + "/port");
 
 for (let count = 0; fs.access("/proc/" + owner); ) {

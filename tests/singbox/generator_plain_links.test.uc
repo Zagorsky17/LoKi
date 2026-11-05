@@ -13,7 +13,7 @@ function build(uri, extra) {
         ],
         connection_link: [ { ".name": "node", section: "main", name: "Node", uri, ...(extra ?? {}) } ]
     });
-    return generator.build({ service_address: "127.0.0.1", local_prefixes: [] });
+    return generator.build({ controller_secret: fixture.CONTROLLER_SECRET, service_address: "127.0.0.1", local_prefixes: [] });
 }
 
 function outbound(uri) {

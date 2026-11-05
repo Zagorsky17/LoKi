@@ -1,0 +1,276 @@
+.card {
+  padding: 12px 14px;
+  background-color: var(--color-card);
+  border: 1px solid var(--color-card-border);
+  border-radius: 14px;
+  box-shadow: var(--shadow-card);
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+/* ---------- 头部 ---------- */
+
+.cardHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  cursor: pointer;
+  user-select: none;
+
+  &:focus-visible {
+    outline: 2px solid var(--color-focus-blue);
+    outline-offset: 4px;
+    border-radius: 6px;
+  }
+
+  // 未 hover 时测速按钮隐形但占位，避免布局跳动
+  &:hover .iconAction,
+  &:focus-within .iconAction {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+.name {
+  font-size: 0.98rem;
+  font-weight: 600;
+  color: var(--color-text-highlight);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.typeBadge {
+  flex-shrink: 0;
+  font-size: 0.68rem;
+  font-weight: 500;
+  line-height: 1;
+  padding: 4px 7px;
+  border-radius: 6px;
+  background: var(--color-badge-bg);
+  color: var(--color-badge-fg);
+}
+
+.fixedBadge {
+  flex-shrink: 0;
+  font-size: 0.68rem;
+  font-weight: 500;
+  line-height: 1;
+  padding: 4px 7px;
+  border-radius: 6px;
+  background: var(--color-accent-soft-bg);
+  color: var(--color-accent-soft-fg);
+  cursor: help;
+}
+
+.fixedPin {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: var(--color-accent-soft-bg);
+  color: var(--color-accent-soft-fg);
+  font-size: 13px;
+  cursor: pointer;
+
+  .pinOffIcon {
+    display: none;
+  }
+
+  // Hovering previews the action: the pin turns into "unpin"
+  &:hover:not([aria-disabled='true']) {
+    .pinIcon {
+      display: none;
+    }
+
+    .pinOffIcon {
+      display: block;
+    }
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--color-focus-blue);
+    outline-offset: 2px;
+  }
+
+  &[aria-disabled='true'] {
+    opacity: 0.5;
+    cursor: default;
+  }
+}
+
+.headerSpacer {
+  flex: 1;
+  min-width: 8px;
+}
+
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.iconAction {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  appearance: none;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  // 隐藏时同时关掉命中区域，避免误点到看不见的按钮
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 0.15s ease,
+    background-color 0.15s ease,
+    color 0.15s ease;
+
+  &:hover {
+    background: var(--color-hover-soft);
+    color: var(--color-focus-blue);
+  }
+
+  &:focus-visible {
+    opacity: 1;
+    pointer-events: auto;
+    outline: 2px solid var(--color-focus-blue);
+    outline-offset: 1px;
+  }
+
+  // 触屏设备没有 hover，常驻显示
+  @media (hover: none) {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+.iconActionBusy {
+  opacity: 1;
+  pointer-events: auto;
+  color: var(--color-focus-blue);
+  animation: zapPulse 1s ease-in-out infinite;
+}
+
+@keyframes zapPulse {
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.headerLatency {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.chevron {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--color-text-secondary);
+  transform: rotate(0deg);
+  transition: transform 0.3s ease;
+}
+
+.chevronOpen {
+  transform: rotate(180deg);
+}
+
+/* ---------- 状态行（当前节点 + 圆点） ---------- */
+
+.statusRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+  // 至少要能放下 hover 放大后的圆点（12px × 1.5）
+  min-height: 22px;
+}
+
+.nowName {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nowDot {
+  flex-shrink: 0;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+
+/* 圆点插槽靠右（左侧没有当前节点时改为靠左），宽度由 flex 决定而不是内容，
+   测量它来决定圆点还是进度条。
+   flex-basis 必须是 0：用 auto 时宽度取决于里面放的是圆点还是进度条，而放哪个又取决于宽度，
+   当前节点名很长时两者会逐帧来回切换（#123）。min-width 保证长节点名下进度条仍然可见。 */
+.dotsSlot {
+  flex: 1 1 0;
+  min-width: 48px;
+  // 撑满状态行高度、右侧留出 padding，这样 hover 放大的圆点不会被 overflow 裁掉；
+  // padding 不影响测量（用的是 content box 宽度）
+  align-self: stretch;
+  padding-right: 3px;
+  margin-right: -3px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.dotsSlotStart {
+  justify-content: flex-start;
+  padding-right: 0;
+  margin-right: 0;
+  padding-left: 3px;
+  margin-left: -3px;
+}
+
+.availBar {
+  width: 100%;
+  max-width: 220px;
+  display: flex;
+  align-items: center;
+}
+
+.availBarTrack {
+  flex: 1;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--color-track);
+  overflow: hidden;
+}
+
+.availBarFill {
+  height: 100%;
+  border-radius: 3px;
+  background: #67c23a;
+  transition: width 0.4s ease;
+}

@@ -21,9 +21,6 @@ vi.mock('../../../methods', () => ({
     closeAllClashApiConnections: mocks.closeAllClashApiConnections,
   },
 }));
-vi.mock('../../../methods/custom/getClashApiSecret', () => ({
-  getClashApiSecret: async () => 'secret',
-}));
 vi.mock('../../../methods/custom/clashApi', () => ({
   resetClashApiTransport: vi.fn(),
 }));

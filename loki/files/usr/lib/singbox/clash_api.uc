@@ -5,32 +5,43 @@
 let socket = require("socket");
 let common = require("core.common");
 let singbox_constants = require("singbox.constants");
-let uci = require("core.uci");
+let fs = require("fs");
+let storage = require("core.cache_path");
 
-const CONFIG_NAME = "loki";
-const DEFAULT_PORT = singbox_constants.CLASH_API_CONTROLLER_PORT;
+const CONTROLLER_SOCKET = singbox_constants.CLASH_API_CONTROLLER_SOCKET;
 const MAX_HEADER_BYTES = 65536;
 const MAX_BUFFERED_BODY_BYTES = 4 * 1024 * 1024;
 
-function endpoint(address) {
-    if (address == "")
-        return "127.0.0.1:" + DEFAULT_PORT;
-
-    let separator = rindex(address, ":");
-    if (separator < 0)
-        return address + ":" + DEFAULT_PORT;
-    let host = substr(address, 0, separator);
-    let port = substr(address, separator + 1);
-    if (host == "" || host == "0.0.0.0" || host == "::" || host == "[::]")
-        host = "127.0.0.1";
-    return host + ":" + (port == "" ? DEFAULT_PORT : port);
+// Browser-controlled settings never choose the RPC transport destination or its credential.
+function controller() {
+    return { endpoint: CONTROLLER_SOCKET, secret: require("service.gateway_secret").load() };
 }
 
-// A wildcard bind is reached over loopback.
-function controller() {
-    let settings = uci.get_all(CONFIG_NAME, "settings") ?? {};
-    let clash_api = common.read_json_file(common.option(settings, "config_path", ""))?.experimental?.clash_api;
-    return { endpoint: endpoint(common.as_string(clash_api?.external_controller)), secret: common.as_string(clash_api?.secret) };
+function private_connection(seconds) {
+    storage.validate({ cache_path: CONTROLLER_SOCKET + ".owner" });
+    let uid = fs.stat("/proc/self")?.uid;
+    let before = fs.lstat(CONTROLLER_SOCKET);
+    if (uid == null || before?.type != "socket" || before.uid != uid || before.nlink != 1 || (before.mode & 0777) != 0600)
+        return null;
+    let conn = socket.connect({ path: CONTROLLER_SOCKET }, null, { socktype: socket.SOCK_STREAM }, seconds * 1000);
+    if (conn == null)
+        return null;
+    let valid = false;
+    try {
+        let peer = conn.getopt(socket.SOL_SOCKET, socket.SO_PEERCRED);
+        let after = fs.lstat(CONTROLLER_SOCKET);
+        storage.validate({ cache_path: CONTROLLER_SOCKET + ".owner" });
+        valid = type(peer?.uid) == "int" && peer.uid == uid && type(peer.pid) == "int" && peer.pid > 0 &&
+            after != null && after.inode == before.inode && after.dev?.major == before.dev?.major &&
+            after.dev?.minor == before.dev?.minor && after.uid == before.uid && after.mode == before.mode &&
+            after.nlink == before.nlink;
+    }
+    catch (e) {}
+    if (!valid) {
+        conn.close();
+        return null;
+    }
+    return conn;
 }
 
 function segments(path, prefix) {
@@ -119,15 +130,14 @@ function send_all(conn, data) {
 // false once options.seconds ran out, null when nothing answered in HTTP.
 function exchange(api, method, path, options) {
     let deadline = common.monotonic_ms() + options.seconds * 1000;
-    let bracket = match(api.endpoint, /^\[(.*)\]:([0-9]+)$/);
-    let separator = rindex(api.endpoint, ":");
-    let conn = socket.connect(bracket?.[1] ?? substr(api.endpoint, 0, separator), bracket?.[2] ?? substr(api.endpoint, separator + 1),
-        { socktype: socket.SOCK_STREAM }, (options.connect_seconds ?? 3) * 1000);
+    if (api.endpoint != CONTROLLER_SOCKET)
+        return null;
+    let conn = private_connection(options.connect_seconds ?? 3);
     if (conn == null)
         return null;
 
     let body = options.body ?? "";
-    let head = method + " " + path + " HTTP/1.0\r\nHost: " + api.endpoint + "\r\n";
+    let head = method + " " + path + " HTTP/1.0\r\nHost: loki-controller\r\n";
     if (api.secret != "")
         head += "Authorization: Bearer " + api.secret + "\r\n";
     if (body != "")

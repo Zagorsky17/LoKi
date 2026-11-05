@@ -116,7 +116,8 @@ chmod +x "$1/build.sh"
                 args.append('--binary-only')
             result = subprocess.run(args, env=dict(os.environ,
                 PATH=str(binary) + os.pathsep + os.environ['PATH'],
-                LOKI_TEST_PREPARED=str(work / 'prepared')), capture_output=True, text=True)
+                LOKI_TEST_PREPARED=str(work / 'prepared')), capture_output=True, text=True,
+                preexec_fn=lambda: os.umask(0o002))
             if source_failure or fetch_failure:
                 self.assertNotEqual(result.returncode, 0)
                 self.assertEqual({p.name for p in output.iterdir()}, {'existing'})
@@ -131,7 +132,9 @@ chmod +x "$1/build.sh"
             asset_digest = hashlib.sha256(b'synthetic module source asset').hexdigest()
             self.assertEqual({p.name for p in output.iterdir()},
                 {'core.ipk', 'core.apk', 'core-release.json', 'SHA256SUMS',
-                 'core-source-1.14.4-r6.tar.gz', f'core-module-sources-1.14.4-r6-{asset_digest}.tar.gz'})
+                 'core-source-1.14.4-r7.tar.gz', f'core-module-sources-1.14.4-r7-{asset_digest}.tar.gz'})
+            self.assertTrue(all(p.stat().st_mode & 0o022 == 0 for p in output.iterdir()),
+                            'release artifacts must not inherit a writable caller umask')
             self.assertEqual(json.loads((output / 'core-release.json').read_text())['tag'], '2.0.0')
             subprocess.run(['sha256sum', '--check', 'SHA256SUMS'], cwd=output, check=True, capture_output=True)
             if repeat_profile:
@@ -141,7 +144,7 @@ chmod +x "$1/build.sh"
                     LOKI_TEST_PREPARED=str(work / 'prepared')), capture_output=True, text=True)
                 self.assertEqual(repeated.returncode, 0, repeated.stderr)
                 assets = {p.name for p in output.glob('core-module-sources-*.tar.gz')}
-                self.assertEqual(assets, {f'core-module-sources-1.14.4-r6-{hashlib.sha256(data).hexdigest()}.tar.gz'
+                self.assertEqual(assets, {f'core-module-sources-1.14.4-r7-{hashlib.sha256(data).hexdigest()}.tar.gz'
                                         for data in (b'synthetic module source asset', b'another module source asset')})
                 subprocess.run(['sha256sum', '--check', 'SHA256SUMS'], cwd=output, check=True, capture_output=True)
 
@@ -247,6 +250,17 @@ printf '%s %s %s\n' "$C_VERSION" "$C_TAG" "$C_LOKI_MIN"
         for mirror in (False, True):
             with self.subTest(mirror=mirror):
                 self.assertNotEqual(self.manifest_case(mirror=mirror, bad_digest=True).returncode, 0)
+
+class GatewayDependencyNoticeTests(unittest.TestCase):
+    def test_gateway_websocket_dependency_has_its_reviewed_original_notice(self):
+        reviewed = json.loads((ROOT / 'core/notice-files.json').read_text())
+        module = reviewed['modules'].get('github.com/coder/websocket')
+        self.assertIsNotNone(module, 'gateway websocket dependency has no reviewed original notice')
+        self.assertEqual(module['version'], 'v1.8.14')
+        self.assertEqual(module['sum'], 'h1:9L0p0iKiNOibykf283eHkKUHHrpG7f65OE3BhhO7v9g=')
+        self.assertIsNone(module['replacement'])
+        self.assertEqual(module['files'], {'LICENSE.txt': 'cc0975a5f6305145bdd7b41ce9479632fdac3870e6ac4281f28017f18c767c4e'})
+
 
 class NoticeTests(unittest.TestCase):
     def setUp(self):

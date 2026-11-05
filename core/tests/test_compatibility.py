@@ -5,10 +5,37 @@ from pathlib import Path
 import tarfile
 import tempfile
 import unittest
-from compatibility import REFERENCE_VERSION, assert_result, verify_stock_binary
+from compatibility import REFERENCE_VERSION, assert_result, historical_controller_configuration, verify_stock_binary
 
 
 class CompatibilityTests(unittest.TestCase):
+    def test_private_controller_is_accepted_only_by_the_reference_core(self):
+        assert_result('private-controller', REFERENCE_VERSION, 0, '')
+        with self.assertRaises(AssertionError):
+            assert_result('private-controller', REFERENCE_VERSION, 1, 'unknown field "external_controller_unix"')
+        for version in ('1.12.22', '1.13.21', '1.14.4'):
+            assert_result('private-controller', version, 1, 'experimental.clash_api: unknown field "external_controller_unix"')
+            for status, message in [(0, ''), (-11, 'crash'), (127, 'missing core'), (1, 'certificate missing')]:
+                with self.subTest(version=version, status=status), self.assertRaises(AssertionError):
+                    assert_result('private-controller', version, status, message)
+
+    def test_historical_controller_copy_retains_the_other_schema_boundaries(self):
+        actual = {'experimental': {'clash_api': {'external_controller_unix': '/tmp/loki/controller.sock',
+                                                'secret': 'synthetic'}, 'unified_delay': {'enabled': True}},
+                  'providers': {'test': {'type': 'remote'}}}
+        before = repr(actual)
+        historical = historical_controller_configuration(actual)
+        self.assertEqual(historical['experimental']['clash_api'],
+                         {'external_controller': '127.0.0.1:9092', 'secret': 'synthetic'})
+        self.assertEqual(historical['experimental']['unified_delay'], actual['experimental']['unified_delay'])
+        self.assertEqual(historical['providers'], actual['providers'])
+        self.assertEqual(repr(actual), before)
+        for api in ({}, {'external_controller': '127.0.0.1:9092', 'secret': 'synthetic'},
+                    {'external_controller_unix': '/tmp/other.sock', 'secret': 'synthetic'},
+                    {**actual['experimental']['clash_api'], 'external_ui': 'unexpected'}):
+            with self.subTest(api=api), self.assertRaisesRegex(AssertionError, 'fixed private Unix controller'):
+                historical_controller_configuration({'experimental': {'clash_api': api}})
+
     def test_reference_must_accept_the_configuration(self):
         assert_result('manual-json', REFERENCE_VERSION, 0, '')
         with self.assertRaises(AssertionError):

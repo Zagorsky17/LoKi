@@ -102,12 +102,13 @@ t.test("each known port uses its shared constants without leaking unrelated boun
     let root = fixture();
     let data = header("tcp");
     let inode = 10;
-    for (let port in [ "0035", "0642", "0643", "0644", "0645", "2382", "BEEF" ])
+    for (let port in [ "0035", "0642", "0643", "0644", "0645", "2384", "BEEF" ])
         data += row("tcp", port, null, "" + inode++);
     fs.writefile(root + "/proc/self/net/tcp", data);
     let result = listeners.collect(root);
-    for (let role in [ "dns", "tproxy", "source-dns", "system-tproxy", "system-dns", "controller" ])
+    for (let role in [ "dns", "tproxy", "source-dns", "system-tproxy", "system-dns" ])
         t.ok(has(result, "listener-candidate-port-occupied-unverified", "ipv4-tcp-" + role));
+    t.ok(!has(result, "listener-candidate-port-occupied-unverified", "ipv4-tcp-controller"));
     t.excludes(sprintf("%J", result), "48879");
 });
 
@@ -182,6 +183,19 @@ t.test("a changed live binding is rejected while queue-only changes remain valid
         fs.open = open;
         t.eq(has(result, "listener-bindings-changed", "ipv4-tcp"), changed_binding);
         t.eq(has(result, "listener-table-read-complete", "ipv4-tcp"), !changed_binding);
+    }
+});
+
+t.test("the gateway candidate TCP port is observed without treating an unrelated UDP socket as a conflict", () => {
+    let root = fixture();
+    for (let name in [ "tcp", "tcp6", "udp", "udp6" ])
+        fs.writefile(root + "/proc/self/net/" + name, header(name) + row(name, "2383"));
+    let result = listeners.collect(root);
+    for (let family in [ "ipv4", "ipv6" ]) {
+        t.eq(has(result, "listener-candidate-port-occupied-unverified", family + "-tcp-gateway"), true,
+            "gateway TCP binding must be reported");
+        t.eq(has(result, "listener-candidate-port-occupied-unverified", family + "-udp-gateway"), false,
+            "an unrelated UDP socket does not occupy the HTTPS port");
     }
 });
 

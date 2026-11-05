@@ -147,25 +147,11 @@ function ensure_custom_ruleset(config, reference) {
     return tag_name;
 }
 
-function clash_api_config(settings, service_address) {
-    let controller = as_string(service_address || "");
-    // loki-core listens on 0.0.0.0 over IPv4 only, on :: over both families.
-    if (bool_option(settings, "enable_yacd", false) && bool_option(settings, "enable_yacd_wan_access", false))
-        controller = "::";
-    else if (controller == "")
-        controller = "127.0.0.1";
-
-    let result = {
-        external_controller: (index(controller, ":") >= 0 ? "[" + controller + "]" : controller) + ":" + runtime_constants.CLASH_API_CONTROLLER_PORT
-    };
-    let secret = option(settings, "yacd_secret_key", "");
-    if (secret != "")
-        result.secret = secret;
-    if (bool_option(settings, "enable_yacd", false)) {
-        result.external_ui = "ui";
-        result.external_ui_download_detour = runtime_constants.DIRECT_OUTBOUND_TAG;
-    }
-    return result;
+function clash_api_config(secret) {
+    if (type(secret) != "string" || length(secret) != 64 || !match(secret, /^[a-f0-9]{64}$/) ||
+        secret == sprintf("%064d", 0))
+        runtime_generate_unsupported("The server-owned controller credential is unavailable");
+    return { external_controller_unix: runtime_constants.CLASH_API_CONTROLLER_SOCKET, secret };
 }
 
 function single_or_array(values) {
@@ -227,7 +213,7 @@ function apply_matchers(rule, matchers) {
         rule[key] = value;
 }
 
-function base_config(settings, service_address) {
+function base_config(settings, controller_secret) {
     let log_level = option(settings, "log_level", "warn");
     let rewrite_ttl = int_option(settings, "dns_rewrite_ttl", "60");
     let cache_path = option(settings, "cache_path", "/tmp/loki/cache.db") || "/tmp/loki/cache.db";
@@ -302,7 +288,7 @@ function base_config(settings, service_address) {
                 store_fakeip: true,
                 store_subscriptions: true
             },
-            clash_api: clash_api_config(settings, service_address)
+            clash_api: clash_api_config(controller_secret)
         }
     };
 }
@@ -1618,7 +1604,8 @@ function runnable() {
 }
 
 // Throws with the reason when the configuration cannot be expressed.
-// context: { service_address }
+// The caller supplies its private controller credential; generation never creates state.
+// context: { controller_secret, local_prefixes }
 function build(context) {
     context = object_or_empty(context);
     connections.load();
@@ -1630,7 +1617,7 @@ function build(context) {
     if (length(sections) == 0)
         runtime_generate_unsupported("no usable sections");
 
-    let config = base_config(settings, context.service_address);
+    let config = base_config(settings, context.controller_secret);
     add_source_aware_dns_support(config);
     let static_hosts = static_hosts_config();
     add_static_hosts_support(config, static_hosts);

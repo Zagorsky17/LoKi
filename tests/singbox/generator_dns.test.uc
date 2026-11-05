@@ -6,7 +6,7 @@ let generator = require("singbox.generator");
 
 function build(data, context) {
     fixture.seed(data);
-    return generator.build({ service_address: "192.168.1.1", local_prefixes: [], ...(context ?? {}) });
+    return generator.build({ controller_secret: fixture.CONTROLLER_SECRET, service_address: "192.168.1.1", local_prefixes: [], ...(context ?? {}) });
 }
 
 t.test("a single DNS server is used directly", () => {

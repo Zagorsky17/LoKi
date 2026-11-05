@@ -1,0 +1,508 @@
+diff --git a/common/lokigateway/server_linux.go b/common/lokigateway/server_linux.go
+index b8e615d..db88323 100644
+--- a/common/lokigateway/server_linux.go
++++ b/common/lokigateway/server_linux.go
+@@ -131,6 +131,11 @@ func Run(ctx context.Context) error {
+ 	if err != nil {
+ 		return err
+ 	}
++	assets, err := openAssets(assetsDirectory)
++	if err != nil {
++		return err
++	}
++	defer assets.Close()
+ 	listeners := make([]net.Listener, 0, len(cfg.Listen))
+ 	for _, address := range cfg.Listen {
+ 		listener, err := net.Listen("tcp", address)
+@@ -140,5 +145,7 @@ func Run(ctx context.Context) error {
+ 		defer listener.Close()
+ 		listeners = append(listeners, listener)
+ 	}
+-	return serveGateway(ctx, configuredGateway(ctx, cfg, secret), identity, listeners...)
++	g := configuredGateway(ctx, cfg, secret)
++	g.assets = assets
++	return serveGateway(ctx, g, identity, listeners...)
+ }
+diff --git a/common/lokigateway/static.go b/common/lokigateway/static.go
+new file mode 100644
+index 0000000..31cc117
+--- /dev/null
++++ b/common/lokigateway/static.go
+@@ -0,0 +1,174 @@
++// Modified for LoKi on 2026-11-05: serve packaged YACD only to LoKi writers.
++package lokigateway
++
++import (
++	"errors"
++	"net/http"
++	"os"
++	"path"
++	"strings"
++	"syscall"
++)
++
++const uiPrefix = "/cgi-bin/luci/loki-gateway/"
++const assetsDirectory = "/usr/share/loki/yacd"
++const assetLimit = 4 * 1024 * 1024
++
++var errGatewayAssets = errors.New("local YACD assets are unsafe or unavailable")
++
++func openAssets(directory string) (*os.Root, error) {
++	info, err := os.Lstat(directory)
++	if err != nil || !info.IsDir() || info.Mode().Perm()&0o022 != 0 {
++		return nil, errGatewayAssets
++	}
++	if _, ok := statIdentity(info); !ok {
++		return nil, errGatewayAssets
++	}
++	root, err := os.OpenRoot(directory)
++	if err != nil {
++		return nil, errGatewayAssets
++	}
++	anchored, err := root.Stat(".")
++	if err != nil || !os.SameFile(info, anchored) || anchored.Mode() != info.Mode() {
++		root.Close()
++		return nil, errGatewayAssets
++	}
++	return root, nil
++}
++
++func assetName(raw string) (string, string, bool) {
++	if !strings.HasPrefix(raw, uiPrefix) || len(raw) > len(uiPrefix)+256 {
++		return "", "", false
++	}
++	name := strings.TrimPrefix(raw, uiPrefix)
++	if name == "" {
++		name = "index.html"
++	}
++	for _, part := range strings.Split(name, "/") {
++		if part == "" || part == "." || part == ".." || strings.HasPrefix(part, ".") {
++			return "", "", false
++		}
++		for _, char := range part {
++			if !(char >= 'a' && char <= 'z' || char >= 'A' && char <= 'Z' ||
++				char >= '0' && char <= '9' || char == '-' || char == '_' || char == '.') {
++				return "", "", false
++			}
++		}
++	}
++	var contentType string
++	switch path.Ext(name) {
++	case ".html":
++		contentType = "text/html; charset=utf-8"
++	case ".js":
++		contentType = "text/javascript; charset=utf-8"
++	case ".css":
++		contentType = "text/css; charset=utf-8"
++	case ".json":
++		contentType = "application/json"
++	case ".png":
++		contentType = "image/png"
++	case ".ico":
++		contentType = "image/x-icon"
++	case ".svg":
++		contentType = "image/svg+xml"
++	case ".ttf":
++		contentType = "font/ttf"
++	case ".woff":
++		contentType = "font/woff"
++	case ".woff2":
++		contentType = "font/woff2"
++	default:
++		return "", "", false
++	}
++	return name, contentType, true
++}
++
++func (g *gateway) serveAsset(w http.ResponseWriter, r *http.Request) {
++	if r.TLS == nil || g.origins[r.Host] == nil || r.Method != http.MethodGet && r.Method != http.MethodHead ||
++		r.URL.RawQuery != "" || r.URL.ForceQuery || r.ContentLength > 0 || len(r.TransferEncoding) != 0 ||
++		len(r.Header.Values("Authorization")) != 0 || len(r.Header.Values("Proxy-Authorization")) != 0 {
++		failure(w, http.StatusForbidden)
++		return
++	}
++	sites := r.Header.Values("Sec-Fetch-Site")
++	if len(sites) > 1 || len(sites) == 1 && sites[0] != "same-origin" && sites[0] != "same-site" && sites[0] != "none" {
++		failure(w, http.StatusForbidden)
++		return
++	}
++	origins := r.Header.Values("Origin")
++	if len(origins) > 1 || len(origins) == 1 && !g.origins[r.Host][origins[0]] {
++		failure(w, http.StatusForbidden)
++		return
++	}
++	session := sessionCookie(r)
++	if session == "" {
++		failure(w, http.StatusUnauthorized)
++		return
++	}
++	select {
++	case g.requests <- struct{}{}:
++		defer func() { <-g.requests }()
++	default:
++		failure(w, http.StatusServiceUnavailable)
++		return
++	}
++	allowed, err := g.authorize(r.Context(), session, true)
++	if err != nil {
++		failure(w, http.StatusServiceUnavailable)
++		return
++	}
++	if !allowed {
++		failure(w, http.StatusForbidden)
++		return
++	}
++	name, contentType, ok := assetName(r.URL.EscapedPath())
++	if !ok || g.assets == nil {
++		failure(w, http.StatusNotFound)
++		return
++	}
++	var named os.FileInfo
++	prefix := ""
++	for _, part := range strings.Split(name, "/") {
++		if prefix != "" {
++			prefix += "/"
++		}
++		prefix += part
++		named, err = g.assets.Lstat(prefix)
++		if err != nil || named.Mode()&os.ModeSymlink != 0 {
++			failure(w, http.StatusNotFound)
++			return
++		}
++		if prefix != name {
++			if !named.IsDir() || named.Mode().Perm()&0o022 != 0 {
++				failure(w, http.StatusNotFound)
++				return
++			}
++			if _, ok := statIdentity(named); !ok {
++				failure(w, http.StatusNotFound)
++				return
++			}
++		}
++	}
++	file, err := g.assets.OpenFile(name, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
++	if err != nil {
++		failure(w, http.StatusNotFound)
++		return
++	}
++	defer file.Close()
++	info, err := file.Stat()
++	if err != nil || !info.Mode().IsRegular() || !os.SameFile(info, named) ||
++		info.Size() <= 0 || info.Size() > assetLimit ||
++		info.Mode().Perm()&0o022 != 0 {
++		failure(w, http.StatusNotFound)
++		return
++	}
++	owner, ok := statIdentity(info)
++	if !ok || owner.Nlink != 1 {
++		failure(w, http.StatusNotFound)
++		return
++	}
++	w.Header().Set("Content-Type", contentType)
++	w.Header().Set("X-Frame-Options", "DENY")
++	w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' wss://"+r.Host+"; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
++	http.ServeContent(w, r, name, info.ModTime(), file)
++}
+diff --git a/common/lokigateway/static_test.go b/common/lokigateway/static_test.go
+new file mode 100644
+index 0000000..db292f1
+--- /dev/null
++++ b/common/lokigateway/static_test.go
+@@ -0,0 +1,192 @@
++package lokigateway
++
++import (
++	"context"
++	"io"
++	"net/http"
++	"os"
++	"path/filepath"
++	"strings"
++	"sync/atomic"
++	"testing"
++)
++
++func staticRequest(t *testing.T, base, name string) *http.Request {
++	t.Helper()
++	r, err := http.NewRequest(http.MethodGet, base+uiPrefix+name, nil)
++	if err != nil {
++		t.Fatal(err)
++	}
++	r.Header.Set("Cookie", "sysauth_https="+testSession)
++	r.Header.Set("Sec-Fetch-Site", "same-site")
++	return r
++}
++
++func TestPackagedYACDNeedsWritePermissionBeforeAnyAsset(t *testing.T) {
++	directory := t.TempDir()
++	if err := os.Chmod(directory, 0o700); err != nil {
++		t.Fatal(err)
++	}
++	if err := os.Mkdir(filepath.Join(directory, "assets"), 0o755); err != nil {
++		t.Fatal(err)
++	}
++	for name, body := range map[string]string{"index.html": "<html>local panel</html>", "assets/app.js": "export default 1"} {
++		if err := os.WriteFile(filepath.Join(directory, name), []byte(body), 0o644); err != nil {
++			t.Fatal(err)
++		}
++	}
++	root, err := openAssets(directory)
++	if err != nil {
++		t.Fatal(err)
++	}
++	t.Cleanup(func() { root.Close() })
++	g, server := testGateway(t, func(http.ResponseWriter, *http.Request) { t.Error("static asset reached controller") })
++	g.assets = root
++	var writer atomic.Bool
++	var authCalls atomic.Int32
++	writer.Store(true)
++	g.authorize = func(_ context.Context, session string, write bool) (bool, error) {
++		authCalls.Add(1)
++		if session != testSession || !write {
++			t.Error("static asset did not require LoKi write permission")
++		}
++		return writer.Load(), nil
++	}
++	status, body, headers := readResponse(t, server.Client(), staticRequest(t, server.URL, ""))
++	if status != http.StatusOK || body != "<html>local panel</html>" ||
++		headers.Get("Cache-Control") != "no-store" || headers.Get("Content-Type") != "text/html; charset=utf-8" ||
++		!strings.Contains(headers.Get("Content-Security-Policy"), "connect-src 'self' wss://") ||
++		headers.Get("Access-Control-Allow-Origin") != "" {
++		t.Fatal("authenticated panel response is unsafe")
++	}
++	assertNoPrivateResponse(t, body, headers)
++	status, body, headers = readResponse(t, server.Client(), staticRequest(t, server.URL, "assets/app.js"))
++	if status != http.StatusOK || body != "export default 1" || headers.Get("Content-Type") != "text/javascript; charset=utf-8" {
++		t.Fatal("packaged script was not served")
++	}
++	writer.Store(false)
++	status, body, headers = readResponse(t, server.Client(), staticRequest(t, server.URL, ""))
++	if status != http.StatusForbidden || authCalls.Load() != 3 {
++		t.Fatal("read-only LuCI session opened YACD")
++	}
++	assertNoPrivateResponse(t, body, headers)
++	status, _, _ = readResponse(t, server.Client(), staticRequest(t, server.URL, "missing.js"))
++	if status != http.StatusForbidden {
++		t.Fatal("asset existence checked before write permission")
++	}
++}
++
++func TestYACDStaticRequestsRejectCrossSitePathsAndUnsafeFiles(t *testing.T) {
++	directory := t.TempDir()
++	if err := os.Chmod(directory, 0o700); err != nil {
++		t.Fatal(err)
++	}
++	if err := os.WriteFile(filepath.Join(directory, "index.html"), []byte("panel"), 0o644); err != nil {
++		t.Fatal(err)
++	}
++	if err := os.WriteFile(filepath.Join(directory, "writable.js"), []byte("bad"), 0o666); err != nil {
++		t.Fatal(err)
++	}
++	if err := os.Chmod(filepath.Join(directory, "writable.js"), 0o666); err != nil {
++		t.Fatal(err)
++	}
++	if err := os.Symlink("index.html", filepath.Join(directory, "linked.html")); err != nil {
++		t.Fatal(err)
++	}
++	if err := os.Mkdir(filepath.Join(directory, "real"), 0o755); err != nil {
++		t.Fatal(err)
++	}
++	if err := os.WriteFile(filepath.Join(directory, "real", "app.js"), []byte("linked directory"), 0o644); err != nil {
++		t.Fatal(err)
++	}
++	if err := os.Symlink("real", filepath.Join(directory, "shortcut")); err != nil {
++		t.Fatal(err)
++	}
++	root, err := openAssets(directory)
++	if err != nil {
++		t.Fatal(err)
++	}
++	t.Cleanup(func() { root.Close() })
++	g, server := testGateway(t, func(http.ResponseWriter, *http.Request) { t.Error("static request reached controller") })
++	g.assets = root
++	for _, test := range []struct {
++		name   string
++		change func(*http.Request)
++		status int
++	}{
++		{"cross-site", func(r *http.Request) { r.Header.Set("Sec-Fetch-Site", "cross-site") }, 403},
++		{"untrusted origin", func(r *http.Request) { r.Header.Set("Origin", "https://attacker.example") }, 403},
++		{"missing session", func(r *http.Request) { r.Header.Del("Cookie") }, 401},
++		{"bearer", func(r *http.Request) { r.Header.Set("Authorization", "Bearer synthetic") }, 403},
++		{"query login", func(r *http.Request) { r.URL.RawQuery = "secret=synthetic" }, 403},
++		{"encoded traversal", func(r *http.Request) {
++			r.URL.RawPath = uiPrefix + "%2e%2e/secret.html"
++			r.URL.Path = uiPrefix + "../secret.html"
++		}, 404},
++		{"symlink", func(r *http.Request) { r.URL.Path = uiPrefix + "linked.html" }, 404},
++		{"directory symlink", func(r *http.Request) { r.URL.Path = uiPrefix + "shortcut/app.js" }, 404},
++		{"world-writable", func(r *http.Request) { r.URL.Path = uiPrefix + "writable.js" }, 404},
++	} {
++		t.Run(test.name, func(t *testing.T) {
++			r := staticRequest(t, server.URL, "")
++			test.change(r)
++			status, body, headers := readResponse(t, server.Client(), r)
++			if status != test.status {
++				t.Fatalf("status %d, want %d", status, test.status)
++			}
++			assertNoPrivateResponse(t, body, headers)
++		})
++	}
++	for _, name := range []string{"../secret.html", ".hidden.js", "assets//app.js", "other.exe"} {
++		if _, _, ok := assetName(uiPrefix + name); ok {
++			t.Fatalf("unsafe asset path accepted: %q", name)
++		}
++	}
++}
++
++func TestYACDAssetRootRefusesWritableOrLinkedDirectory(t *testing.T) {
++	directory := t.TempDir()
++	if err := os.Chmod(directory, 0o777); err != nil {
++		t.Fatal(err)
++	}
++	if root, err := openAssets(directory); err == nil {
++		root.Close()
++		t.Fatal("writable asset root accepted")
++	}
++	link := filepath.Join(t.TempDir(), "assets")
++	if err := os.Symlink(directory, link); err != nil {
++		t.Fatal(err)
++	}
++	if root, err := openAssets(link); err == nil {
++		root.Close()
++		t.Fatal("linked asset root accepted")
++	}
++}
++
++func TestYACDStaticHeadDoesNotExposeBody(t *testing.T) {
++	directory := t.TempDir()
++	if err := os.Chmod(directory, 0o700); err != nil {
++		t.Fatal(err)
++	}
++	if err := os.WriteFile(filepath.Join(directory, "index.html"), []byte("panel"), 0o644); err != nil {
++		t.Fatal(err)
++	}
++	root, err := openAssets(directory)
++	if err != nil {
++		t.Fatal(err)
++	}
++	t.Cleanup(func() { root.Close() })
++	g, server := testGateway(t, func(http.ResponseWriter, *http.Request) { t.Error("static request reached controller") })
++	g.assets = root
++	r := staticRequest(t, server.URL, "")
++	r.Method = http.MethodHead
++	response, err := server.Client().Do(r)
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer response.Body.Close()
++	body, err := io.ReadAll(response.Body)
++	if err != nil || response.StatusCode != 200 || len(body) != 0 {
++		t.Fatal("HEAD failed or exposed a body")
++	}
++}
+diff --git a/common/lokigateway/transport.go b/common/lokigateway/transport.go
+index 02272bb..73ce556 100644
+--- a/common/lokigateway/transport.go
++++ b/common/lokigateway/transport.go
+@@ -11,6 +11,7 @@ import (
+ 	"mime"
+ 	"net/http"
+ 	"net/url"
++	"os"
+ 	"strings"
+ 	"sync"
+ 	"time"
+@@ -32,6 +33,7 @@ type gateway struct {
+ 	secret       string
+ 	authorize    func(context.Context, string, bool) (bool, error)
+ 	client       *http.Client
++	assets       *os.Root
+ 	requests     chan struct{}
+ 	streams      chan struct{}
+ 	recheckEvery time.Duration
+@@ -136,6 +138,10 @@ func (g *gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+ 	w.Header().Set("X-Content-Type-Options", "nosniff")
+ 	w.Header().Set("Referrer-Policy", "no-referrer")
+ 	w.Header().Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
++	if strings.HasPrefix(r.URL.EscapedPath(), uiPrefix) && !strings.HasPrefix(r.URL.EscapedPath(), apiPrefix+"/") {
++		g.serveAsset(w, r)
++		return
++	}
+ 	origin, ok := g.origin(r)
+ 	if !ok {
+ 		failure(w, http.StatusForbidden)
+@@ -201,7 +207,8 @@ func (g *gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+ 		failure(w, http.StatusServiceUnavailable)
+ 		return
+ 	}
+-	allowed, err := g.authorize(r.Context(), session, op.write)
++	// The panel and its API share one permission boundary; read-only LuCI uses fixed RPC.
++	allowed, err := g.authorize(r.Context(), session, true)
+ 	if err != nil {
+ 		failure(w, http.StatusServiceUnavailable)
+ 		return
+@@ -424,7 +431,7 @@ func (g *gateway) stream(w http.ResponseWriter, r *http.Request, session string)
+ 		case <-done:
+ 			return
+ 		case <-ticker.C:
+-			allowed, err := g.authorize(ctx, session, false)
++			allowed, err := g.authorize(ctx, session, true)
+ 			if err != nil || !allowed {
+ 				return
+ 			}
+diff --git a/common/lokigateway/transport_test.go b/common/lokigateway/transport_test.go
+index d3da9a4..f4b8762 100644
+--- a/common/lokigateway/transport_test.go
++++ b/common/lokigateway/transport_test.go
+@@ -79,6 +79,28 @@ func readResponse(t *testing.T, client *http.Client, r *http.Request) (int, stri
+ 	return response.StatusCode, string(body), response.Header
+ }
+ 
++func TestReadOnlySessionCannotUsePanelAPIOrStreams(t *testing.T) {
++	var upstreamCalls atomic.Int32
++	g, server := testGateway(t, func(http.ResponseWriter, *http.Request) { upstreamCalls.Add(1) })
++	g.authorize = func(_ context.Context, session string, write bool) (bool, error) {
++		if session != testSession {
++			t.Error("wrong session")
++		}
++		return !write, nil
++	}
++	status, _, _ := readResponse(t, server.Client(), gatewayRequest(t, server, "GET", "/proxies", ""))
++	if status != http.StatusForbidden {
++		t.Fatal("read-only session opened controller snapshot")
++	}
++	connection, err := dialGateway(t, server, "/traffic")
++	if connection != nil {
++		connection.CloseNow()
++	}
++	if err == nil || upstreamCalls.Load() != 0 {
++		t.Fatal("read-only session opened a controller stream")
++	}
++}
++
+ func assertNoPrivateResponse(t *testing.T, body string, headers http.Header) {
+ 	t.Helper()
+ 	text := body + headers.Get("Location") + headers.Get("Set-Cookie")
+@@ -104,8 +126,8 @@ func TestHTTPUsesOnlyTheFixedControllerCredentialAndRechecksEachRequest(t *testi
+ 	})
+ 	g.authorize = func(_ context.Context, session string, write bool) (bool, error) {
+ 		authCalls.Add(1)
+-		if session != testSession || write {
+-			t.Error("wrong read authorization")
++		if session != testSession || !write {
++			t.Error("gateway API did not require write authorization")
+ 		}
+ 		return allowed.Load(), nil
+ 	}
+@@ -494,8 +516,8 @@ func TestWebSocketRevocationAndOutageCloseBothSides(t *testing.T) {
+ 			})
+ 			g.authorize = func(_ context.Context, _ string, write bool) (bool, error) {
+ 				calls.Add(1)
+-				if write {
+-					t.Error("stream used write role")
++				if !write {
++					t.Error("stream did not require write role")
+ 				}
+ 				if revoke.Load() {
+ 					if outage {

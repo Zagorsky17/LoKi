@@ -65,7 +65,8 @@ function report(visibility, checks) {
     let hosts = masked ? sort(uniq([ ...mask.hosts(sing_box), ...server_hosts() ]), (a, b) => length(b) - length(a)) : [];
     let resolvers = resolver_addresses(settings);
     let secrets = masked ? mask.credentials([ sing_box, uci.section_objects(constants.LOKI_CONFIG_NAME) ]) : [];
-    let text = (value) => masked ? mask.text(value, hosts, resolvers, secrets) : value;
+    let redact = require("service.gateway_secret").redactor();
+    let text = (value) => redact(masked ? mask.text(value, hosts, resolvers, secrets) : value);
     let loki = fs.readfile(paths.loki_config) ?? "";
 
     return {

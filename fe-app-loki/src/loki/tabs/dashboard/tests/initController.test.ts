@@ -22,9 +22,6 @@ vi.mock('../../../methods', () => ({
     getClashApiConnectionsSummary: mocks.getClashApiConnectionsSummary,
   },
 }));
-vi.mock('../../../methods/custom/getClashApiSecret', () => ({
-  getClashApiSecret: async () => 'secret',
-}));
 vi.mock('../coreUsage', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../coreUsage')>()),
   readCoreUsage: mocks.readCoreUsage,
@@ -53,7 +50,7 @@ beforeEach(() => {
   visibilityState = 'visible';
   visibilityListeners.clear();
   vi.stubGlobal('window', {
-    location: { hostname: '192.168.1.1', protocol: 'http:' },
+    location: { hostname: '192.168.1.1', protocol: 'https:' },
     addEventListener() {},
   });
   vi.stubGlobal(
@@ -122,10 +119,15 @@ describe('the dashboard sockets', () => {
   it('ask for the connection list every five seconds', async () => {
     await openDashboard();
 
-    expect(subscribedPaths()).toEqual(['/traffic', '/connections']);
+    expect(subscribedPaths()).toEqual([
+      '/cgi-bin/luci/loki-gateway/api/traffic',
+      '/cgi-bin/luci/loki-gateway/api/connections',
+    ]);
     const connections = new URL(mocks.subscribe.mock.calls[1][0]);
     expect(connections.searchParams.get('interval')).toBe('5000');
-    expect(connections.searchParams.get('token')).toBe('secret');
+    expect(connections.protocol).toBe('wss:');
+    expect(connections.port).toBe('9091');
+    expect(connections.searchParams.has('token')).toBe(false);
   });
 
   it('close ten seconds after another tab of the page is chosen, and only their own', async () => {
@@ -164,10 +166,10 @@ describe('the dashboard sockets', () => {
     setVisibility('visible');
     await vi.advanceTimersByTimeAsync(0);
     expect(subscribedPaths()).toEqual([
-      '/traffic',
-      '/connections',
-      '/traffic',
-      '/connections',
+      '/cgi-bin/luci/loki-gateway/api/traffic',
+      '/cgi-bin/luci/loki-gateway/api/connections',
+      '/cgi-bin/luci/loki-gateway/api/traffic',
+      '/cgi-bin/luci/loki-gateway/api/connections',
     ]);
   });
 });

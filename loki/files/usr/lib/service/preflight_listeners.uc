@@ -128,8 +128,8 @@ function collect(root) {
         let occupied = {};
         for (let binding in second.bindings) {
             let role = ports[binding.port];
-            if (binding.port == constants.CLASH_API_CONTROLLER_PORT && substr(name, 0, 3) == "tcp")
-                role = "controller";
+            if (binding.port == constants.HTTPS_GATEWAY_PORT && substr(name, 0, 3) == "tcp")
+                role = "gateway";
             if (role != null) occupied[role] = true;
         }
         for (let role in sort(keys(occupied)))

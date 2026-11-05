@@ -27,9 +27,6 @@ vi.mock('../../../methods', () => ({
     updateClashApiProxyProviders: mocks.updateClashApiProxyProviders,
   },
 }));
-vi.mock('../../../methods/custom/getClashApiSecret', () => ({
-  getClashApiSecret: async () => 'secret',
-}));
 vi.mock('../../../services/runtimeUiState.service', () => ({
   refreshRuntimeUiState: vi.fn(),
 }));

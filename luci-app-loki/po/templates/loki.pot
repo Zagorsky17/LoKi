@@ -7,8 +7,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: LOKI\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-03 15:13+0300\n"
-"PO-Revision-Date: 2026-11-03 15:13+0300\n"
+"POT-Creation-Date: 2026-11-05 09:58+0300\n"
+"PO-Revision-Date: 2026-11-05 09:58+0300\n"
 "Last-Translator: ushan0v <ushanov2204@gmail.com>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
 "Language: \n"
@@ -122,7 +122,7 @@ msgstr ""
 msgid "+ Add JSON outbound"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/sections/fallback.ts:250
+#: fe-app-loki/src/loki/tabs/sections/fallback.ts:247
 msgid "+ Add servers"
 msgstr ""
 
@@ -155,10 +155,6 @@ msgstr ""
 msgid "About the address on ipinfo.io"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/settings/form/traffic.ts:32
-msgid "Access to YACD from the internet. The port has to be opened in the firewall"
-msgstr ""
-
 #: fe-app-loki/src/loki/tabs/settings/form/updates.ts:47
 msgid "Accurate latency measurement"
 msgstr ""
@@ -168,7 +164,7 @@ msgstr ""
 msgid "Action"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/monitoring/initController.ts:604
+#: fe-app-loki/src/loki/tabs/monitoring/initController.ts:603
 #: fe-app-loki/src/loki/tabs/monitoring/render.ts:67
 msgid "Active"
 msgstr ""
@@ -217,14 +213,14 @@ msgstr ""
 msgid "All device traffic"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/monitoring/initController.ts:555
+#: fe-app-loki/src/loki/tabs/monitoring/initController.ts:554
 #: fe-app-loki/src/loki/tabs/monitoring/render.ts:20
 msgid "All devices"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/sections/fallback.ts:163
+#: fe-app-loki/src/loki/tabs/sections/fallback.ts:160
 #: fe-app-loki/src/loki/tabs/sections/subscriptions/options.ts:188
-#: fe-app-loki/src/loki/tabs/sections/urltest.ts:137
+#: fe-app-loki/src/loki/tabs/sections/urltest.ts:134
 msgid "All except selected"
 msgstr ""
 
@@ -232,17 +228,17 @@ msgstr ""
 msgid "All main DNS servers use the selected protocol. Enter https://host/path for DoH, tls://host for DoT, or an IP address for UDP."
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/sections/fallback.ts:162
+#: fe-app-loki/src/loki/tabs/sections/fallback.ts:159
 msgid "All remaining"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/monitoring/initController.ts:564
+#: fe-app-loki/src/loki/tabs/monitoring/initController.ts:563
 #: fe-app-loki/src/loki/tabs/monitoring/render.ts:28
 msgid "All routes"
 msgstr ""
 
 #: fe-app-loki/src/loki/tabs/sections/subscriptions/options.ts:187
-#: fe-app-loki/src/loki/tabs/sections/urltest.ts:136
+#: fe-app-loki/src/loki/tabs/sections/urltest.ts:133
 msgid "All servers"
 msgstr ""
 
@@ -258,8 +254,8 @@ msgstr ""
 msgid "another sing-box is running (PID %s)"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1056
-#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1398
+#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1052
+#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1394
 msgid "Any"
 msgstr ""
 
@@ -284,7 +280,7 @@ msgstr ""
 msgid "Auto refresh"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/sections/fallback.ts:197
+#: fe-app-loki/src/loki/tabs/sections/fallback.ts:194
 msgid "Availability check for every server"
 msgstr ""
 
@@ -338,7 +334,7 @@ msgid "Cache File Path"
 msgstr ""
 
 #: fe-app-loki/src/loki/tabs/components/configFile.ts:208
-#: fe-app-loki/src/loki/tabs/components/removeDialog.ts:84
+#: fe-app-loki/src/loki/tabs/components/removeDialog.ts:82
 #: fe-app-loki/src/loki/tabs/components/updateCheck.ts:60
 msgid "Cancel"
 msgstr ""
@@ -376,10 +372,10 @@ msgstr ""
 msgid "Check for updates to see the available versions"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1058
-#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1400
-#: fe-app-loki/src/loki/tabs/sections/fallback.ts:210
-#: fe-app-loki/src/loki/tabs/sections/urltest.ts:110
+#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1054
+#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1396
+#: fe-app-loki/src/loki/tabs/sections/fallback.ts:207
+#: fe-app-loki/src/loki/tabs/sections/urltest.ts:107
 msgid "Check interval"
 msgstr ""
 
@@ -388,19 +384,19 @@ msgstr ""
 msgid "Check IP"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1401
-#: fe-app-loki/src/loki/tabs/sections/fallback.ts:221
+#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1397
+#: fe-app-loki/src/loki/tabs/sections/fallback.ts:218
 msgid "Check timeout"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1053
-#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1393
-#: fe-app-loki/src/loki/tabs/sections/fallback.ts:196
-#: fe-app-loki/src/loki/tabs/sections/urltest.ts:96
+#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1049
+#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1389
+#: fe-app-loki/src/loki/tabs/sections/fallback.ts:193
+#: fe-app-loki/src/loki/tabs/sections/urltest.ts:93
 msgid "Check URL"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/sections/fallback.ts:246
+#: fe-app-loki/src/loki/tabs/sections/fallback.ts:243
 msgid "Checked from top to bottom until the first working server"
 msgstr ""
 
@@ -441,35 +437,31 @@ msgstr ""
 msgid "Choose explicitly. Server addresses must match the selected protocol; changing the mode does not rewrite them."
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/settings/form/traffic.ts:44
-msgid "Clash API key"
-msgstr ""
-
-#: fe-app-loki/src/loki/methods/custom/clashApi.ts:270
+#: fe-app-loki/src/loki/methods/custom/clashApi.ts:256
 msgid "Clash API request timed out after it was sent"
 msgstr ""
 
-#: fe-app-loki/src/loki/methods/custom/clashApi.ts:271
+#: fe-app-loki/src/loki/methods/custom/clashApi.ts:257
 msgid "Clash API response was lost after the request was sent"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1434
+#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1430
 msgid "Click a node to pin it, and click it again to unpin it."
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1468
+#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1464
 #: fe-app-loki/src/loki/tabs/monitoring/connectionList.ts:70
 #: fe-app-loki/src/loki/tabs/settings/staticHosts.ts:73
 #: fe-app-loki/src/partials/modal/renderModal.ts:53
 msgid "Close"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/monitoring/initController.ts:620
+#: fe-app-loki/src/loki/tabs/monitoring/initController.ts:619
 #: fe-app-loki/src/loki/tabs/monitoring/render.ts:61
 msgid "Close all"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/monitoring/initController.ts:623
+#: fe-app-loki/src/loki/tabs/monitoring/initController.ts:622
 #: fe-app-loki/src/loki/tabs/monitoring/render.ts:57
 msgid "Close all connections"
 msgstr ""
@@ -479,15 +471,15 @@ msgstr ""
 msgid "Close connection"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/monitoring/initController.ts:619
+#: fe-app-loki/src/loki/tabs/monitoring/initController.ts:618
 msgid "Close matching"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/monitoring/initController.ts:622
+#: fe-app-loki/src/loki/tabs/monitoring/initController.ts:621
 msgid "Close the connections that match the filters"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/monitoring/initController.ts:610
+#: fe-app-loki/src/loki/tabs/monitoring/initController.ts:609
 #: fe-app-loki/src/loki/tabs/monitoring/render.ts:70
 msgid "Closed"
 msgstr ""
@@ -532,8 +524,8 @@ msgstr ""
 msgid "connection failed"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1402
-#: fe-app-loki/src/loki/tabs/sections/fallback.ts:232
+#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1398
+#: fe-app-loki/src/loki/tabs/sections/fallback.ts:229
 msgid "Connection timeout"
 msgstr ""
 
@@ -542,11 +534,11 @@ msgstr ""
 msgid "Connection URI"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1856
+#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1852
 msgid "Connections"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/monitoring/initController.ts:704
+#: fe-app-loki/src/loki/tabs/monitoring/initController.ts:703
 msgid "Connections are unavailable"
 msgstr ""
 
@@ -583,7 +575,7 @@ msgstr ""
 msgid "Copy the output"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1853
+#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1849
 #: fe-app-loki/src/loki/tabs/diagnostic/checks/service.ts:41
 msgid "Core"
 msgstr ""
@@ -608,7 +600,7 @@ msgstr ""
 msgid "Country"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1826
+#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1822
 msgid "CPU"
 msgstr ""
 
@@ -641,8 +633,8 @@ msgstr ""
 msgid "Diagnostic report"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/monitoring/initController.ts:141
-#: fe-app-loki/src/loki/tabs/sections/fallback.ts:165
+#: fe-app-loki/src/loki/tabs/monitoring/initController.ts:140
+#: fe-app-loki/src/loki/tabs/sections/fallback.ts:162
 msgid "Direct"
 msgstr ""
 
@@ -650,7 +642,7 @@ msgstr ""
 msgid "Disable autostart"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/settings/form/traffic.ts:59
+#: fe-app-loki/src/loki/tabs/settings/form/traffic.ts:14
 msgid "Disable QUIC"
 msgstr ""
 
@@ -658,7 +650,7 @@ msgstr ""
 msgid "Disabled (UDP)"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/settings/form/traffic.ts:60
+#: fe-app-loki/src/loki/tabs/settings/form/traffic.ts:15
 msgid "Disables QUIC for compatibility and to fix video streaming"
 msgstr ""
 
@@ -737,8 +729,8 @@ msgstr ""
 msgid "DoT (TLS)"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1759
-#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1797
+#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1755
+#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1793
 msgid "Downlink"
 msgstr ""
 
@@ -811,14 +803,6 @@ msgstr ""
 msgid "Enable Output Network Interface"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/settings/form/traffic.ts:11
-msgid "Enable YACD"
-msgstr ""
-
-#: fe-app-loki/src/loki/tabs/settings/form/traffic.ts:31
-msgid "Enable YACD WAN Access"
-msgstr ""
-
 #: fe-app-loki/src/loki/tabs/settings/form/dns.ts:28
 msgid "Enabled"
 msgstr ""
@@ -866,8 +850,8 @@ msgstr ""
 msgid "Expand section"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1055
-#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1397
+#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1051
+#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1393
 #: fe-app-loki/src/loki/tabs/sections/healthCheck.ts:42
 msgid "Expected status"
 msgstr ""
@@ -888,14 +872,14 @@ msgstr ""
 msgid "failed"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/monitoring/initController.ts:846
-#: fe-app-loki/src/loki/tabs/monitoring/initController.ts:861
+#: fe-app-loki/src/loki/tabs/monitoring/initController.ts:845
+#: fe-app-loki/src/loki/tabs/monitoring/initController.ts:860
 msgid "Failed to close connection"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/monitoring/initController.ts:885
-#: fe-app-loki/src/loki/tabs/monitoring/initController.ts:898
-#: fe-app-loki/src/loki/tabs/monitoring/initController.ts:935
+#: fe-app-loki/src/loki/tabs/monitoring/initController.ts:884
+#: fe-app-loki/src/loki/tabs/monitoring/initController.ts:897
+#: fe-app-loki/src/loki/tabs/monitoring/initController.ts:934
 msgid "Failed to close connections"
 msgstr ""
 
@@ -930,7 +914,7 @@ msgstr ""
 msgid "Failed to load the configuration: %s"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1289
+#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1285
 msgid "Failed to pin the server"
 msgstr ""
 
@@ -946,15 +930,15 @@ msgstr ""
 msgid "Failed to stop the service"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:736
+#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:732
 msgid "Failed to switch the server"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1591
+#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1587
 msgid "Failed to update lists"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1615
+#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1611
 msgid "Failed to update subscriptions"
 msgstr ""
 
@@ -963,27 +947,27 @@ msgid "Failed to upload the file: %s"
 msgstr ""
 
 #: fe-app-loki/src/loki/tabs/dashboard/partials/renderSections.ts:470
-#: fe-app-loki/src/loki/tabs/sections/fallback.ts:423
+#: fe-app-loki/src/loki/tabs/sections/fallback.ts:420
 #: fe-app-loki/src/loki/tabs/sections/form.ts:465
 msgid "Fallback"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1532
+#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1528
 #: fe-app-loki/src/loki/tabs/dashboard/partials/renderSections.ts:454
 #: fe-app-loki/src/loki/tabs/dashboard/partials/renderSections.ts:455
 msgid "Fallback details"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1380
+#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1376
 msgid "Fallback details are unavailable"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/sections/fallback.ts:381
-#: fe-app-loki/src/loki/tabs/sections/fallback.ts:387
+#: fe-app-loki/src/loki/tabs/sections/fallback.ts:378
+#: fe-app-loki/src/loki/tabs/sections/fallback.ts:384
 msgid "Fallback settings"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/sections/fallback.ts:386
+#: fe-app-loki/src/loki/tabs/sections/fallback.ts:383
 msgid "Fallback: %s"
 msgstr ""
 
@@ -1048,9 +1032,9 @@ msgstr ""
 msgid "going to the LuCI home page"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/sections/fallback.ts:158
-#: fe-app-loki/src/loki/tabs/sections/fallback.ts:190
-#: fe-app-loki/src/loki/tabs/sections/urltest.ts:87
+#: fe-app-loki/src/loki/tabs/sections/fallback.ts:155
+#: fe-app-loki/src/loki/tabs/sections/fallback.ts:187
+#: fe-app-loki/src/loki/tabs/sections/urltest.ts:84
 msgid "Group name"
 msgstr ""
 
@@ -1084,11 +1068,11 @@ msgstr ""
 msgid "How long DNS records are cached, in seconds"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/sections/fallback.ts:233
+#: fe-app-loki/src/loki/tabs/sections/fallback.ts:230
 msgid "How long to wait for a connection before moving to the next server"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/sections/fallback.ts:222
+#: fe-app-loki/src/loki/tabs/sections/fallback.ts:219
 msgid "How long to wait for a server to answer"
 msgstr ""
 
@@ -1096,8 +1080,8 @@ msgstr ""
 msgid "How long until health checks stop when the group is unused"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/sections/fallback.ts:211
-#: fe-app-loki/src/loki/tabs/sections/urltest.ts:111
+#: fe-app-loki/src/loki/tabs/sections/fallback.ts:208
+#: fe-app-loki/src/loki/tabs/sections/urltest.ts:108
 msgid "How often every server of the group is checked"
 msgstr ""
 
@@ -1109,8 +1093,8 @@ msgstr ""
 msgid "HTTP status codes of a successful check. * is any response, or values and ranges: 204/200-299"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1060
-#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1403
+#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1056
+#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1399
 #: fe-app-loki/src/loki/tabs/sections/healthCheck.ts:63
 msgid "Idle timeout"
 msgstr ""
@@ -1173,8 +1157,8 @@ msgstr ""
 msgid "Interface name"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1062
-#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1405
+#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1058
+#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1401
 #: fe-app-loki/src/loki/tabs/sections/healthCheck.ts:83
 msgid "Interrupt connections"
 msgstr ""
@@ -1188,8 +1172,8 @@ msgstr ""
 msgid "interrupted"
 msgstr ""
 
-#: fe-app-loki/src/loki/methods/custom/clashApi.ts:92
-#: fe-app-loki/src/loki/methods/custom/clashApi.ts:106
+#: fe-app-loki/src/loki/methods/custom/clashApi.ts:88
+#: fe-app-loki/src/loki/methods/custom/clashApi.ts:102
 msgid "Invalid Clash API response"
 msgstr ""
 
@@ -1284,19 +1268,19 @@ msgstr ""
 msgid "JSON outbound: %s"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/components/removeDialog.ts:73
+#: fe-app-loki/src/loki/tabs/components/removeDialog.ts:71
 msgid "Keep settings"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/sections/urltest.ts:121
+#: fe-app-loki/src/loki/tabs/sections/urltest.ts:118
 msgid "Latency difference"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/sections/urltest.ts:97
+#: fe-app-loki/src/loki/tabs/sections/urltest.ts:94
 msgid "Latency measurement for every server"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:823
+#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:819
 msgid "Latency test failed: the Clash API did not answer"
 msgstr ""
 
@@ -1304,7 +1288,7 @@ msgstr ""
 msgid "Latency test URL"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1235
+#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1231
 msgid "Level"
 msgstr ""
 
@@ -1320,15 +1304,15 @@ msgstr ""
 msgid "Lists in %s"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1586
+#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1582
 msgid "Lists updated"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1823
+#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1819
 msgid "Load"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/monitoring/initController.ts:693
+#: fe-app-loki/src/loki/tabs/monitoring/initController.ts:692
 #: fe-app-loki/src/loki/tabs/monitoring/render.ts:94
 msgid "Loading connections..."
 msgstr ""
@@ -1349,7 +1333,7 @@ msgstr ""
 msgid "Log data unavailable"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/settings/form/service.ts:26
+#: fe-app-loki/src/loki/tabs/settings/form/service.ts:23
 msgid "Log Level"
 msgstr ""
 
@@ -1365,7 +1349,7 @@ msgstr ""
 msgid "LoKi diagnostic report"
 msgstr ""
 
-#: fe-app-loki/src/loki/services/core.service.ts:29
+#: fe-app-loki/src/loki/services/core.service.ts:26
 msgid "LoKi Error"
 msgstr ""
 
@@ -1375,6 +1359,22 @@ msgstr ""
 
 #: fe-app-loki/src/loki/tabs/logs/render.ts:53
 msgid "LoKi system logs"
+msgstr ""
+
+#: fe-app-loki/src/loki/tabs/diagnostic/checks/service.ts:76
+msgid "loki-core %s"
+msgstr ""
+
+#: fe-app-loki/src/loki/tabs/diagnostic/checks/service.ts:75
+msgid "loki-core %s (%s)"
+msgstr ""
+
+#: fe-app-loki/src/loki/tabs/diagnostic/checks/service.ts:62
+msgid "loki-core %s is outdated: %s or newer is needed"
+msgstr ""
+
+#: fe-app-loki/src/loki/tabs/diagnostic/checks/service.ts:46
+msgid "loki-core is not installed"
 msgstr ""
 
 #: fe-app-loki/src/loki/tabs/diagnostic/checks/dns.ts:13
@@ -1401,7 +1401,7 @@ msgstr ""
 msgid "Maximum time to wait for a DNS response"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1829
+#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1825
 #: fe-app-loki/src/loki/tabs/diagnostic/checks/service.ts:152
 msgid "Memory"
 msgstr ""
@@ -1422,7 +1422,7 @@ msgstr ""
 msgid "More details"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:958
+#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:954
 #: fe-app-loki/src/loki/tabs/dashboard/partials/renderSections.ts:347
 msgid "N/A"
 msgstr ""
@@ -1460,12 +1460,12 @@ msgstr ""
 msgid "Network interface: %s"
 msgstr ""
 
+#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:946
 #: fe-app-loki/src/loki/tabs/dashboard/initController.ts:950
-#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:954
 msgid "No"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/monitoring/initController.ts:718
+#: fe-app-loki/src/loki/tabs/monitoring/initController.ts:717
 msgid "No active connections"
 msgstr ""
 
@@ -1486,7 +1486,7 @@ msgstr ""
 msgid "No answer: %s"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/monitoring/initController.ts:718
+#: fe-app-loki/src/loki/tabs/monitoring/initController.ts:717
 msgid "No closed connections"
 msgstr ""
 
@@ -1522,13 +1522,13 @@ msgstr ""
 msgid "No updates available"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1143
-#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1447
+#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1139
+#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1443
 msgid "Node list is empty"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1086
-#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1429
+#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1082
+#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1425
 msgid "Nodes"
 msgstr ""
 
@@ -1601,9 +1601,9 @@ msgstr ""
 msgid "Only letters, digits and . _ -"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/sections/fallback.ts:164
+#: fe-app-loki/src/loki/tabs/sections/fallback.ts:161
 #: fe-app-loki/src/loki/tabs/sections/subscriptions/options.ts:189
-#: fe-app-loki/src/loki/tabs/sections/urltest.ts:138
+#: fe-app-loki/src/loki/tabs/sections/urltest.ts:135
 msgid "Only selected"
 msgstr ""
 
@@ -1683,7 +1683,7 @@ msgstr ""
 msgid "Protocol %s is not supported"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:869
+#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:865
 msgid "Proxy link is unavailable"
 msgstr ""
 
@@ -1695,8 +1695,8 @@ msgstr ""
 msgid "Refill"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/components/removeDialog.ts:54
-#: fe-app-loki/src/loki/tabs/components/removeDialog.ts:58
+#: fe-app-loki/src/loki/tabs/components/removeDialog.ts:52
+#: fe-app-loki/src/loki/tabs/components/removeDialog.ts:56
 msgid "Remove"
 msgstr ""
 
@@ -1716,7 +1716,7 @@ msgstr ""
 msgid "Remove servers whose names match the regular expression"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/components/removeDialog.ts:58
+#: fe-app-loki/src/loki/tabs/components/removeDialog.ts:56
 msgid "Remove with settings"
 msgstr ""
 
@@ -1875,8 +1875,8 @@ msgstr ""
 msgid "Select the WAN interfaces to be monitored"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1050
-#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1389
+#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1046
+#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1385
 msgid "Selected"
 msgstr ""
 
@@ -1888,7 +1888,7 @@ msgstr ""
 msgid "Selects the node with the lowest latency"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/settings/form/traffic.ts:69
+#: fe-app-loki/src/loki/tabs/settings/form/traffic.ts:24
 msgid "Send BitTorrent traffic past the proxy"
 msgstr ""
 
@@ -1896,21 +1896,21 @@ msgstr ""
 msgid "Sequential"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/sections/fallback.ts:170
+#: fe-app-loki/src/loki/tabs/sections/fallback.ts:167
 #: fe-app-loki/src/loki/tabs/sections/subscriptions/options.ts:184
-#: fe-app-loki/src/loki/tabs/sections/urltest.ts:133
+#: fe-app-loki/src/loki/tabs/sections/urltest.ts:130
 msgid "Server filter"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/sections/fallback.ts:302
+#: fe-app-loki/src/loki/tabs/sections/fallback.ts:299
 msgid "Server group settings"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/sections/fallback.ts:301
+#: fe-app-loki/src/loki/tabs/sections/fallback.ts:298
 msgid "Server group: %s"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/sections/fallback.ts:245
+#: fe-app-loki/src/loki/tabs/sections/fallback.ts:242
 msgid "Server groups"
 msgstr ""
 
@@ -1947,7 +1947,7 @@ msgstr ""
 msgid "Service"
 msgstr ""
 
-#: fe-app-loki/src/loki/methods/shell/index.ts:198
+#: fe-app-loki/src/loki/methods/shell/index.ts:196
 #: fe-app-loki/src/loki/tabs/diagnostic/serviceTransition.ts:161
 msgid "Service action failed"
 msgstr ""
@@ -1998,28 +1998,12 @@ msgstr ""
 msgid "sing-box %s, not loki-core"
 msgstr ""
 
-#: fe-app-loki/src/loki/services/coreFeatures.service.ts:56
+#: fe-app-loki/src/loki/services/coreFeatures.service.ts:53
 msgid "sing-box is built without %s"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/settings/form/service.ts:27
+#: fe-app-loki/src/loki/tabs/settings/form/service.ts:24
 msgid "sing-box log level"
-msgstr ""
-
-#: fe-app-loki/src/loki/tabs/diagnostic/checks/service.ts:76
-msgid "loki-core %s"
-msgstr ""
-
-#: fe-app-loki/src/loki/tabs/diagnostic/checks/service.ts:75
-msgid "loki-core %s (%s)"
-msgstr ""
-
-#: fe-app-loki/src/loki/tabs/diagnostic/checks/service.ts:62
-msgid "loki-core %s is outdated: %s or newer is needed"
-msgstr ""
-
-#: fe-app-loki/src/loki/tabs/diagnostic/checks/service.ts:46
-msgid "loki-core is not installed"
 msgstr ""
 
 #: fe-app-loki/src/loki/tabs/diagnostic/initController.ts:559
@@ -2110,7 +2094,7 @@ msgstr ""
 msgid "Subscription: %s"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1606
+#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1602
 msgid "Subscriptions updated"
 msgstr ""
 
@@ -2122,7 +2106,7 @@ msgstr ""
 msgid "Supported URIs: %s"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/sections/urltest.ts:122
+#: fe-app-loki/src/loki/tabs/sections/urltest.ts:119
 msgid "Switching threshold in ms at which to move to a faster server"
 msgstr ""
 
@@ -2203,7 +2187,7 @@ msgstr ""
 msgid "The group joins as the single node it has selected"
 msgstr ""
 
-#: fe-app-loki/src/loki/services/coreFeatures.service.ts:47
+#: fe-app-loki/src/loki/services/coreFeatures.service.ts:44
 msgid "the installed sing-box lacks %s"
 msgstr ""
 
@@ -2255,21 +2239,21 @@ msgstr ""
 msgid "Time"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1059
+#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1055
 msgid "Tolerance"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/settings/form/traffic.ts:68
+#: fe-app-loki/src/loki/tabs/settings/form/traffic.ts:23
 msgid "Torrents directly"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1756
+#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1752
 #: fe-app-loki/src/loki/tabs/dashboard/partials/renderSections.ts:186
 #: fe-app-loki/src/loki/tabs/diagnostic/checks/groups.ts:23
 msgid "Traffic"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1790
+#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1786
 msgid "Traffic Total"
 msgstr ""
 
@@ -2346,8 +2330,8 @@ msgstr ""
 msgid "Updates are available"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1758
-#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1793
+#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1754
+#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1789
 msgid "Uplink"
 msgstr ""
 
@@ -2364,7 +2348,7 @@ msgstr ""
 msgid "Uploaded"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1860
+#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1856
 msgid "Uptime"
 msgstr ""
 
@@ -2377,25 +2361,25 @@ msgid "URL or absolute path only"
 msgstr ""
 
 #: fe-app-loki/src/loki/tabs/sections/form.ts:440
-#: fe-app-loki/src/loki/tabs/sections/urltest.ts:216
+#: fe-app-loki/src/loki/tabs/sections/urltest.ts:213
 msgid "URLTest"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1160
+#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1156
 #: fe-app-loki/src/loki/tabs/dashboard/partials/renderSections.ts:435
 #: fe-app-loki/src/loki/tabs/dashboard/partials/renderSections.ts:436
 msgid "URLTest details"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1041
+#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:1037
 msgid "URLTest details are unavailable"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/sections/urltest.ts:173
+#: fe-app-loki/src/loki/tabs/sections/urltest.ts:170
 msgid "URLTest settings"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/sections/urltest.ts:174
+#: fe-app-loki/src/loki/tabs/sections/urltest.ts:171
 msgid "URLTest: %s"
 msgstr ""
 
@@ -2411,8 +2395,8 @@ msgstr ""
 msgid "What to do when this section's conditions match"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/sections/fallback.ts:171
-#: fe-app-loki/src/loki/tabs/sections/urltest.ts:134
+#: fe-app-loki/src/loki/tabs/sections/fallback.ts:168
+#: fe-app-loki/src/loki/tabs/sections/urltest.ts:131
 msgid "Which servers end up in the group"
 msgstr ""
 
@@ -2432,15 +2416,11 @@ msgstr ""
 msgid "Whole number from %d to %d"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/settings/form/traffic.ts:45
-msgid "YACD and other Clash API clients log in with it"
-msgstr ""
-
 #: fe-app-loki/src/loki/tabs/sections/ruleSets.ts:184
 msgid "YAML is not supported"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:950
+#: fe-app-loki/src/loki/tabs/dashboard/initController.ts:946
 msgid "Yes"
 msgstr ""
 

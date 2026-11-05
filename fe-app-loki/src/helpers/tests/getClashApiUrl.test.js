@@ -1,84 +1,79 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  canUseDirectClashApi,
-  getClashSocketUrl,
-  getClashUILoginUrl,
-} from '../getClashApiUrl';
+import * as gateway from '../getClashApiUrl';
 
 beforeEach(() => vi.stubGlobal('L', { hasViewPermission: () => true }));
 afterEach(() => vi.unstubAllGlobals());
 
 describe('canUseDirectClashApi', () => {
-  it('keeps a reader on the authorized RPC polling path even over HTTP', () => {
-    vi.stubGlobal('L', { hasViewPermission: () => false });
-    vi.stubGlobal('window', {
-      location: { hostname: 'router.example', protocol: 'http:' },
-    });
-    expect(canUseDirectClashApi()).toBe(false);
-  });
+  it.each(['http:', 'https:'])(
+    'keeps a reader on authorized RPC polling over %s',
+    (protocol) => {
+      vi.stubGlobal('L', { hasViewPermission: () => false });
+      vi.stubGlobal('window', {
+        location: { hostname: 'router.example', protocol },
+      });
+      expect(gateway.canUseDirectClashApi()).toBe(false);
+    },
+  );
 
   it('does not assume writer access when the permission API is unavailable', () => {
     vi.stubGlobal('L', undefined);
     vi.stubGlobal('window', {
-      location: { hostname: 'router.example', protocol: 'http:' },
+      location: { hostname: 'router.example', protocol: 'https:' },
     });
-    expect(canUseDirectClashApi()).toBe(false);
+    expect(gateway.canUseDirectClashApi()).toBe(false);
   });
 
-  it('allows direct Clash API access from HTTP LuCI', () => {
-    vi.stubGlobal('window', {
-      location: { hostname: 'router.example', protocol: 'http:' },
-    });
-
-    expect(canUseDirectClashApi()).toBe(true);
-  });
-
-  it('blocks direct Clash API access from HTTPS LuCI', () => {
+  it('allows a writer to use the session gateway from HTTPS LuCI', () => {
     vi.stubGlobal('window', {
       location: { hostname: 'router.example', protocol: 'https:' },
     });
-
-    expect(canUseDirectClashApi()).toBe(false);
+    expect(gateway.canUseDirectClashApi()).toBe(true);
   });
 
-  it('blocks direct Clash API access outside a browser location', () => {
+  it.each(['http:', 'file:', 'https', undefined])(
+    'does not create a plaintext or uncertain direct transport over %s',
+    (protocol) => {
+      vi.stubGlobal('window', {
+        location: { hostname: 'router.example', protocol },
+      });
+      expect(gateway.canUseDirectClashApi()).toBe(false);
+    },
+  );
+
+  it('blocks direct access without a browser hostname', () => {
     vi.stubGlobal('window', undefined);
-
-    expect(canUseDirectClashApi()).toBe(false);
+    expect(gateway.canUseDirectClashApi()).toBe(false);
+    vi.stubGlobal('window', { location: { hostname: '', protocol: 'https:' } });
+    expect(gateway.canUseDirectClashApi()).toBe(false);
   });
 });
 
-describe('getClashSocketUrl', () => {
-  it('carries the secret as one query value', () => {
-    vi.stubGlobal('window', {
-      location: { hostname: 'router.example', protocol: 'http:' },
-    });
-
-    expect(getClashSocketUrl('/traffic', 'a&b #c+d%')).toBe(
-      'ws://router.example:9090/traffic?token=a%26b%20%23c%2Bd%25',
-    );
-  });
-});
-
-describe('getClashUILoginUrl', () => {
-  it('hands YACD the backend of the page and the key', () => {
-    vi.stubGlobal('window', {
-      location: { hostname: 'router.example', protocol: 'https:' },
-    });
-
-    const [address, query] = getClashUILoginUrl('a&b #c+d=').split('?');
-    expect(address).toBe('http://router.example:9090/ui/');
-    // As YACD's parseConfigQueryString reads it.
-    const values = Object.fromEntries(
-      query.split('&').map((pair) => {
-        const [key, value] = pair.split('=');
-        return [key, decodeURIComponent(value)];
-      }),
-    );
-    expect(values).toEqual({
-      hostname: 'router.example',
-      port: '9090',
-      secret: 'a&b #c+d=',
-    });
-  });
+describe('gateway addresses', () => {
+  it.each(['router.example', '192.0.2.1', '[2001:db8::1]'])(
+    'keeps %s on the fixed HTTPS/WSS path without credentials',
+    (hostname) => {
+      vi.stubGlobal('window', {
+        location: {
+          hostname,
+          protocol: 'https:',
+          search: '?token=page-canary',
+          hash: '#private-canary',
+        },
+      });
+      const api = `https://${hostname}:9091/cgi-bin/luci/loki-gateway/api`;
+      expect(gateway.getClashApiUrl()).toBe(api);
+      expect(gateway.getClashWsUrl()).toBe(api.replace('https:', 'wss:'));
+      expect(gateway.getClashSocketUrl('/traffic')).toBe(
+        `${api.replace('https:', 'wss:')}/traffic`,
+      );
+      expect(gateway.getClashSocketUrl('/connections?interval=1000')).toBe(
+        `${api.replace('https:', 'wss:')}/connections?interval=1000`,
+      );
+      expect(gateway.getClashUIUrl()).toBe(
+        `https://${hostname}:9091/cgi-bin/luci/loki-gateway/`,
+      );
+      expect(gateway.getClashUILoginUrl).toBeUndefined();
+    },
+  );
 });

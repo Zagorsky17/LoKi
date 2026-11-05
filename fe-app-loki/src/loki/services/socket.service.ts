@@ -9,7 +9,7 @@ type ErrorListener = (error: Event | string) => void;
 const RECONNECT_DELAY_MS = 1000;
 const RECONNECT_DELAY_MAX_MS = 30000;
 
-// Clash API socket URLs carry the controller secret, which stays out of the console.
+// Query details stay out of the console even if a caller supplied them.
 function shown(url: string) {
   return url.split('?')[0];
 }

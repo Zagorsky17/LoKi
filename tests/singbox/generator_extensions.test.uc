@@ -8,7 +8,7 @@ function build(settings, sources) {
         section: [ { ".name": "main", action: "connection", outbound_jsons: [ '{"type":"socks","tag":"Node","server":"127.0.0.1","server_port":1080}' ] } ],
         ...(sources ?? {})
     });
-    return generator.build({ service_address: "127.0.0.1", local_prefixes: [] });
+    return generator.build({ controller_secret: fixture.CONTROLLER_SECRET, service_address: "127.0.0.1", local_prefixes: [] });
 }
 
 t.test("a configuration without providers has no provider extension or subscription cache flag", () => {

@@ -1,0 +1,217 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.listArea {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  margin: 12px 32px 24px;
+
+  @media (max-width: 1024px) {
+    margin: 12px 16px 16px;
+  }
+
+  @media (max-width: 768px) {
+    margin: 8px 12px 10px;
+  }
+}
+
+// 与连接页表格 / 规则页列表同一张卡：窄屏下退掉卡片边界
+.card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  border-radius: 16px;
+  background: var(--color-card);
+  border: 1px solid var(--color-card-border);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+
+  @media (max-width: 768px) {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    border-radius: 0;
+  }
+}
+
+.scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+
+  &::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background-color: var(--color-card-border);
+    border-radius: 3px;
+  }
+}
+
+/* ---------- 日志行 ---------- */
+
+.line {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 5px 18px;
+  font-size: 0.75rem;
+  border-bottom: 1px solid var(--color-card-border);
+
+  &:hover {
+    background-color: var(--color-hover-soft);
+  }
+
+  // 这里不用 content-visibility：自动跟随是拿 scrollHeight 直接顶到底的，
+  // 屏外行只有估算高度会让落点跳。日志上限 300 行，靠 LogLine 的 memo 就够了
+
+  @media (max-width: 768px) {
+    // 窄屏放不下三列，时间和级别并排占一行，正文另起一行
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 6px 12px;
+  }
+}
+
+.time {
+  flex-shrink: 0;
+  width: 148px;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--color-text-secondary);
+  opacity: 0.8;
+
+  @media (max-width: 768px) {
+    width: auto;
+  }
+}
+
+.type {
+  flex-shrink: 0;
+  width: 44px;
+  text-align: center;
+  text-transform: uppercase;
+  font-weight: 700;
+  font-size: 0.6rem;
+  padding: 1px 0;
+  border-radius: 4px;
+
+  &[data-type='debug'] {
+    color: var(--color-success);
+    background-color: var(--color-success-soft-bg);
+  }
+
+  &[data-type='info'] {
+    color: var(--color-accent-soft-fg);
+    background-color: var(--color-accent-soft-bg);
+  }
+
+  &[data-type='warning'] {
+    color: var(--color-warn);
+    background-color: var(--color-warn-soft-bg);
+  }
+
+  &[data-type='error'] {
+    color: var(--color-danger);
+    background-color: var(--color-danger-soft-bg);
+  }
+}
+
+.payload {
+  flex: 1;
+  min-width: 0;
+  color: var(--color-text);
+  line-height: 1.5;
+  word-break: break-all;
+
+  @media (max-width: 768px) {
+    flex-basis: 100%;
+  }
+}
+
+/* ---------- 回到底部 ---------- */
+
+.toBottomBtn {
+  position: absolute;
+  right: 18px;
+  bottom: 52px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  appearance: none;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--color-card-border);
+  border-radius: 50%;
+  background: var(--color-card);
+  color: var(--color-text);
+  cursor: pointer;
+  box-shadow: var(--shadow-popover);
+  transition:
+    border-color 0.15s ease,
+    color 0.15s ease;
+
+  &:hover {
+    border-color: var(--color-focus-blue);
+    color: var(--color-focus-blue);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--color-focus-blue);
+    outline-offset: 2px;
+  }
+}
+
+/* ---------- 空态 ---------- */
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 100%;
+}
+
+.emptyTitle {
+  font-size: 0.88rem;
+  color: var(--color-text);
+}
+
+.emptyHint {
+  font-size: 0.78rem;
+  color: var(--color-text-secondary);
+}
+
+/* ---------- 页脚 ---------- */
+
+.footer {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 36px;
+  flex-shrink: 0;
+  padding: 0 18px;
+  border-top: 1px solid var(--color-card-border);
+  background: var(--color-track);
+  font-size: 0.72rem;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.paused {
+  margin-left: auto;
+  color: var(--color-warn);
+}

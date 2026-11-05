@@ -4,7 +4,7 @@ let generator = require("singbox.generator");
 
 function build(data, context) {
     fixture.seed(data);
-    return generator.build(context ?? { service_address: "127.0.0.1" });
+    return generator.build({ controller_secret: fixture.CONTROLLER_SECRET, ...(context ?? { service_address: "127.0.0.1" }) });
 }
 
 function refused(data) {

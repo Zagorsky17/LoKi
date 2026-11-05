@@ -10,6 +10,7 @@ let singbox_constants = require("singbox.constants");
 let packages = require("core.packages");
 let generator = require("singbox.generator");
 let core_ip = require("core.ip");
+let gateway_secret = require("service.gateway_secret");
 
 const CONFIG_NAME = "loki";
 
@@ -151,16 +152,13 @@ function write_config(checked) {
     if (output_interface != "" && mwan3_active())
         exec.log("warn", "mwan3 is active, but the output interface is set to '" + output_interface + "': loki-core sends its traffic out of it, past mwan3");
 
-    let address = listen_address(values);
-    if (address == "")
-        exec.log("warn", "No IPv4 address found on the LAN, so the Clash API listens on 127.0.0.1 only; set loki.settings.service_listen_address to choose one");
-
     let text;
     try {
         let prefixes = local_prefixes(values);
         if (prefixes == null)
             exec.log("warn", "Cannot determine LAN prefixes; keeping all PTR queries with the local DNS resolver");
-        text = sprintf("%J\n", generator.build({ service_address: address, local_prefixes: prefixes }));
+        text = sprintf("%J\n", generator.build({ local_prefixes: prefixes,
+            controller_secret: gateway_secret.load() }));
     }
     catch (e) {
         die("Failed to generate the loki-core configuration: " + e.message);

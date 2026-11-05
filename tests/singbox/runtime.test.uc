@@ -10,6 +10,8 @@ let packages = require("core.packages");
 let runtime = require("singbox.runtime");
 let cli = require("service.cli");
 
+require("service.gateway_secret").load = () => fixture.CONTROLLER_SECRET;
+
 function configuration(dir, extra) {
     fs.chmod(dir, 0700);
     return {
@@ -193,7 +195,7 @@ t.test("a changed configuration the core refuses leaves the file the running cor
     t.eq(fs.readfile(dir + "/etc/loki-core/config.json"), running);
 });
 
-t.test("a LAN without an IPv4 address is a warning of the configuration, not of whoever asks for the address", () => {
+t.test("a LAN without an IPv4 address does not change the private controller", () => {
     let dir = stub.tmpdir();
     fixture.seed(configuration(dir, { service_listen_address: "" }));
     tools([ [ CHECK, {} ], [ /network\.interface/, { stdout: "{}" } ], [ "ip -4 addr show", { stdout: "" } ] ]);
@@ -201,7 +203,32 @@ t.test("a LAN without an IPv4 address is a warning of the configuration, not of 
     t.eq(logs, [], "a diagnostics check asking for it");
     runtime.write_config(false);
     stub.restore();
-    t.eq(logs, [ "[warn] No IPv4 address found on the LAN, so the Clash API listens on 127.0.0.1 only; set loki.settings.service_listen_address to choose one" ]);
+    t.eq(logs, []);
+    t.eq(json(fs.readfile(dir + "/etc/loki-core/config.json")).experimental.clash_api,
+        { external_controller_unix: "/tmp/loki/controller.sock", secret: fixture.CONTROLLER_SECRET });
+});
+
+t.test("a private credential failure preserves the existing configuration before any core check", () => {
+    let dir = stub.tmpdir();
+    let config = configuration(dir);
+    fixture.seed(config);
+    let path = config.settings.config_path;
+    t.ok(require("core.common").ensure_dir(require("core.common").parent_dir(path)));
+    t.ok(fs.writefile(path, "previous owned configuration\n") != null);
+    tools([ [ CHECK, {} ] ]);
+    let provider = require("service.gateway_secret");
+    let original = provider.load;
+    provider.load = () => { die("Private controller credential unavailable"); };
+    let failure;
+    try { runtime.write_config(true); }
+    catch (e) { failure = e; }
+    provider.load = original;
+    let checked = checks_run();
+    stub.restore();
+    t.ok(failure != null);
+    t.contains(failure.message, "controller credential unavailable");
+    t.eq(checked, 0);
+    t.eq(fs.readfile(path), "previous owned configuration\n");
 });
 
 t.test("a checked configuration is checked even when it did not change", () => {

@@ -1,0 +1,87 @@
+.container {
+  position: fixed;
+  z-index: 1000;
+  right: 16px;
+  bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-end;
+  pointer-events: none;
+
+  @media (max-width: 768px) {
+    right: 10px;
+    left: 10px;
+    bottom: 10px;
+    align-items: stretch;
+  }
+}
+
+.toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  max-width: 420px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--color-card);
+  border: 1px solid var(--color-card-border);
+  box-shadow: var(--shadow-popover);
+  color: var(--color-text);
+  font-size: 0.9rem;
+  line-height: 1.45;
+  animation: slide-in 0.18s ease-out;
+
+  @media (max-width: 768px) {
+    max-width: none;
+  }
+}
+
+.icon {
+  flex-shrink: 0;
+  display: flex;
+  padding-top: 1px;
+}
+
+.success .icon {
+  color: var(--color-success);
+}
+
+.error .icon {
+  color: var(--color-danger);
+}
+
+.info .icon {
+  color: var(--color-focus-blue);
+}
+
+.message {
+  flex: 1;
+  word-break: break-word;
+}
+
+.close {
+  flex-shrink: 0;
+  display: flex;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  color: var(--color-text-secondary);
+
+  &:hover {
+    color: var(--color-text-highlight);
+  }
+}
+
+@keyframes slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

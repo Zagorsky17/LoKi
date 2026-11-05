@@ -7,6 +7,8 @@ let uci = require("uci");
 let core_uci = require("core.uci");
 let core_url = require("core.url");
 
+const CONTROLLER_SECRET = "123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0";
+
 const TYPES = [
     "settings", "section", "server", "server_client", "subscription_url", "section_interface",
     "connection_link", "urltest", "fallback_group", "fallback_level", "tunnel", "tunnel_peer"
@@ -86,4 +88,4 @@ function kernel_ipv6(interfaces) {
     }
 }
 
-return { seed, settings, links, kernel_ipv6 };
+return { seed, settings, links, kernel_ipv6, CONTROLLER_SECRET };

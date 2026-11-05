@@ -403,4 +403,25 @@ t.test("the state carries what the installed core was built with", () => {
     t.eq(reply.capabilities.core.features.naive.available, false);
 });
 
+t.test("resident log text and cursor replies hide the controller credential while preserving log progress", () => {
+    let secret = require("service.gateway_secret");
+    let original = secret.redactor;
+    let key = require("fixture").CONTROLLER_SECRET;
+    secret.redactor = () => (value) => join("SERVER_ONLY", split(value, key));
+    let seen = {};
+    started((service) => {
+        service.remember_log_line("loki: user-password " + key);
+        seen.reply = wait({ revision: revision(), cursor: 0 }).replied;
+        let original_capture = require("core.exec").capture_parallel;
+        require("core.exec").capture_parallel = () => [ { status: 0, stdout: "user-password " + key + "\n" } ];
+        seen.text = service.object_methods().log_text.call({ args: {} });
+        require("core.exec").capture_parallel = original_capture;
+    });
+    secret.redactor = original;
+    t.excludes(sprintf("%J", seen), key, "private controller resident projection");
+    t.contains(seen.text.text, "user-password SERVER_ONLY");
+    t.contains(seen.reply.lines, "loki: user-password SERVER_ONLY");
+    t.ok(seen.text.cursor > 0);
+});
+
 t.done();

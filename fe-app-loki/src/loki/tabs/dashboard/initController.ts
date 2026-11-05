@@ -23,7 +23,6 @@ import {
 import { sectionLatencyTarget } from './sectionLatencyTarget';
 import { exitNodeName } from './exitNodeName';
 import type { ExitPanelState } from './partials/renderExitPanel';
-import { getClashApiSecret } from '../../methods/custom/getClashApiSecret';
 import { resetClashApiTransport } from '../../methods/custom/clashApi';
 import { Loki } from '../../types';
 import { getLocalStorage } from '../../services/browserStorage.service';
@@ -501,10 +500,8 @@ function stopCoreUsagePolling() {
   coreStartedAt = 0;
 }
 
-async function connectToClashSockets(dataUpdatesId: number) {
+function connectToClashSockets(dataUpdatesId: number) {
   const mountId = dashboardMountId;
-  // Without the secret the sockets are refused, and the polls cover for them.
-  const clashApiSecret = await getClashApiSecret().catch(() => '');
 
   if (
     !dashboardMounted ||
@@ -514,8 +511,8 @@ async function connectToClashSockets(dataUpdatesId: number) {
     return;
   }
 
-  trafficSocketUrl = getClashSocketUrl('/traffic', clashApiSecret);
-  connectionsSocketUrl = `${getClashSocketUrl('/connections', clashApiSecret)}&interval=${WIDGETS_SNAPSHOT_INTERVAL_MS}`;
+  trafficSocketUrl = getClashSocketUrl('/traffic');
+  connectionsSocketUrl = `${getClashSocketUrl('/connections')}?interval=${WIDGETS_SNAPSHOT_INTERVAL_MS}`;
 
   socket.subscribe(
     trafficSocketUrl,
@@ -657,8 +654,7 @@ function stopDashboardDataUpdates() {
   connectionsSocketUrl = '';
 }
 
-// The tab asks the Clash API directly rather than first asking whether the core runs. A browser
-// that cannot open a plaintext socket (an HTTPS page) polls the connections snapshot instead.
+// Session-authenticated HTTPS sockets carry live readings; RPC polling covers an unavailable gateway.
 function startDashboardDataUpdates() {
   if (dashboardDataUpdatesStarted || !dashboardMounted) {
     return;

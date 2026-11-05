@@ -19,7 +19,7 @@ function base() {
 
 function build(data) {
     fixture.seed(data);
-    return generator.build({ service_address: "127.0.0.1" });
+    return generator.build({ controller_secret: fixture.CONTROLLER_SECRET, service_address: "127.0.0.1" });
 }
 
 t.test("retired records and WARP switches cannot change a working proxy configuration", () => {

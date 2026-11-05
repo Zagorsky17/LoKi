@@ -64,9 +64,6 @@ vi.mock('../../../methods', () => ({
     getClashApiProxyExit: mocks.getClashApiProxyExit,
   },
 }));
-vi.mock('../../../methods/custom/getClashApiSecret', () => ({
-  getClashApiSecret: async () => 'secret',
-}));
 
 type SectionProps = {
   exitPanel?: {

@@ -1,0 +1,43 @@
+.list {
+  display: grid;
+  gap: 8px;
+}
+
+.detail {
+  margin-top: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+
+  @media (max-width: 480px) {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  }
+}
+
+.summary {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 5px;
+  align-items: center;
+}
+
+.providerGroup {
+  margin-top: 12px;
+}
+
+.providerLabel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.providerQty {
+  font-family: var(--font-mono);
+  font-weight: 400;
+}
+
+.providerGroup .detail {
+  margin-top: 6px;
+}

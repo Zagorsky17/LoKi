@@ -69,6 +69,7 @@ jobs:
         run: |
           tests/run.sh
           python3 -B tests/test_cold_boot_init.py
+          python3 -B tests/test_gateway_bootstrap.py
           python3 -B tests/test_watch_recovery.py
 
       - name: Check standalone preflight boundary

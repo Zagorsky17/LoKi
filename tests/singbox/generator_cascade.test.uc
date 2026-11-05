@@ -34,7 +34,7 @@ function build() {
         ],
         section_interface: [ { ".name": "source_wg0", section: "source", name: "wg0" } ],
     });
-    return generator.build({ service_address: "127.0.0.1" });
+    return generator.build({ controller_secret: fixture.CONTROLLER_SECRET, service_address: "127.0.0.1" });
 }
 
 t.test("a cascade sends the link or subscription that names it through the section", () => {
