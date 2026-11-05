@@ -1,8 +1,10 @@
 """Check source-asset trust boundaries without executing a module's code."""
 import hashlib
+import gzip
 import io
 import json
 from pathlib import Path
+import subprocess
 import sys
 import tarfile
 import tempfile
@@ -42,7 +44,24 @@ class ModuleSourcesTests(unittest.TestCase):
                    ('// git revision ' + sources.PSL_REVISION + '\n').encode())
         for name in sources.EXTRA:
             self.write(self.recipe / 'source-data' / name, (sources.HERE / 'source-data' / name).read_bytes())
-        self.patches = [mock.patch.object(sources, 'HERE', self.recipe),
+        self.go_archive = self.root / 'go1.26.10.src.tar.gz'
+        self.goroot = self.root / 'go'
+        data = io.BytesIO()
+        with tarfile.open(fileobj=data, mode='w') as archive:
+            for name, body in {'VERSION': b'go1.26.10\n', 'LICENSE': b'synthetic original notice\n',
+                               'src/runtime/proc.go': b'// synthetic preferred source\n'}.items():
+                self.write(self.goroot / name, body)
+                entry = tarfile.TarInfo('go/' + name)
+                entry.size, entry.mode = len(body), 0o644
+                archive.addfile(entry, io.BytesIO(body))
+        self.go_source_bytes = gzip.compress(data.getvalue(), mtime=0)
+        self.write(self.go_archive, self.go_source_bytes)
+        self.go_pin = {'version': 'go1.26.10', 'filename': self.go_archive.name,
+                       'size': len(self.go_source_bytes),
+                       'sha256': hashlib.sha256(self.go_source_bytes).hexdigest()}
+        self.patches = [mock.patch.object(sources, 'GO_SOURCE', self.go_pin, create=True),
+                        mock.patch.object(sources, 'go_source_path', return_value=self.go_archive, create=True),
+                        mock.patch.object(sources, 'HERE', self.recipe),
                         mock.patch.object(sources, 'go', side_effect=self.go),
                         mock.patch.object(sources, 'binary_manifest', side_effect=self.manifest)]
         for patch in self.patches:
@@ -55,8 +74,8 @@ class ModuleSourcesTests(unittest.TestCase):
         path.chmod(0o644)
 
     def go(self, source, *args):
-        if args == ('env', '-json', 'GOMODCACHE', 'GOVERSION'):
-            return json.dumps({'GOMODCACHE': str(self.cache), 'GOVERSION': 'go1.26.10'})
+        if args == ('env', '-json', 'GOROOT', 'GOMODCACHE', 'GOVERSION'):
+            return json.dumps({'GOROOT': str(self.goroot), 'GOMODCACHE': str(self.cache), 'GOVERSION': 'go1.26.10'})
         self.assertEqual(args, ('mod', 'verify'))
         return 'all modules verified\n'
 
@@ -75,6 +94,205 @@ class ModuleSourcesTests(unittest.TestCase):
             self.collect()
         self.assertFalse(self.output.exists())
         self.assertFalse(list(self.root.glob('.loki-module-sources-*')))
+
+    def test_the_pinned_go_sources_are_included_and_bound_to_the_binary(self):
+        manifest = self.collect()
+        name = 'toolchain/' + self.go_archive.name
+        self.assertIn(name, {item['path'] for item in manifest['entries']})
+        self.assertEqual(manifest['go_source'], self.go_pin)
+        with tarfile.open(self.output) as archive:
+            self.assertEqual(archive.extractfile(name).read(), self.go_source_bytes)
+        self.assertEqual(sources.verify_archive(self.output, manifest['source_tree'],
+                         [self.manifest(self.source, self.binary)]), manifest)
+
+    def test_missing_corrupt_oversized_or_aliased_go_sources_refuse_offline(self):
+        original = self.go_source_bytes
+        for kind in ('missing', 'corrupt', 'oversized', 'symlink', 'hardlink'):
+            with self.subTest(kind=kind), mock.patch.object(sources.subprocess, 'run') as network:
+                self.go_archive.unlink(missing_ok=True)
+                target = self.root / 'kept-source'
+                target.unlink(missing_ok=True)
+                self.write(target, original)
+                if kind == 'corrupt': self.write(self.go_archive, b'x' * len(original))
+                elif kind == 'oversized': self.write(self.go_archive, original + b'x')
+                elif kind == 'symlink': self.go_archive.symlink_to(target)
+                elif kind == 'hardlink': self.go_archive.hardlink_to(target)
+                self.assert_refused()
+                self.assertEqual(target.read_bytes(), original)
+                network.assert_not_called()
+
+    def test_source_verifier_requires_the_go_pin_even_if_manifest_hashes_are_updated(self):
+        manifest = self.collect()
+        original = self.output.read_bytes()
+        name = 'toolchain/' + self.go_archive.name
+        changes = [lambda data, _: data.pop(name),
+                   lambda data, _: data.update({name: b'x' * len(self.go_source_bytes)}),
+                   lambda data, meta: meta['go_source'].update(sha256='0' * 64),
+                   lambda data, meta: meta.update(go_version='go1.27.0'),
+                   lambda data, meta: meta.update(schema=1),
+                   lambda data, _: data.update({'toolchain/../outside.tar.gz': b'no'})]
+        for change in changes:
+            with self.subTest(change=change):
+                self.output.write_bytes(original)
+                self.rewrite_archive(change)
+                with self.assertRaises((sources.SourceError, KeyError)):
+                    sources.verify_archive(self.output, manifest['source_tree'],
+                                           [self.manifest(self.source, self.binary)])
+
+    def test_go_archive_replacement_after_verification_is_not_published(self):
+        original = tarfile.TarFile.addfile
+        def change(archive, info, stream=None):
+            if info.name == 'toolchain/' + self.go_archive.name:
+                self.write(self.go_archive, b'changed during source publication')
+            return original(archive, info, stream)
+        with mock.patch.object(tarfile.TarFile, 'addfile', new=change):
+            self.assert_refused()
+
+    def test_missing_changed_or_aliased_toolchain_source_is_refused(self):
+        path = self.goroot / 'src/runtime/proc.go'
+        original = path.read_bytes()
+        target = self.root / 'preserved-toolchain-source'
+        self.write(target, original)
+        for kind in ('changed', 'missing', 'symlink', 'hardlink', 'oversized'):
+            with self.subTest(kind=kind):
+                path.unlink(missing_ok=True)
+                if kind == 'changed': self.write(path, b'// modified stdlib with unchanged Go version\n')
+                elif kind == 'symlink': path.symlink_to(target)
+                elif kind == 'hardlink': path.hardlink_to(target)
+                elif kind == 'oversized':
+                    with path.open('wb') as stream:
+                        stream.seek(8388608)
+                        stream.write(b'x')
+                self.assert_refused()
+                self.assertEqual(target.read_bytes(), original)
+
+    def test_toolchain_source_changes_after_the_initial_check_are_refused(self):
+        original = self.go
+        def change(source, *args):
+            if args == ('mod', 'verify'):
+                self.write(self.goroot / 'src/runtime/proc.go', b'changed during metadata checks')
+            return original(source, *args)
+        with mock.patch.object(sources, 'go', side_effect=change):
+            self.assert_refused()
+
+    def test_toolchain_source_changes_during_archive_publication_are_refused(self):
+        original = tarfile.TarFile.addfile
+        def change(archive, info, stream=None):
+            if info.name.endswith('.zip'):
+                self.write(self.goroot / 'src/runtime/proc.go', b'changed after the metadata checks')
+            return original(archive, info, stream)
+        with mock.patch.object(tarfile.TarFile, 'addfile', new=change):
+            self.assert_refused()
+
+    def test_go_tree_entry_file_and_total_limits_are_enforced(self):
+        for limit in ('GO_FILE_LIMIT', 'GO_TREE_LIMIT', 'GO_ENTRY_LIMIT'):
+            with self.subTest(limit=limit), mock.patch.object(sources, limit, 1):
+                self.assert_refused()
+
+    def test_go_tree_refuses_unsafe_paths_links_and_duplicate_members(self):
+        for kind in ('absolute', 'traversal', 'symlink', 'duplicate'):
+            with self.subTest(kind=kind):
+                data = io.BytesIO()
+                with tarfile.open(fileobj=data, mode='w') as archive:
+                    name = '/outside' if kind == 'absolute' else 'go/../outside' if kind == 'traversal' else 'go/VERSION'
+                    entry = tarfile.TarInfo(name)
+                    if kind == 'symlink':
+                        entry.type, entry.linkname = tarfile.SYMTYPE, '/outside'
+                    body = (self.goroot / 'VERSION').read_bytes() if kind == 'duplicate' else b''
+                    entry.size = len(body)
+                    archive.addfile(entry, io.BytesIO(body))
+                    if kind == 'duplicate': archive.addfile(entry, io.BytesIO(body))
+                body = gzip.compress(data.getvalue(), mtime=0)
+                self.write(self.go_archive, body)
+                with mock.patch.dict(sources.GO_SOURCE, size=len(body), sha256=hashlib.sha256(body).hexdigest()):
+                    self.assert_refused()
+
+    def test_unreviewed_go_version_refuses_before_source_collection(self):
+        with mock.patch.dict(sources.GO_SOURCE, version='go1.27.0'):
+            self.assert_refused()
+
+    def test_explicit_fetch_is_pinned_bounded_atomic_and_cached(self):
+        self.go_archive.unlink()
+        calls = []
+        real_run = subprocess.run
+        def download(args, **kwargs):
+            calls.append(args)
+            self.assertEqual(args[args.index('--proto') + 1], '=https')
+            self.assertEqual(args[args.index('--proto-redir') + 1], '=https')
+            self.assertIn('https://go.dev/dl/' + self.go_archive.name, args)
+            self.assertEqual(args[args.index('--max-filesize') + 1], str(len(self.go_source_bytes)))
+            self.assertEqual(kwargs['timeout'], 310)
+            output = Path(args[args.index('--output') + 1])
+            self.assertEqual(output.stat().st_mode & 0o777, 0o600)
+            excessive = self.root / 'excessive-download'
+            result = real_run([sys.executable, '-B', '-c',
+                               'import sys\nwith open(sys.argv[1],"wb") as out:\n out.write(b"x"*int(sys.argv[2]))\n',
+                               str(excessive), str(len(self.go_source_bytes) + 1)],
+                              preexec_fn=kwargs['preexec_fn'], capture_output=True, timeout=5)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertLessEqual(excessive.stat().st_size, len(self.go_source_bytes))
+            output.write_bytes(self.go_source_bytes)
+        with mock.patch.object(sources.subprocess, 'run', side_effect=download):
+            self.assertEqual(sources.fetch_go_source(), self.go_archive)
+            self.assertEqual(sources.fetch_go_source(), self.go_archive)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(self.go_archive.read_bytes(), self.go_source_bytes)
+        self.assertEqual(self.go_archive.stat().st_mode & 0o777, 0o644)
+        self.assertFalse(list(self.root.glob('.loki-go-source-*')))
+
+    def test_failed_fetch_preserves_existing_data_and_cleans_partial_downloads(self):
+        for kind in ('network', 'corrupt', 'concurrent'):
+            self.go_archive.unlink(missing_ok=True)
+            def fail(args, **kwargs):
+                temporary = Path(args[args.index('--output') + 1])
+                temporary.write_bytes(b'bad' if kind == 'corrupt' else self.go_source_bytes)
+                if kind == 'network': raise subprocess.CalledProcessError(7, args)
+                if kind == 'concurrent': self.write(self.go_archive, b'preserve concurrent output')
+            with self.subTest(kind=kind), mock.patch.object(sources.subprocess, 'run', side_effect=fail):
+                with self.assertRaises((sources.SourceError, OSError, subprocess.SubprocessError)):
+                    sources.fetch_go_source()
+                self.assertFalse(list(self.root.glob('.loki-go-source-*')))
+                if kind == 'concurrent':
+                    self.assertEqual(self.go_archive.read_bytes(), b'preserve concurrent output')
+                else:
+                    self.assertFalse(self.go_archive.exists())
+        with mock.patch.object(sources.subprocess, 'run') as network:
+            with self.assertRaises(sources.SourceError):
+                sources.fetch_go_source()
+            network.assert_not_called()
+
+    def test_a_same_size_corrupt_cached_go_archive_is_preserved_and_not_used(self):
+        corrupt = b'x' * len(self.go_source_bytes)
+        self.write(self.go_archive, corrupt)
+        with mock.patch.object(sources.subprocess, 'run') as network:
+            with self.assertRaises(sources.SourceError): sources.fetch_go_source()
+            network.assert_not_called()
+        self.assertEqual(self.go_archive.read_bytes(), corrupt)
+
+    def test_fetch_checks_new_parent_paths_before_writing(self):
+        self.go_archive.unlink()
+        parent = self.root / 'new' / 'nested'
+        destination = parent / self.go_archive.name
+        with mock.patch.object(sources, 'go_source_path', return_value=destination):
+            with mock.patch.object(sources.subprocess, 'run', side_effect=lambda args, **kwargs:
+                                   Path(args[args.index('--output') + 1]).write_bytes(self.go_source_bytes)):
+                self.assertEqual(sources.fetch_go_source(), destination)
+            self.assertEqual(parent.stat().st_mode & 0o777, 0o700)
+        foreign = self.root / 'foreign'
+        foreign.mkdir()
+        alias = self.root / 'alias'
+        alias.symlink_to(foreign, target_is_directory=True)
+        for path in (alias / 'new' / self.go_archive.name, self.root / 'unsafe' / self.go_archive.name):
+            (self.root / 'unsafe').mkdir(mode=0o777, exist_ok=True)
+            (self.root / 'unsafe').chmod(0o777)
+            try:
+                with mock.patch.object(sources, 'go_source_path', return_value=path), \
+                        mock.patch.object(sources.subprocess, 'run') as network:
+                    with self.assertRaises(sources.SourceError): sources.fetch_go_source()
+                    network.assert_not_called()
+                    self.assertFalse((foreign / 'new').exists())
+            finally:
+                (self.root / 'unsafe').chmod(0o700)
 
     def test_go_mod_hash_matches_pinned_independent_source_sum(self):
         self.assertEqual(sources.mod_sum(self.mod), self.mod_hash)

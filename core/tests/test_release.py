@@ -58,7 +58,7 @@ class ReleaseTests(unittest.TestCase):
             self.assertFalse(marker.exists())
             self.assertFalse(output.exists())
 
-    def build_case(self, binary_only=False, source_failure=False, repeat_profile=False):
+    def build_case(self, binary_only=False, source_failure=False, repeat_profile=False, fetch_failure=False):
         with tempfile.TemporaryDirectory() as work:
             work = Path(work)
             recipe, binary, output = work / 'recipe', work / 'bin', work / 'output'
@@ -70,17 +70,23 @@ class ReleaseTests(unittest.TestCase):
             collector = recipe / 'module_sources.py'
             collector.write_text('''from pathlib import Path
 import sys
+if sys.argv[1:] == ['--fetch-go-source']:
+    print('synthetic pinned source cache')
+    raise SystemExit(0)
 source, output, *binaries = map(Path, sys.argv[1:])
 assert source.joinpath('build.sh').is_file()
 assert binaries and all(path.read_bytes() == b'binary' for path in binaries)
 output.write_bytes(b'synthetic module source asset')
-''' if not source_failure else 'raise SystemExit(23)\n')
+''' if not source_failure else "import sys\nif sys.argv[1:] != ['--fetch-go-source']: raise SystemExit(23)\n")
+            if fetch_failure:
+                collector.write_text('raise SystemExit(29)\n')
             go = binary / 'go'
             go.write_text('#!/bin/sh\nprintf "go' + (recipe / 'GO_VERSION').read_text().strip() + '\\n"\n')
             go.chmod(0o755)
             prepare = recipe / 'prepare.sh'
             prepare.write_text('''#!/bin/sh
 set -eu
+printf prepared > "$LOKI_TEST_PREPARED"
 mkdir "$1"
 cat > "$1/build.sh" <<'BUILD'
 #!/bin/sh
@@ -103,17 +109,19 @@ chmod +x "$1/build.sh"
 ''')
             prepare.chmod(0o755)
             args = [str(recipe / 'build.sh'), '2.0.0', str(output)]
-            if source_failure:
+            if source_failure or fetch_failure:
                 output.mkdir()
                 (output / 'existing').write_bytes(b'keep')
             if binary_only:
                 args.append('--binary-only')
             result = subprocess.run(args, env=dict(os.environ,
-                PATH=str(binary) + os.pathsep + os.environ['PATH']), capture_output=True, text=True)
-            if source_failure:
+                PATH=str(binary) + os.pathsep + os.environ['PATH'],
+                LOKI_TEST_PREPARED=str(work / 'prepared')), capture_output=True, text=True)
+            if source_failure or fetch_failure:
                 self.assertNotEqual(result.returncode, 0)
                 self.assertEqual({p.name for p in output.iterdir()}, {'existing'})
                 self.assertEqual((output / 'existing').read_bytes(), b'keep')
+                self.assertEqual((work / 'prepared').exists(), not fetch_failure)
                 return
             if binary_only:
                 self.assertNotEqual(result.returncode, 0)
@@ -129,7 +137,8 @@ chmod +x "$1/build.sh"
             if repeat_profile:
                 collector.write_text(collector.read_text().replace('synthetic module source asset', 'another module source asset'))
                 repeated = subprocess.run(args, env=dict(os.environ,
-                    PATH=str(binary) + os.pathsep + os.environ['PATH']), capture_output=True, text=True)
+                    PATH=str(binary) + os.pathsep + os.environ['PATH'],
+                    LOKI_TEST_PREPARED=str(work / 'prepared')), capture_output=True, text=True)
                 self.assertEqual(repeated.returncode, 0, repeated.stderr)
                 assets = {p.name for p in output.glob('core-module-sources-*.tar.gz')}
                 self.assertEqual(assets, {f'core-module-sources-1.14.4-r6-{hashlib.sha256(data).hexdigest()}.tar.gz'
@@ -144,6 +153,9 @@ chmod +x "$1/build.sh"
 
     def test_source_collection_failure_preserves_the_existing_release_directory(self):
         self.build_case(source_failure=True)
+
+    def test_go_source_fetch_failure_refuses_before_core_preparation(self):
+        self.build_case(fetch_failure=True)
 
     def test_combined_builds_retain_each_profiles_module_sources(self):
         self.build_case(repeat_profile=True)

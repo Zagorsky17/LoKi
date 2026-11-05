@@ -33,6 +33,12 @@ jobs:
         with:
           go-version-file: core/GO_VERSION
           cache: false
+      - name: Prepare a private Go workspace
+        shell: bash
+        run: |
+          python3 -B core/isolate_toolchain.py "$RUNNER_TEMP/loki-go"
+          printf 'GOROOT=%s\n' "$RUNNER_TEMP/loki-go" >> "$GITHUB_ENV"
+          printf '%s/bin\n' "$RUNNER_TEMP/loki-go" >> "$GITHUB_PATH"
       - name: Install test dependencies
         run: |
           sudo apt-get update
@@ -47,6 +53,7 @@ jobs:
         run: |
           python3 core/tests/test_release.py
           python3 -B core/tests/test_module_sources.py
+          python3 -B core/tests/test_toolchain_workspace.py
           python3 -B core/tests/test_subscription_selection.py
           python3 -B core/tests/test_compatibility.py
           python3 -B core/tests/test_dns_timeout.py
@@ -57,6 +64,7 @@ jobs:
           source core/upstream.env
           core/prepare.sh "$RUNNER_TEMP/core-source"
           export SOURCE_DATE_EPOCH=$CORE_SOURCE_DATE_EPOCH
+          python3 -B core/module_sources.py --fetch-go-source
           (cd "$RUNNER_TEMP/core-source" && ./build.sh --binary-only --version "$CORE_VERSION" --output "$RUNNER_TEMP/core-build" amd64)
           python3 -B core/module_sources.py "$RUNNER_TEMP/core-source" "$RUNNER_TEMP/core-module-sources.tar.gz" "$RUNNER_TEMP/core-build/build/amd64/base/sing-box"
           python3 core/tests/dns_bootstrap.py "$RUNNER_TEMP/core-build/build/amd64/base/sing-box" "$RUNNER_TEMP/core-dns-results"
