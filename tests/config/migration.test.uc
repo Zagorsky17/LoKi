@@ -24,6 +24,14 @@ t.test("only the explicit LoKi format at a supported version is current", () => 
     }
 });
 
+t.test("a native iteration error discards a partially read schema", () => {
+    let cursor = { foreach: (name, type_name, visit) => {
+        visit(model().sections[0]);
+        return null;
+    } };
+    t.eq(migration.model_from_cursor(cursor, "loki"), null);
+});
+
 t.test("ambiguous settings, removed sections and malformed models are refused", () => {
     for (let data in [ null, {}, { sections: null }, { sections: [] }, { sections: [ null ] }, { sections: [ "settings" ] } ])
         t.eq(migration.decide(data).result, "reject");

@@ -17,6 +17,7 @@ function has(result, state, reason) {
 t.test("a fixed private UCI cursor parses a staged config without host overlays or writes", () => {
     uci.__reset();
     uci.__seed("loki", [ { ".name": "settings", ".type": "settings",
+        config_format: "loki", config_version: "2.0.0",
         dns_server: [ "77.88.8.8" ], bootstrap_dns_server: [ "77.88.8.8" ] } ]);
     let root = scratch();
     let real = uci.cursor;
@@ -31,6 +32,7 @@ t.test("a fixed private UCI cursor parses a staged config without host overlays 
     uci.cursor = real;
     t.eq(paths, [ [ root + "/config", root + "/delta", "" ] ]);
     t.ok(has(result, "checked", "uci-syntax-checked"));
+    t.ok(has(result, "checked", "uci-schema-checked"));
     t.ok(has(result, "incomplete", "candidate-core-unverified"));
     t.eq(fs.lstat(root + "/config"), null);
     t.eq(fs.lstat(root + "/delta"), null);
@@ -39,10 +41,58 @@ t.test("a fixed private UCI cursor parses a staged config without host overlays 
 
 t.test("without a verified core tag set the syntax may pass but validation stays incomplete", () => {
     uci.__reset();
-    uci.__seed("loki", [ { ".name": "settings", ".type": "settings" } ]);
+    uci.__seed("loki", [ { ".name": "settings", ".type": "settings",
+        config_format: "loki", config_version: "2.0.0" } ]);
     let result = reader.check("config settings 'settings'\n", scratch());
     t.ok(has(result, "checked", "uci-syntax-checked"));
+    t.ok(has(result, "checked", "uci-schema-checked"));
     t.ok(has(result, "incomplete", "candidate-core-unverified"));
+});
+
+t.test("a foreign or unsupported candidate schema is refused without logging its values", () => {
+    for (let values in [
+        { config_format: "forkop", config_version: "2.0.0", reason: "foreign" },
+        { config_format: "loki", config_version: "2.0.1", reason: "newer" },
+        { config_format: "loki", config_version: "", reason: "missing" }
+    ]) {
+        uci.__reset();
+        uci.__seed("loki", [ { ".name": "settings", ".type": "settings",
+            config_format: values.config_format, config_version: values.config_version,
+            cache_path: "synthetic-secret" } ]);
+        let result = reader.check("config settings 'settings'\n", scratch());
+        t.ok(has(result, "checked", "uci-syntax-checked"));
+        t.ok(has(result, "incomplete", "candidate-schema-" + values.reason));
+        t.ok(!has(result, "checked", "uci-schema-checked"));
+        t.ok(!has(result, "incomplete", "candidate-core-unverified"));
+        t.excludes(sprintf("%J", result), "synthetic-secret");
+        t.eq(uci.__commits(), []);
+    }
+});
+
+t.test("a failed isolated section read leaves the candidate incomplete and removes its copy", () => {
+    let root = scratch();
+    let real = uci.cursor;
+    uci.cursor = () => ({ load: () => true, foreach: () => die("synthetic-secret") });
+    let result = reader.check("config settings 'settings'\n", root);
+    uci.cursor = real;
+    t.ok(has(result, "checked", "uci-syntax-checked"));
+    t.ok(has(result, "incomplete", "candidate-schema-unavailable"));
+    t.excludes(sprintf("%J", result), "synthetic-secret");
+    t.eq(fs.lstat(root + "/config"), null);
+    t.eq(fs.lstat(root + "/delta"), null);
+});
+
+t.test("a native section iterator error cannot accept a partial current schema", () => {
+    let real = uci.cursor;
+    uci.cursor = () => ({ load: () => true, foreach: (name, type_name, visit) => {
+        visit({ ".name": "settings", ".type": "settings", config_format: "loki", config_version: "2.0.0" });
+        return null;
+    } });
+    let result = reader.check("config settings 'settings'\n", scratch());
+    uci.cursor = real;
+    t.ok(has(result, "checked", "uci-syntax-checked"));
+    t.ok(has(result, "incomplete", "candidate-schema-unavailable"));
+    t.ok(!has(result, "checked", "uci-schema-checked"));
 });
 
 t.test("bounds, unsafe scratch and native load failures refuse without leaking input", () => {

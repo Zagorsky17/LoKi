@@ -51,9 +51,23 @@ function check(data, scratch) {
                     let loaded = false;
                     try { loaded = native.load("loki") === true; }
                     catch (e) { loaded = false; }
-                    if (loaded)
-                        result = [ item("checked", "uci-syntax-checked"),
-                            item("incomplete", "candidate-core-unverified") ];
+                    if (loaded) {
+                        let decision = null;
+                        try {
+                            let migration = require("config.migration");
+                            let model = migration.model_from_cursor(native, "loki");
+                            if (model != null) decision = migration.decide(model);
+                        }
+                        catch (e) { decision = null; }
+                        let reason = decision?.result == "current" ? "candidate-core-unverified" :
+                            decision?.result == "migrate" ? "candidate-schema-migration-required" :
+                            decision?.result == "reject" && index([ "foreign", "schema", "missing", "invalid", "newer", "below_min", "unknown" ], decision.reason) >= 0
+                                ? "candidate-schema-" + decision.reason : "candidate-schema-unavailable";
+                        result = [ item("checked", "uci-syntax-checked") ];
+                        if (decision?.result == "current")
+                            push(result, item("checked", "uci-schema-checked"));
+                        push(result, item("incomplete", reason));
+                    }
                     else
                         result = [ item("incomplete", "uci-load-failed") ];
                 }

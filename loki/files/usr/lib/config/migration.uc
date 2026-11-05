@@ -176,14 +176,14 @@ function changes(before, after) {
 
 function model_from_cursor(cursor, package_name) {
     let sections = [];
-    cursor.foreach(package_name ?? CONFIG_NAME, null, (section) => {
+    let read = cursor.foreach(package_name ?? CONFIG_NAME, null, (section) => {
         let copy = {};
         for (let key, value in section)
             if (key != ".index")
                 copy[key] = value;
         push(sections, copy);
     });
-    return { sections };
+    return read == null ? null : { sections };
 }
 
 // A configuration file anywhere, as UCI reads it with no change staged on top.
@@ -378,6 +378,6 @@ function main(argv) {
 }
 
 if (sourcepath(1) != null && sourcepath(1) != "")
-    return { paths, MIN_CONFIG_VERSION, TARGET_CONFIG_VERSION, decide, migrate, changes, apply, read_file, run, start, check, main };
+    return { paths, MIN_CONFIG_VERSION, TARGET_CONFIG_VERSION, decide, migrate, changes, apply, model_from_cursor, read_file, run, start, check, main };
 
 exit(main(ARGV));

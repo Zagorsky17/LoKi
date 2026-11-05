@@ -71,6 +71,7 @@ class PreflightCLI(unittest.TestCase):
             before = set(Path("/tmp").glob("loki-preflight.*"))
             report = self.run_check(self.harness(directory))
             self.assertIn("observations", report)
+            self.assertNotIn("reason", report, "missing native UCI must be an observation, not a reader failure")
             self.assertTrue(any(item["kind"] == "configuration" and item["reason"] != "not-implemented"
                                 for item in report["observations"]))
             self.assertEqual(set(Path("/tmp").glob("loki-preflight.*")), before)
