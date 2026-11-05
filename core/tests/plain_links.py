@@ -158,7 +158,7 @@ def free_port():
 def generate_fixture(fixture, output):
     program = output / 'generate.uc'
     program.write_text('let f=require("fixture");f.seed(json(getenv("LINK_FIXTURE")));'
-                       'print(sprintf("%J",require("singbox.generator").build({service_address:"127.0.0.1",local_prefixes:[]})));\n')
+                       'print(sprintf("%J",require("singbox.generator").build({controller_secret:f.CONTROLLER_SECRET,service_address:"127.0.0.1",local_prefixes:[]})));\n')
     reply = subprocess.run(['ucode', '-L', str(ROOT / 'tests/fakes'), '-L', str(ROOT / 'tests/lib'),
                             '-L', str(ROOT / 'loki/files/usr/lib'), str(program)],
                            env={**os.environ, 'LINK_FIXTURE': json.dumps(fixture)}, check=True, capture_output=True, text=True, timeout=10)
