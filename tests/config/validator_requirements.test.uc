@@ -98,10 +98,10 @@ t.test("unrelated fork versions are refused and earlier own builds are outdated"
     for (let version in [ "1.13.18-extended-2.6.5-f165", "1.14.0-forkop.3", "1.14.4-loki.1" ])
         t.eq(requirements(version, null, PRESENT).error,
             "loki-core " + version + " is not loki-core, the core LoKi runs on. Install loki-core", version);
-    for (let version in [ "1.14.4-r0+12", "1.14.4-r1", "1.14.4-r1+3", "1.14.4-r2", "1.14.4-r2+3", "1.14.4-r3", "1.14.4-r3+3", "1.14.4-r4", "1.14.4-r4+3", "1.14.4-r5", "1.14.4-r5+3" ])
+    for (let version in [ "1.14.4-r0+12", "1.14.4-r1", "1.14.4-r1+3", "1.14.4-r2", "1.14.4-r2+3", "1.14.4-r3", "1.14.4-r3+3", "1.14.4-r4", "1.14.4-r4+3", "1.14.4-r5", "1.14.4-r5+3", "1.14.4-r6", "1.14.4-r6+3" ])
         t.eq(requirements(version, null, PRESENT).error,
             "loki-core " + version + " is older than the required minimum (" + REQUIRED + "). Update loki-core", version);
-    for (let version in [ "1.14.4-r6", "1.14.4-r6+3", "1.14.5-r1" ])
+    for (let version in [ "1.14.4-r7", "1.14.4-r7+3", "1.14.5-r1" ])
         t.ok(core_accepted(requirements(version, null, PRESENT)), version);
 });
 

@@ -73,6 +73,7 @@ APP_DEPENDS_APK="libc luci-base loki>=${RELEASE_VERSION}"
 ensure_host_deps() {
   local missing=()
   local commands=(
+    awk
     curl
     fakeroot
     file
@@ -240,6 +241,7 @@ build_backend_root() {
   make_dir "$output_root/etc/init.d"
   make_dir "$output_root/etc/config"
   make_dir "$output_root/usr/bin"
+  make_dir "$output_root/usr/libexec"
   make_dir "$output_root/usr/lib/loki"
   make_dir "$output_root/usr/share/loki"
   make_dir "$output_root/usr/share/nftables.d/chain-pre/input"
@@ -251,6 +253,7 @@ build_backend_root() {
   install -m 0644 "$ROOT_DIR/loki/files/etc/config/loki" "$output_root/usr/share/loki/default-config"
   install -m 0644 "$ROOT_DIR/install.sh" "$output_root/usr/share/loki/install.sh"
   install -m 0755 "$ROOT_DIR/loki/files/usr/bin/loki" "$output_root/usr/bin/loki"
+  install -m 0755 "$ROOT_DIR/loki/files/usr/libexec/loki-gateway" "$output_root/usr/libexec/loki-gateway"
   cp -a "$ROOT_DIR/loki/files/usr/lib/." "$output_root/usr/lib/loki/"
   install -m 0644 "$ROOT_DIR/loki/files/usr/share/nftables.d/chain-pre/input/loki.nft" \
     "$output_root/usr/share/nftables.d/chain-pre/input/loki.nft"
@@ -264,7 +267,8 @@ build_backend_root() {
 
   normalize_package_root_modes "$output_root"
   chmod 0600 "$output_root/etc/config/loki"
-  chmod 0755 "$output_root/etc/init.d/loki" "$output_root/etc/init.d/loki-state" "$output_root/usr/bin/loki"
+  chmod 0755 "$output_root/etc/init.d/loki" "$output_root/etc/init.d/loki-state" "$output_root/usr/bin/loki" \
+    "$output_root/usr/libexec/loki-gateway"
 }
 
 build_app_root() {
@@ -280,6 +284,9 @@ build_app_root() {
 
   make_dir "$output_root/usr/share/licenses/luci-app-loki"
   install -m 0644 "$ROOT_DIR/LICENSE" "$output_root/usr/share/licenses/luci-app-loki/LICENSE"
+  install -m 0644 "$ROOT_DIR/yacd-loki/LICENSE" "$output_root/usr/share/licenses/luci-app-loki/YACD-LICENSE"
+  install -m 0644 "$ROOT_DIR/yacd-loki/licenses/inter-OFL.txt" "$output_root/usr/share/licenses/luci-app-loki/INTER-OFL"
+  install -m 0644 "$ROOT_DIR/yacd-loki/licenses/roboto-mono-OFL.txt" "$output_root/usr/share/licenses/luci-app-loki/ROBOTO-MONO-OFL"
 
   normalize_package_root_modes "$output_root"
   find "$output_root/etc/uci-defaults" -type f -exec chmod 0755 {} + 2>/dev/null || true
@@ -388,7 +395,7 @@ write_app_ipk_control() {
 Package: luci-app-loki
 Version: ${RELEASE_VERSION}
 Depends: ${APP_DEPENDS_IPK}
-License: GPL-2.0-or-later
+License: GPL-2.0-or-later AND MIT AND OFL-1.1
 Section: luci
 URL: ${PROJECT_URL}
 Maintainer: ${MAINTAINER}
@@ -471,7 +478,9 @@ build_ipk_package() {
   cp -a "$control_root/." "$package_root/CONTROL/"
 
   rm -f "$output_file"
+  # shellcheck disable=SC2016
   fakeroot sh -c '
+    set -e
     chown -R 0:0 "$1"
     exec "$2" "$1" "$3"
   ' sh "$package_root" "$ipkg_build_bin" "$build_dir" >/dev/null
@@ -644,12 +653,18 @@ build_apk_package() {
   local temp_root="$BUILD_DIR/manual/${package_name}.apk-root"
   local temp_scripts="$BUILD_DIR/manual/${package_name}.apk-scripts"
   local maintainer="${10}"
+  local package_license="GPL-2.0-or-later"
+  if [[ "$package_name" == "luci-app-loki" ]]; then
+    package_license="GPL-2.0-or-later AND MIT AND OFL-1.1"
+  fi
 
   rm -rf "$temp_root" "$temp_scripts"
   cp -a "$files_root" "$temp_root"
   cp -a "$scripts_dir" "$temp_scripts"
 
+  # shellcheck disable=SC2016
   unshare -r sh -c '
+    set -e
     chown -R 0:0 "$1" "$2"
     shift 2
     exec "$@"
@@ -661,7 +676,7 @@ build_apk_package() {
     -I "version:${package_version}" \
     -I "description:${description}" \
     -I "arch:noarch" \
-    -I "license:GPL-2.0-or-later" \
+    -I "license:${package_license}" \
     -I "origin:loki" \
     -I "maintainer:${maintainer}" \
     -I "url:${PROJECT_URL}" \
@@ -712,6 +727,11 @@ verify_apk_metadata() {
     luci-app-loki) grep -q "^[[:space:]]*- loki>=${expected_version}$" "$dump_file" ;;
     luci-i18n-loki-ru) grep -q "^[[:space:]]*- luci-app-loki>=${expected_version}$" "$dump_file" ;;
   esac
+  if ! awk '/^[[:space:]]*(user|group):/ { seen = 1; if ($2 != "root") bad = 1 } END { exit !seen || bad }' "$dump_file"; then
+    rm -f "$dump_file"
+    echo "APK payload contains non-root ownership: $package_file" >&2
+    return 1
+  fi
   rm -f "$dump_file"
 }
 

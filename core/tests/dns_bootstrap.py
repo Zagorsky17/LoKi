@@ -332,7 +332,7 @@ basicConstraints=critical,CA:TRUE
             '-out', str(cert), '-days', '1'],
             check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         key.chmod(0o600)
-    (WORK / 'generate.uc').write_text('let fixture = require("fixture");\nlet generator = require("singbox.generator");\nfixture.seed(json(getenv("DNS_FIXTURE")));\nprint(sprintf("%J", generator.build({ service_address: "127.0.0.1" })));\n')
+    (WORK / 'generate.uc').write_text('let fixture = require("fixture");\nlet generator = require("singbox.generator");\nfixture.seed(json(getenv("DNS_FIXTURE")));\nprint(sprintf("%J", generator.build({controller_secret:fixture.CONTROLLER_SECRET, service_address: "127.0.0.1" })));\n')
     results = []
     cases = [('prefer_ipv4', mode) for mode in ('both', 'aaaa-silent', 'aaaa-empty', 'a-silent', 'both-silent')]
     cases += [('prefer_ipv6', mode) for mode in ('both', 'a-silent', 'aaaa-silent')]

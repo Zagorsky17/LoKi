@@ -13,7 +13,6 @@ import { prettyBytes } from '../../../helpers/prettyBytes';
 import { showToast } from '../../../helpers/showToast';
 import { renderSearchIcon24 } from '../../../icons';
 import { CustomLokiMethods } from '../../methods';
-import { getClashApiSecret } from '../../methods/custom/getClashApiSecret';
 import { loadLocalDevices } from '../../cbi/localDevices';
 import { logger, socket, store, StoreType } from '../../services';
 import { Loki } from '../../types';
@@ -1137,10 +1136,8 @@ function stopConnectionsPolling() {
   }
 }
 
-async function connectToConnectionsSocket(updatesId: number) {
+function connectToConnectionsSocket(updatesId: number) {
   const mountId = monitoringMountId;
-  // Without the secret the socket is refused, and the poll covers for it.
-  const clashApiSecret = await getClashApiSecret().catch(() => '');
 
   if (
     !monitoringMounted ||
@@ -1150,7 +1147,7 @@ async function connectToConnectionsSocket(updatesId: number) {
     return;
   }
 
-  connectionsSocketUrl = getClashSocketUrl('/connections', clashApiSecret);
+  connectionsSocketUrl = getClashSocketUrl('/connections');
 
   socket.subscribe(
     connectionsSocketUrl,

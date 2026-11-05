@@ -5,6 +5,7 @@ The directory holds each sing-box-VERSION and its official archive filename;
 archives match the pinned official release digests in compatibility_releases.json.
 This checks characterized limited schemas and refusals, not full stock support.
 """
+import copy
 import hashlib
 import json
 import os
@@ -19,6 +20,7 @@ REFERENCE_VERSION = re.search(r'^CORE_VERSION=(.+)$', (ROOT / 'core/upstream.env
 RELEASES = json.loads((ROOT / 'core/tests/compatibility_releases.json').read_text())
 SCHEMA_BOUNDARIES = {
     '1.12.22': {
+        'private-controller': 'unknown field "external_controller_unix"',
         'http-link': None,
         'https-link': None,
         'complex-link': 'unknown outbound type: parser',
@@ -30,6 +32,7 @@ SCHEMA_BOUNDARIES = {
         'custom-dns-timeout': 'unknown field "timeout"',
     },
     '1.13.21': {
+        'private-controller': 'unknown field "external_controller_unix"',
         'http-link': None,
         'https-link': None,
         'complex-link': 'unknown outbound type: parser',
@@ -41,6 +44,7 @@ SCHEMA_BOUNDARIES = {
         'custom-dns-timeout': 'unknown field "timeout"',
     },
     '1.14.4': {
+        'private-controller': 'unknown field "external_controller_unix"',
         'http-link': None,
         'https-link': None,
         'complex-link': 'unknown outbound type: parser',
@@ -88,6 +92,19 @@ def assert_result(profile, version, status, output):
         raise AssertionError(f'{profile}/{version}: expected the known schema boundary, got {status}: {output[:1200]}')
 
 
+def historical_controller_configuration(configuration):
+    experimental = configuration.get('experimental')
+    api = experimental.get('clash_api') if isinstance(experimental, dict) else None
+    if not isinstance(api, dict) or set(api) != {'external_controller_unix', 'secret'} or api['external_controller_unix'] != '/tmp/loki/controller.sock':
+        raise AssertionError('generated configuration must use the fixed private Unix controller')
+    # Keep the earlier DNS/provider comparisons; the private-controller profile tests the actual transport.
+    historical = copy.deepcopy(configuration)
+    controller = historical['experimental']['clash_api']
+    del controller['external_controller_unix']
+    controller['external_controller'] = '127.0.0.1:9092'
+    return historical
+
+
 def profiles(output):
     base = {
         'settings': {'config_format': 'loki', 'config_version': '2.0.0', 'dns_encryption': '0',
@@ -100,7 +117,7 @@ def profiles(output):
     native['settings']['unified_delay'] = '0'
     custom = json.loads(json.dumps(native))
     custom['settings']['dns_timeout'] = '4s'
-    result = {'manual-json': base, 'manual-json-native': native, 'custom-dns-timeout': custom}
+    result = {'manual-json': base, 'manual-json-native': native, 'custom-dns-timeout': custom, 'private-controller': native}
     links = json.loads(json.dumps(base))
     links['section'][0].pop('outbound_jsons')
     links['settings']['unified_delay'] = '0'
@@ -138,7 +155,7 @@ def main(reference, directory, output):
     generator = output / 'generate.uc'
     generator.write_text('let fixture=require("fixture"); let generator=require("singbox.generator"); '
                          'fixture.seed(json(getenv("LOKI_COMPAT_FIXTURE"))); '
-                         'print(sprintf("%J",generator.build({service_address:"127.0.0.1",local_prefixes:[]})));\n')
+                         'print(sprintf("%J",generator.build({controller_secret:fixture.CONTROLLER_SECRET,service_address:"127.0.0.1",local_prefixes:[]})));\n')
     results = []
     for profile, fixture in profiles(output).items():
         environment = {**os.environ, 'LOKI_COMPAT_FIXTURE': json.dumps(fixture)}
@@ -146,19 +163,22 @@ def main(reference, directory, output):
                                     '-L', str(ROOT / 'loki/files/usr/lib'), str(generator)], env=environment,
                                    check=True, capture_output=True, text=True, timeout=20)
         config = output / f'{profile}.json'
-        json.loads(generated.stdout)
-        config.write_text(generated.stdout)
+        configuration = json.loads(generated.stdout)
+        (output / f'{profile}.generated.json').write_text(generated.stdout)
+        historical = historical_controller_configuration(configuration)
+        config.write_text(json.dumps(configuration if profile == 'private-controller' else historical))
         for version, binary in cores.items():
             checked = subprocess.run([str(binary), '--disable-color', 'check', '-c', str(config)],
                                      capture_output=True, text=True, timeout=20)
             message = checked.stdout + checked.stderr
             (output / f'{profile}-{version}.log').write_text(message)
             assert_result(profile, version, checked.returncode, message)
-            result = {'profile': profile, 'version': version, 'status': checked.returncode}
+            result = {'profile': profile, 'version': version, 'status': checked.returncode,
+                      'controller_transport': 'private-unix' if profile == 'private-controller' else 'historical-tcp'}
             results.append(result)
             print(json.dumps(result), flush=True)
     (output / 'results.json').write_text(json.dumps(results, indent=2))
-    print(f'{len(results)} schema boundary checks passed; limited manual and plain-link schemas are accepted by all three stock versions')
+    print(f'{len(results)} schema boundary checks passed: 36 historical comparisons and 4 private-controller checks; no stock runtime support')
 
 
 if __name__ == '__main__':

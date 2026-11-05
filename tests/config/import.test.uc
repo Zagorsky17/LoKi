@@ -6,6 +6,7 @@ let ubus = require("ubus");
 let cli = require("service.cli");
 let migration = require("config.migration");
 let imports = require("config.import");
+let fixture = require("fixture");
 
 const SESSION = "0123456789abcdef0123456789abcdef";
 const FILE = stub.tmpdir() + "/loki-import.conf";
@@ -239,7 +240,7 @@ t.test("removed records are refused and the same client backup without them keep
     uci.__seed("loki", session.staged);
     require("core.uci").reset();
     let generator = require("singbox.generator");
-    let config = generator.build({ service_address: "127.0.0.1" });
+    let config = generator.build({ controller_secret: fixture.CONTROLLER_SECRET, service_address: "127.0.0.1" });
     t.ok(generator.runnable());
     t.excludes(map(config.inbounds, (item) => item.tag), "injected");
     t.eq(config.endpoints, null);

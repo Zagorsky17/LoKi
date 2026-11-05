@@ -47,4 +47,52 @@ t.test("a masked configuration loses the server addresses the generated one name
     t.eq(diagnostics.show_sing_box_config("raw"), sprintf("%.2J\n", config), "raw is the file as written");
 });
 
+t.test("raw and masked exports never expose the internal controller credential", () => {
+    let key = fixture.CONTROLLER_SECRET;
+    let config = { outbounds: [ { type: "socks", server: "proxy.example", password: "synthetic-user-password" } ],
+        experimental: { clash_api: { external_controller: "127.0.0.1:9092", secret: key } },
+        label: "prefix" + key + "suffix" };
+    let path = dir + "/controller-config.json";
+    let original = sprintf("%.2J\n", config);
+    fs.writefile(path, original);
+    fixture.seed({ settings: { config_path: path } });
+    for (let visibility in [ "raw", "masked" ]) {
+        let output = diagnostics.show_sing_box_config(visibility);
+        t.excludes(output, key);
+        let projected = json(output);
+        t.ok(projected.experimental.clash_api.secret != key);
+        if (visibility == "raw") {
+            t.eq(projected.experimental.clash_api.secret, "SERVER_ONLY");
+            t.eq(projected.label, "prefixSERVER_ONLYsuffix");
+            t.eq(projected.outbounds[0].password, "synthetic-user-password");
+        }
+    }
+    t.eq(fs.readfile(path), original);
+});
+
+t.test("a damaged configuration cannot escape controller redaction through the raw export", () => {
+    let path = dir + "/damaged-controller-config.json";
+    fixture.seed({ settings: { config_path: path } });
+    for (let value in [ "broken " + fixture.CONTROLLER_SECRET, "null", "[]", "false" ]) {
+        fs.writefile(path, value);
+        for (let visibility in [ "raw", "masked" ]) {
+            let failure = t.throws(() => diagnostics.show_sing_box_config(visibility));
+            t.eq(failure.message, "The loki-core configuration is not a valid JSON object");
+            t.excludes(failure.message, fixture.CONTROLLER_SECRET);
+        }
+        t.eq(fs.readfile(path), value);
+    }
+});
+
+t.test("diagnostic logs never expose the private controller credential even in otherwise raw output", () => {
+    let secret = require("service.gateway_secret");
+    let original = secret.redactor;
+    secret.redactor = () => (value) => join("SERVER_ONLY", split(value, fixture.CONTROLLER_SECRET));
+    stub.commands([ [ "logread", { stdout: "user-password " + fixture.CONTROLLER_SECRET + "\n" } ] ]);
+    let value = diagnostics.logs();
+    stub.restore();
+    secret.redactor = original;
+    t.eq(value, "user-password SERVER_ONLY\n", "private controller log projection");
+});
+
 t.done();

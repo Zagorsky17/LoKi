@@ -1,0 +1,100 @@
+.grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  padding: 16px 32px 0;
+
+  @media (max-width: 1024px) {
+    padding: 12px 16px 0;
+  }
+
+  // 窄屏保持四格一行，只是缩成一条紧凑的统计带
+  @media (max-width: 768px) {
+    gap: 6px;
+    padding: 8px 12px 0;
+  }
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 13px 15px;
+  border-radius: 14px;
+  background: var(--color-card);
+  border: 1px solid var(--color-card-border);
+  box-shadow: var(--shadow-card);
+  min-width: 0;
+
+  @media (max-width: 768px) {
+    gap: 1px;
+    padding: 7px 8px;
+    border-radius: 10px;
+    box-shadow: none;
+  }
+}
+
+.label {
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+
+  @media (max-width: 768px) {
+    font-size: 0.62rem;
+  }
+}
+
+.valueRow {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  min-width: 0;
+}
+
+.value {
+  font-size: 1.35rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-highlight);
+
+  @media (max-width: 768px) {
+    font-size: 0.95rem;
+  }
+}
+
+.download {
+  color: var(--color-success);
+}
+
+.upload {
+  color: var(--color-focus-blue);
+}
+
+.unit {
+  font-size: 0.72rem;
+  color: var(--color-text-secondary);
+
+  @media (max-width: 768px) {
+    font-size: 0.6rem;
+  }
+}
+
+/* 空 hint 也占位，四张卡片高度才对齐 */
+.hint {
+  font-size: 0.7rem;
+  color: var(--color-text-secondary);
+  opacity: 0.8;
+  min-height: 1em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+
+  // 窄屏放不下，累计流量的上下行明细只在宽屏显示
+  @media (max-width: 768px) {
+    display: none;
+  }
+}

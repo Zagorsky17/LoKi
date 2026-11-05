@@ -1,0 +1,156 @@
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  height: 112px;
+  margin-bottom: 8px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: var(--color-card);
+  border: 1px solid var(--color-card-border);
+  box-shadow: var(--shadow-card);
+  cursor: pointer;
+  overflow: hidden;
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease;
+
+  &:hover {
+    border-color: var(--color-focus-blue);
+  }
+
+  &:active {
+    transform: scale(0.99);
+  }
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  min-width: 0;
+}
+
+.dot {
+  flex: 0 0 7px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--color-text-secondary);
+  opacity: 0.4;
+}
+
+.dotBusy {
+  background: var(--color-success);
+  opacity: 1;
+}
+
+.host {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--color-text-highlight);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.time {
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  color: var(--color-text-secondary);
+}
+
+.chip {
+  padding: 3px 8px;
+  border-radius: 7px;
+  font-size: 0.68rem;
+  white-space: nowrap;
+}
+
+.chipTcp {
+  background: var(--color-accent-soft-bg);
+  color: var(--color-accent-soft-fg);
+}
+
+.chipUdp {
+  background: var(--color-udp-bg);
+  color: var(--color-udp-fg);
+}
+
+.totals {
+  display: flex;
+  gap: 12px;
+  margin-left: auto;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-secondary);
+
+  span {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+  }
+}
+
+.chain {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  font-size: 0.74rem;
+  color: var(--color-text-secondary);
+}
+
+.rule {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.arrow {
+  flex-shrink: 0;
+  opacity: 0.55;
+}
+
+.node {
+  font-weight: 500;
+  color: var(--color-focus-blue);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.speedAndAction {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.speed {
+  font-size: 0.74rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-success);
+}
+
+.closeBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 50%;
+  background: var(--color-badge-bg);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+
+  &:hover {
+    background: var(--color-danger-soft-bg);
+    color: var(--color-danger);
+  }
+}

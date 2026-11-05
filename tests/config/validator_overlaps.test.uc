@@ -18,7 +18,7 @@ t.test("either external field warns without refusing the section or removing its
         t.contains(result.logs[0], "same source");
         t.excludes(result.logs[0], "https://");
         fixture.seed({ ...data, settings: fixture.settings() });
-        let config = generator.build({ service_address: "127.0.0.1" });
+        let config = generator.build({ controller_secret: fixture.CONTROLLER_SECRET, service_address: "127.0.0.1" });
         t.eq(length(filter(config.route.rule_set, (item) => item.url == lists.community_url("telegram"))), 2);
     }
 });

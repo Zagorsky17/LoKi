@@ -80,14 +80,25 @@ function show_config(visibility) {
 
 function show_sing_box_config(visibility) {
     let data = fs.readfile(sing_box_config_path());
-    if (data == null || visibility == "raw")
+    if (data == null)
         return data;
     let config = common.parse_json(data);
-    return mask.names(sprintf("%.2J\n", mask.sing_box_config(config)), mask.hosts(config));
+    if (type(config) != "object")
+        die("The loki-core configuration is not a valid JSON object");
+    let controller_secret = config.experimental?.clash_api?.secret;
+    if (type(controller_secret) == "string" && controller_secret != "") {
+        config.experimental.clash_api.secret = "SERVER_ONLY";
+        data = sprintf("%.2J\n", config);
+    }
+    let output = visibility == "raw" ? data : mask.names(sprintf("%.2J\n", mask.sing_box_config(config)), mask.hosts(config));
+    // A raw browser export retains user credentials, never the internal controller credential.
+    if (type(controller_secret) == "string" && match(controller_secret, /^[a-f0-9]{64}$/))
+        output = join("SERVER_ONLY", split(output, controller_secret));
+    return output;
 }
 
 function logs() {
-    return exec.output([ "logread", "-e", constants.LOKI_LOG_PATTERN ]) ?? "";
+    return require("service.gateway_secret").redactor()(exec.output([ "logread", "-e", constants.LOKI_LOG_PATTERN ]) ?? "");
 }
 
 return { paths, status, system_info, show_config, show_sing_box_config, logs };

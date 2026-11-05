@@ -1,0 +1,3819 @@
+diff --git a/cmd/sing-box/cmd_gateway_linux.go b/cmd/sing-box/cmd_gateway_linux.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..a93342502092b9d11b85283dbe380d572817f531
+--- /dev/null
++++ b/cmd/sing-box/cmd_gateway_linux.go
+@@ -0,0 +1,21 @@
++// Modified for LoKi on 2026-11-05: keep the authenticated dashboard independent of routing.
++package main
++
++import (
++	"context"
++	"os"
++	"os/signal"
++	"syscall"
++
++	"github.com/sagernet/sing-box/common/lokigateway"
++	"github.com/spf13/cobra"
++)
++
++func init() {
++	mainCommand.AddCommand(&cobra.Command{Use: "gateway", Short: "Serve the authenticated HTTPS dashboard gateway", Args: cobra.NoArgs,
++		RunE: func(cmd *cobra.Command, args []string) error {
++			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
++			defer stop()
++			return lokigateway.Run(ctx)
++		}})
++}
+diff --git a/common/lokicontroller/controller.go b/common/lokicontroller/controller.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..e17fc78d9763d3b817f778336fffe6a0450b22b7
+--- /dev/null
++++ b/common/lokicontroller/controller.go
+@@ -0,0 +1,8 @@
++package lokicontroller
++
++import "errors"
++
++const Path = "/tmp/loki/controller.sock"
++const Address = "loki-controller:80"
++
++var errPrivateController = errors.New("private LoKi controller is unsafe or unavailable")
+diff --git a/common/lokicontroller/controller_linux.go b/common/lokicontroller/controller_linux.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..e0300e2a8c1e97ed6085abaa4c6985dd48cf8610
+--- /dev/null
++++ b/common/lokicontroller/controller_linux.go
+@@ -0,0 +1,256 @@
++package lokicontroller
++
++import (
++	"context"
++	"errors"
++	"fmt"
++	"io"
++	"net"
++	"os"
++	"path/filepath"
++	"strings"
++	"sync"
++	"syscall"
++	"time"
++)
++
++func privateDirectory(directory string, uid uint32, create bool) error {
++	if !filepath.IsAbs(directory) || filepath.Clean(directory) != directory {
++		return errPrivateController
++	}
++	current := "/"
++	for _, part := range strings.Split(strings.TrimPrefix(directory, "/"), "/") {
++		current = filepath.Join(current, part)
++		info, err := os.Lstat(current)
++		if errors.Is(err, os.ErrNotExist) && create && current == directory {
++			if err = os.Mkdir(current, 0o700); err != nil && !errors.Is(err, os.ErrExist) {
++				return errPrivateController
++			}
++			info, err = os.Lstat(current)
++		}
++		if err != nil || !info.IsDir() {
++			return errPrivateController
++		}
++		stat, ok := info.Sys().(*syscall.Stat_t)
++		if !ok || stat.Uid != 0 && stat.Uid != uid ||
++			info.Mode().Perm()&0o022 != 0 && !(stat.Uid == 0 && info.Mode()&os.ModeSticky != 0) ||
++			current == directory && (stat.Uid != uid || info.Mode().Perm() != 0o700) {
++			return errPrivateController
++		}
++	}
++	return nil
++}
++
++func privateFile(file *os.File, uid uint32, limit int64) (os.FileInfo, error) {
++	info, err := file.Stat()
++	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm() != 0o600 || info.Size() > limit {
++		return nil, errPrivateController
++	}
++	stat, ok := info.Sys().(*syscall.Stat_t)
++	if !ok || stat.Uid != uid || stat.Nlink != 1 {
++		return nil, errPrivateController
++	}
++	return info, nil
++}
++
++func socketInfo(path string, uid uint32) (os.FileInfo, error) {
++	info, err := os.Lstat(path)
++	if err != nil {
++		return nil, err
++	}
++	stat, ok := info.Sys().(*syscall.Stat_t)
++	if !ok || info.Mode()&os.ModeSocket == 0 || info.Mode().Perm() != 0o600 || stat.Uid != uid || stat.Nlink != 1 {
++		return nil, errPrivateController
++	}
++	return info, nil
++}
++
++func peerOwner(connection *net.UnixConn, uid uint32) error {
++	raw, err := connection.SyscallConn()
++	if err != nil {
++		return errPrivateController
++	}
++	var credential *syscall.Ucred
++	var inspectErr error
++	err = raw.Control(func(fd uintptr) {
++		credential, inspectErr = syscall.GetsockoptUcred(int(fd), syscall.SOL_SOCKET, syscall.SO_PEERCRED)
++	})
++	if err != nil || inspectErr != nil || credential == nil || credential.Uid != uid || credential.Pid <= 0 {
++		return errPrivateController
++	}
++	return nil
++}
++
++func dial(ctx context.Context, path string, uid uint32) (net.Conn, error) {
++	directory := filepath.Dir(path)
++	if privateDirectory(directory, uid, false) != nil {
++		return nil, errPrivateController
++	}
++	before, err := socketInfo(path, uid)
++	if err != nil {
++		return nil, errPrivateController
++	}
++	connection, err := (&net.Dialer{Timeout: 2 * time.Second}).DialContext(ctx, "unix", path)
++	if err != nil {
++		return nil, errPrivateController
++	}
++	after, err := socketInfo(path, uid)
++	if err != nil || !os.SameFile(before, after) || privateDirectory(directory, uid, false) != nil ||
++		peerOwner(connection.(*net.UnixConn), uid) != nil {
++		connection.Close()
++		return nil, errPrivateController
++	}
++	return connection, nil
++}
++
++func DialContext(ctx context.Context, network, address string) (net.Conn, error) {
++	if os.Geteuid() != 0 || network != "tcp" || address != Address {
++		return nil, errPrivateController
++	}
++	return dial(ctx, Path, 0)
++}
++
++func ownerRecord(info os.FileInfo) string {
++	stat := info.Sys().(*syscall.Stat_t)
++	return fmt.Sprintf("loki-controller-1 %d %d\n", stat.Dev, stat.Ino)
++}
++
++func readOwner(path string, uid uint32) (string, error) {
++	file, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
++	if errors.Is(err, os.ErrNotExist) {
++		return "", nil
++	}
++	if err != nil {
++		return "", errPrivateController
++	}
++	defer file.Close()
++	if _, err = privateFile(file, uid, 128); err != nil {
++		return "", err
++	}
++	data, err := io.ReadAll(io.LimitReader(file, 129))
++	var device, inode uint64
++	text := string(data)
++	if _, scanErr := fmt.Sscanf(text, "loki-controller-1 %d %d\n", &device, &inode); err != nil || scanErr != nil ||
++		inode == 0 || text != fmt.Sprintf("loki-controller-1 %d %d\n", device, inode) {
++		return "", errPrivateController
++	}
++	return text, nil
++}
++
++func writeOwner(path, text string) error {
++	file, err := os.CreateTemp(filepath.Dir(path), ".controller-owner-")
++	if err != nil {
++		return errPrivateController
++	}
++	defer os.Remove(file.Name())
++	_, err = io.WriteString(file, text)
++	if err == nil {
++		err = file.Sync()
++	}
++	closeErr := file.Close()
++	if err != nil || closeErr != nil || os.Rename(file.Name(), path) != nil {
++		return errPrivateController
++	}
++	return nil
++}
++
++type privateListener struct {
++	*net.UnixListener
++	lock *os.File
++	path string
++	info os.FileInfo
++	uid  uint32
++	once sync.Once
++	err  error
++}
++
++func (listener *privateListener) Accept() (net.Conn, error) {
++	for {
++		connection, err := listener.AcceptUnix()
++		if err != nil {
++			return nil, err
++		}
++		if peerOwner(connection, listener.uid) == nil {
++			return connection, nil
++		}
++		connection.Close()
++	}
++}
++
++func (listener *privateListener) Close() error {
++	listener.once.Do(func() {
++		listener.err = listener.UnixListener.Close()
++		if current, err := socketInfo(listener.path, listener.uid); err == nil && os.SameFile(listener.info, current) {
++			os.Remove(listener.path)
++		}
++		listener.lock.Close()
++	})
++	return listener.err
++}
++
++func listen(path string, uid uint32) (net.Listener, error) {
++	directory := filepath.Dir(path)
++	if privateDirectory(directory, uid, true) != nil {
++		return nil, errPrivateController
++	}
++	lock, err := os.OpenFile(path+".lock", os.O_RDWR|os.O_CREATE|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0o600)
++	if err != nil {
++		return nil, errPrivateController
++	}
++	failed := true
++	defer func() {
++		if failed {
++			lock.Close()
++		}
++	}()
++	if _, err = privateFile(lock, uid, 0); err != nil || syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB) != nil {
++		return nil, errPrivateController
++	}
++	owner, err := readOwner(path+".owner", uid)
++	if err != nil {
++		return nil, err
++	}
++	previous, err := socketInfo(path, uid)
++	if err == nil {
++		if owner != ownerRecord(previous) {
++			return nil, errPrivateController
++		}
++		probe, probeErr := net.DialTimeout("unix", path, 250*time.Millisecond)
++		if probeErr == nil {
++			probe.Close()
++			return nil, errPrivateController
++		}
++		current, inspectErr := socketInfo(path, uid)
++		if !errors.Is(probeErr, syscall.ECONNREFUSED) || inspectErr != nil || !os.SameFile(previous, current) || os.Remove(path) != nil {
++			return nil, errPrivateController
++		}
++	} else if !errors.Is(err, os.ErrNotExist) {
++		return nil, errPrivateController
++	}
++	listener, err := net.ListenUnix("unix", &net.UnixAddr{Name: path, Net: "unix"})
++	if err != nil {
++		return nil, errPrivateController
++	}
++	listener.SetUnlinkOnClose(false)
++	info, err := os.Lstat(path)
++	if err != nil || os.Chmod(path, 0o600) != nil {
++		listener.Close()
++		return nil, errPrivateController
++	}
++	if writeOwner(path+".owner", ownerRecord(info)) != nil {
++		listener.Close()
++		if current, inspectErr := os.Lstat(path); inspectErr == nil && os.SameFile(info, current) {
++			os.Remove(path)
++		}
++		return nil, errPrivateController
++	}
++	failed = false
++	return &privateListener{UnixListener: listener, lock: lock, path: path, info: info, uid: uid}, nil
++}
++
++func Listen() (net.Listener, error) {
++	if os.Geteuid() != 0 {
++		return nil, errPrivateController
++	}
++	return listen(Path, 0)
++}
+diff --git a/common/lokicontroller/controller_linux_test.go b/common/lokicontroller/controller_linux_test.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..fbd85706cd8326af01e00e38b7607a61a4bb9a54
+--- /dev/null
++++ b/common/lokicontroller/controller_linux_test.go
+@@ -0,0 +1,207 @@
++package lokicontroller
++
++import (
++	"context"
++	"io"
++	"net"
++	"os"
++	"path/filepath"
++	"syscall"
++	"testing"
++	"time"
++)
++
++func controllerPath(t *testing.T) string {
++	t.Helper()
++	directory, err := os.MkdirTemp("", "loki-ctl-")
++	if err != nil {
++		t.Fatal(err)
++	}
++	t.Cleanup(func() { os.RemoveAll(directory) })
++	return filepath.Join(directory, "controller.sock")
++}
++
++func TestPrivateControllerLifecycleAndPeerIdentity(t *testing.T) {
++	path := controllerPath(t)
++	uid := uint32(os.Geteuid())
++	listener, err := listen(path, uid)
++	if err != nil {
++		t.Fatal(err)
++	}
++	t.Cleanup(func() { listener.Close() })
++	if _, err := socketInfo(path, uid); err != nil {
++		t.Fatal("socket is not private")
++	}
++	before, _ := os.Lstat(path)
++	if duplicate, err := listen(path, uid); err == nil {
++		duplicate.Close()
++		t.Fatal("parallel listener replaced the live controller")
++	}
++	after, _ := os.Lstat(path)
++	if !os.SameFile(before, after) {
++		t.Fatal("parallel start changed the endpoint")
++	}
++	done := make(chan error, 1)
++	go func() {
++		connection, err := listener.Accept()
++		if err == nil {
++			defer connection.Close()
++			connection.SetDeadline(time.Now().Add(time.Second))
++			_, err = io.CopyN(connection, connection, 4)
++		}
++		done <- err
++	}()
++	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
++	defer cancel()
++	connection, err := dial(ctx, path, uid)
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer connection.Close()
++	connection.SetDeadline(time.Now().Add(time.Second))
++	if peerOwner(connection.(*net.UnixConn), uid+1) == nil {
++		t.Fatal("wrong peer UID accepted")
++	}
++	if _, err := connection.Write([]byte("ping")); err != nil {
++		t.Fatal(err)
++	}
++	data := make([]byte, 4)
++	if _, err := io.ReadFull(connection, data); err != nil || string(data) != "ping" {
++		t.Fatal("private exchange failed", err)
++	}
++	if err := <-done; err != nil {
++		t.Fatal(err)
++	}
++	if err := listener.Close(); err != nil {
++		t.Fatal(err)
++	}
++	if _, err := os.Lstat(path); !os.IsNotExist(err) {
++		t.Fatal("closed endpoint remains")
++	}
++	restarted, err := listen(path, uid)
++	if err != nil {
++		t.Fatal("normal restart refused", err)
++	}
++	restarted.Close()
++}
++
++func TestRecordedCrashEndpointCanRecoverButAnUnknownSocketIsPreserved(t *testing.T) {
++	uid := uint32(os.Geteuid())
++	path := controllerPath(t)
++	listener, err := listen(path, uid)
++	if err != nil {
++		t.Fatal(err)
++	}
++	// A killed process closes descriptors without running the listener's cleanup.
++	dead := listener.(*privateListener)
++	dead.UnixListener.Close()
++	dead.lock.Close()
++	recovered, err := listen(path, uid)
++	if err != nil {
++		t.Fatal("recorded stale endpoint refused", err)
++	}
++	recovered.Close()
++	unknown := controllerPath(t)
++	foreign, err := net.ListenUnix("unix", &net.UnixAddr{Name: unknown, Net: "unix"})
++	if err != nil {
++		t.Fatal(err)
++	}
++	foreign.SetUnlinkOnClose(false)
++	foreign.Close()
++	if err := os.Chmod(unknown, 0o600); err != nil {
++		t.Fatal(err)
++	}
++	before, _ := os.Lstat(unknown)
++	if candidate, err := listen(unknown, uid); err == nil {
++		candidate.Close()
++		t.Fatal("unknown stale endpoint was removed")
++	}
++	after, err := os.Lstat(unknown)
++	if err != nil || !os.SameFile(before, after) {
++		t.Fatal("unknown endpoint was changed")
++	}
++}
++
++func TestUnsafePrivateControllerStorageAndRecordsAreRefusedWithoutRepair(t *testing.T) {
++	uid := uint32(os.Geteuid())
++	for _, kind := range []string{"directory", "file", "symlink", "fifo", "lock-mode", "lock-link", "lock-content", "owner-invalid", "owner-symlink"} {
++		t.Run(kind, func(t *testing.T) {
++			path := controllerPath(t)
++			var err error
++			switch kind {
++			case "directory":
++				err = os.Chmod(filepath.Dir(path), 0o755)
++			case "file":
++				err = os.WriteFile(path, []byte("user data"), 0o600)
++			case "symlink":
++				err = os.Symlink("unrelated", path)
++			case "fifo":
++				err = syscall.Mkfifo(path, 0o600)
++			case "lock-mode":
++				err = os.WriteFile(path+".lock", nil, 0o644)
++			case "lock-content":
++				err = os.WriteFile(path+".lock", []byte("user data"), 0o600)
++			case "lock-link":
++				err = os.WriteFile(path+".keep", nil, 0o600)
++				if err == nil {
++					err = os.Link(path+".keep", path+".lock")
++				}
++			case "owner-invalid":
++				err = os.WriteFile(path+".owner", []byte("unknown state"), 0o600)
++			case "owner-symlink":
++				err = os.Symlink("unrelated", path+".owner")
++			}
++			if err != nil {
++				t.Fatal(err)
++			}
++			before, _ := os.Lstat(path)
++			if listener, err := listen(path, uid); err == nil {
++				listener.Close()
++				t.Fatal("unsafe controller storage accepted")
++			}
++			after, afterErr := os.Lstat(path)
++			if before != nil && (afterErr != nil || !os.SameFile(before, after) || before.Mode() != after.Mode()) {
++				t.Fatal("unsafe endpoint was repaired or removed")
++			}
++		})
++	}
++}
++
++func TestPrivateControllerDialRejectsWrongModeAndClosePreservesAReplacement(t *testing.T) {
++	path := controllerPath(t)
++	uid := uint32(os.Geteuid())
++	listener, err := listen(path, uid)
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer listener.Close()
++	if err := os.Chmod(path, 0o666); err != nil {
++		t.Fatal(err)
++	}
++	if connection, err := dial(context.Background(), path, uid); err == nil {
++		connection.Close()
++		t.Fatal("unsafe endpoint accepted")
++	}
++	if err := os.Chmod(path, 0o600); err != nil {
++		t.Fatal(err)
++	}
++	if err := os.Rename(path, path+".moved"); err != nil {
++		t.Fatal(err)
++	}
++	if err := os.WriteFile(path, []byte("unrelated replacement"), 0o600); err != nil {
++		t.Fatal(err)
++	}
++	listener.Close()
++	if data, err := os.ReadFile(path); err != nil || string(data) != "unrelated replacement" {
++		t.Fatal("close removed a replacement")
++	}
++}
++
++func TestPublicControllerDialNeverSelectsAnArbitraryNetworkDestination(t *testing.T) {
++	for _, value := range []struct{ network, address string }{{"udp", Address}, {"tcp", "127.0.0.1:9092"}, {"tcp", "attacker.invalid:443"}} {
++		if connection, err := DialContext(context.Background(), value.network, value.address); err == nil {
++			connection.Close()
++			t.Fatal("arbitrary destination accepted")
++		}
++	}
++}
+diff --git a/common/lokicontroller/controller_other.go b/common/lokicontroller/controller_other.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..b65f1c43795acca4ed8441e3775ae60228b768a8
+--- /dev/null
++++ b/common/lokicontroller/controller_other.go
+@@ -0,0 +1,11 @@
++//go:build !linux
++
++package lokicontroller
++
++import (
++	"context"
++	"net"
++)
++
++func Listen() (net.Listener, error)                                 { return nil, errPrivateController }
++func DialContext(context.Context, string, string) (net.Conn, error) { return nil, errPrivateController }
+diff --git a/common/lokigateway/auth.go b/common/lokigateway/auth.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..eb8cac971f149a3c478ffcdde6ac48faba2d11e3
+--- /dev/null
++++ b/common/lokigateway/auth.go
+@@ -0,0 +1,101 @@
++// Modified for LoKi on 2026-11-05: check live RPC permissions without exposing session credentials.
++package lokigateway
++
++import (
++	"context"
++	"errors"
++	"io"
++	"os/exec"
++	"strings"
++	"time"
++)
++
++var (
++	errAuthUnavailable = errors.New("session permission check unavailable")
++	errAuthBusy        = errors.New("session permission check busy")
++)
++
++const authProgram = "/usr/bin/ucode"
++const authScript = `exit(require("service.gateway_auth").main());`
++
++type sessionAuthorizer struct {
++	slots   chan struct{}
++	command func(context.Context) *exec.Cmd
++}
++
++func newSessionAuthorizer() *sessionAuthorizer {
++	return &sessionAuthorizer{
++		slots: make(chan struct{}, 4),
++		command: func(ctx context.Context) *exec.Cmd {
++			return exec.CommandContext(ctx, authProgram, "-L", "/usr/lib/loki", "-e", authScript)
++		},
++	}
++}
++
++func validSession(value string) bool {
++	if len(value) != 32 || value == "00000000000000000000000000000000" {
++		return false
++	}
++	for _, c := range value {
++		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
++			return false
++		}
++	}
++	return true
++}
++
++type authReply struct {
++	value byte
++	size  int
++}
++
++func (reply *authReply) Write(data []byte) (int, error) {
++	if reply.size+len(data) > 1 {
++		return 0, errAuthUnavailable
++	}
++	if len(data) != 0 {
++		reply.value = data[0]
++		reply.size++
++	}
++	return len(data), nil
++}
++
++func (authorizer *sessionAuthorizer) allowed(parent context.Context, session string, write bool) (bool, error) {
++	if !validSession(session) {
++		return false, nil
++	}
++	select {
++	case authorizer.slots <- struct{}{}:
++		defer func() { <-authorizer.slots }()
++	default:
++		return false, errAuthBusy
++	}
++	ctx, cancel := context.WithTimeout(parent, 1500*time.Millisecond)
++	defer cancel()
++	command := authorizer.command(ctx)
++	command.Dir = "/"
++	command.Env = []string{"PATH=/usr/sbin:/usr/bin:/sbin:/bin", "LANG=C", "LC_ALL=C"}
++	role := "r"
++	if write {
++		role = "w"
++	}
++	command.Stdin = strings.NewReader(session + " " + role)
++	var reply authReply
++	command.Stdout = &reply
++	command.Stderr = io.Discard
++	command.WaitDelay = 250 * time.Millisecond
++	err := command.Run()
++	if reply.size != 1 {
++		return false, errAuthUnavailable
++	}
++	if reply.value == '1' && err == nil {
++		return true, nil
++	}
++	if reply.value == '0' {
++		var exit *exec.ExitError
++		if errors.As(err, &exit) && exit.ExitCode() == 1 {
++			return false, nil
++		}
++	}
++	return false, errAuthUnavailable
++}
+diff --git a/common/lokigateway/auth_test.go b/common/lokigateway/auth_test.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..b4df12f0b34a8a5dc9536970a40e7b3aa8870bf9
+--- /dev/null
++++ b/common/lokigateway/auth_test.go
+@@ -0,0 +1,180 @@
++package lokigateway
++
++import (
++	"context"
++	"errors"
++	"io"
++	"os"
++	"os/exec"
++	"path/filepath"
++	"strconv"
++	"strings"
++	"sync/atomic"
++	"testing"
++	"time"
++)
++
++const testSession = "1234567890abcdef1234567890abcdef"
++
++func TestAuthHelperProcess(t *testing.T) {
++	if len(os.Args) < 3 || os.Args[len(os.Args)-2] != "loki-auth-test-helper" {
++		return
++	}
++	mode := os.Args[len(os.Args)-1]
++	input, err := io.ReadAll(io.LimitReader(os.Stdin, 35))
++	if err != nil || string(input) != testSession+" "+os.Args[len(os.Args)-4] {
++		os.Exit(7)
++	}
++	if strings.Contains(strings.Join(os.Args, " "), testSession) ||
++		strings.Contains(strings.Join(os.Environ(), " "), testSession) || os.Getenv("LOKI_AUTH_PRIVATE_CANARY") != "" {
++		os.Exit(8)
++	}
++	if err := os.WriteFile(os.Args[len(os.Args)-3], []byte("started"), 0o600); err != nil {
++		os.Exit(10)
++	}
++	switch mode {
++	case "allow":
++		io.WriteString(os.Stdout, "1")
++		os.Exit(0)
++	case "deny":
++		io.WriteString(os.Stdout, "0")
++		os.Exit(1)
++	case "ambiguous":
++		io.WriteString(os.Stdout, "1\n")
++		os.Exit(0)
++	case "wrong-status":
++		io.WriteString(os.Stdout, "1")
++		os.Exit(2)
++	case "private":
++		io.WriteString(os.Stdout, testSession)
++		io.WriteString(os.Stderr, testSession)
++		os.Exit(0)
++	case "wait":
++		time.Sleep(10 * time.Second)
++	}
++	os.Exit(9)
++}
++
++func authorizerForTest(t *testing.T, mode string, write bool) (*sessionAuthorizer, string) {
++	t.Helper()
++	executable, err := os.Executable()
++	if err != nil {
++		t.Fatal(err)
++	}
++	result := newSessionAuthorizer()
++	directory := t.TempDir()
++	var sequence atomic.Uint32
++	role := "r"
++	if write {
++		role = "w"
++	}
++	result.command = func(ctx context.Context) *exec.Cmd {
++		return exec.CommandContext(ctx, executable, "-test.run=^TestAuthHelperProcess$", role, filepath.Join(directory, strconv.Itoa(int(sequence.Add(1)))), "loki-auth-test-helper", mode)
++	}
++	return result, directory
++}
++
++func TestInvalidSessionsNeverStartAHelper(t *testing.T) {
++	instance := newSessionAuthorizer()
++	instance.command = func(context.Context) *exec.Cmd { t.Fatal("unexpected helper"); return nil }
++	for _, session := range []string{"", "0", strings.Repeat("0", 32), testSession + "\n", strings.ToUpper(testSession), strings.Repeat("g", 32)} {
++		allowed, err := instance.allowed(context.Background(), session, false)
++		if allowed || err != nil {
++			t.Fatalf("invalid credential accepted: %v %v", allowed, err)
++		}
++	}
++}
++
++func TestLiveReadAndWriteResultsKeepCredentialsOffArgumentsAndEnvironment(t *testing.T) {
++	t.Setenv("LOKI_AUTH_PRIVATE_CANARY", testSession)
++	for _, write := range []bool{false, true} {
++		for _, mode := range []string{"allow", "deny"} {
++			instance, _ := authorizerForTest(t, mode, write)
++			allowed, err := instance.allowed(context.Background(), testSession, write)
++			if allowed != (mode == "allow") || err != nil {
++				t.Fatalf("unexpected %s result: %v %v", mode, allowed, err)
++			}
++		}
++	}
++}
++
++func TestMalformedOutputAndExitStatusNeverAuthorize(t *testing.T) {
++	for _, mode := range []string{"ambiguous", "wrong-status", "private", "unknown"} {
++		instance, _ := authorizerForTest(t, mode, false)
++		allowed, err := instance.allowed(context.Background(), testSession, false)
++		if allowed || !errors.Is(err, errAuthUnavailable) {
++			t.Fatalf("unexpected %s result", mode)
++		}
++		if strings.Contains(err.Error(), testSession) {
++			t.Fatal("credential disclosed")
++		}
++	}
++}
++
++func waitForHelpers(t *testing.T, directory string, count int) {
++	t.Helper()
++	deadline := time.Now().Add(time.Second)
++	for time.Now().Before(deadline) {
++		files, err := os.ReadDir(directory)
++		if err == nil && len(files) == count {
++			return
++		}
++		time.Sleep(time.Millisecond)
++	}
++	t.Fatal("owned helpers did not prove startup")
++}
++
++func TestCancellationEndsTheOwnedHelperAndReleasesItsSlot(t *testing.T) {
++	instance, directory := authorizerForTest(t, "wait", false)
++	ctx, cancel := context.WithCancel(context.Background())
++	defer cancel()
++	done := make(chan error, 1)
++	go func() {
++		allowed, err := instance.allowed(ctx, testSession, false)
++		if allowed {
++			done <- errors.New("canceled request authorized")
++			return
++		}
++		done <- err
++	}()
++	waitForHelpers(t, directory, 1)
++	start := time.Now()
++	cancel()
++	if err := <-done; !errors.Is(err, errAuthUnavailable) {
++		t.Fatal("unexpected cancellation result")
++	}
++	if time.Since(start) > time.Second || len(instance.slots) != 0 {
++		t.Fatal("helper or slot was retained")
++	}
++}
++
++func TestSaturationDoesNotStartAnotherHelper(t *testing.T) {
++	instance, directory := authorizerForTest(t, "wait", true)
++	ctx, cancel := context.WithCancel(context.Background())
++	defer cancel()
++	done := make(chan error, 4)
++	for i := 0; i < 4; i++ {
++		go func() {
++			allowed, err := instance.allowed(ctx, testSession, true)
++			if allowed {
++				done <- errors.New("waiting helper authorized")
++				return
++			}
++			done <- err
++		}()
++	}
++	waitForHelpers(t, directory, 4)
++	allowed, err := instance.allowed(context.Background(), testSession, true)
++	if allowed || !errors.Is(err, errAuthBusy) {
++		t.Fatal("saturated check accepted")
++	}
++	cancel()
++	for i := 0; i < 4; i++ {
++		if err := <-done; !errors.Is(err, errAuthUnavailable) {
++			t.Fatal("unexpected teardown result")
++		}
++	}
++	if len(instance.slots) != 0 {
++		t.Fatal("slot was retained")
++	}
++}
+diff --git a/common/lokigateway/config_linux.go b/common/lokigateway/config_linux.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..55aef5a13129fd8fde6c07d6b631c157105f54b7
+--- /dev/null
++++ b/common/lokigateway/config_linux.go
+@@ -0,0 +1,223 @@
++// Modified for LoKi on 2026-11-05: read the gateway's private boot state without following links.
++package lokigateway
++
++import (
++	"bytes"
++	"encoding/json"
++	"errors"
++	"io"
++	"net"
++	"net/netip"
++	"os"
++	"path/filepath"
++	"strconv"
++	"strings"
++	"syscall"
++	"unicode"
++	"unicode/utf8"
++)
++
++const gatewayDirectory = "/tmp/loki"
++const gatewayPort = 9091
++
++var errGatewayConfig = errors.New("private gateway configuration is unsafe, incomplete or unavailable")
++
++type gatewayConfig struct {
++	Listen      []string
++	Hosts       []string
++	LuCIPorts   []int
++	Certificate string
++	Key         string
++}
++
++func canonicalPath(path string) bool {
++	return filepath.IsAbs(path) && path == filepath.Clean(path) && utf8.ValidString(path) && strings.IndexFunc(path, unicode.IsControl) < 0
++}
++
++func statIdentity(info os.FileInfo) (*syscall.Stat_t, bool) {
++	value, ok := info.Sys().(*syscall.Stat_t)
++	return value, ok && value.Uid == uint32(os.Geteuid())
++}
++
++func sameStorageSnapshot(first, last *syscall.Stat_t) bool {
++	return last.Dev == first.Dev && last.Ino == first.Ino && last.Mode == first.Mode && last.Uid == first.Uid &&
++		last.Gid == first.Gid && last.Nlink == first.Nlink && last.Size == first.Size && last.Mtim == first.Mtim && last.Ctim == first.Ctim
++}
++
++func readPrivate(directory, name string, limit int64) ([]byte, error) {
++	if !canonicalPath(directory) || name == "" || filepath.Base(name) != name || name == "." || name == ".." {
++		return nil, errGatewayConfig
++	}
++	before, err := os.Lstat(directory)
++	if err != nil || !before.IsDir() || before.Mode().Perm() != 0o700 {
++		return nil, errGatewayConfig
++	}
++	initial, ok := statIdentity(before)
++	if !ok {
++		return nil, errGatewayConfig
++	}
++	root, err := os.OpenRoot(directory)
++	if err != nil {
++		return nil, errGatewayConfig
++	}
++	defer root.Close()
++	anchored, err := root.Stat(".")
++	if err != nil || !os.SameFile(before, anchored) || anchored.Mode() != before.Mode() {
++		return nil, errGatewayConfig
++	}
++	current, ok := statIdentity(anchored)
++	if !ok || current.Dev != initial.Dev || current.Ino != initial.Ino {
++		return nil, errGatewayConfig
++	}
++	file, err := root.OpenFile(name, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
++	if err != nil {
++		return nil, errGatewayConfig
++	}
++	defer file.Close()
++	info, err := file.Stat()
++	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm() != 0o600 || info.Size() <= 0 || info.Size() > limit {
++		return nil, errGatewayConfig
++	}
++	first, ok := statIdentity(info)
++	if !ok || first.Nlink != 1 {
++		return nil, errGatewayConfig
++	}
++	data, err := io.ReadAll(io.LimitReader(file, limit+1))
++	if err != nil || int64(len(data)) != info.Size() {
++		return nil, errGatewayConfig
++	}
++	lastInfo, err := file.Stat()
++	if err != nil {
++		return nil, errGatewayConfig
++	}
++	last, ok := statIdentity(lastInfo)
++	if !ok || !sameStorageSnapshot(first, last) {
++		return nil, errGatewayConfig
++	}
++	named, err := root.Lstat(name)
++	if err != nil || !named.Mode().IsRegular() || !os.SameFile(info, named) {
++		return nil, errGatewayConfig
++	}
++	return data, nil
++}
++
++func canonicalHost(host string) bool {
++	if address, err := netip.ParseAddr(host); err == nil {
++		return address.Zone() == "" && !address.Is4In6() && !address.IsUnspecified() && !address.IsMulticast() && host == address.String()
++	}
++	if host == "" || len(host) > 253 || strings.Trim(host, "0123456789.") == "" {
++		return false
++	}
++	for _, label := range strings.Split(host, ".") {
++		if label == "" || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
++			return false
++		}
++		for _, c := range label {
++			if !(c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '-') {
++				return false
++			}
++		}
++	}
++	return true
++}
++
++func decodeGatewayConfig(data []byte) (gatewayConfig, error) {
++	var cfg gatewayConfig
++	if len(data) > 16384 || !utf8.Valid(data) {
++		return cfg, errGatewayConfig
++	}
++	decoder := json.NewDecoder(bytes.NewReader(data))
++	start, err := decoder.Token()
++	if err != nil || start != json.Delim('{') {
++		return cfg, errGatewayConfig
++	}
++	seen := make(map[string]bool)
++	for decoder.More() {
++		token, err := decoder.Token()
++		name, ok := token.(string)
++		if err != nil || !ok || seen[name] {
++			return cfg, errGatewayConfig
++		}
++		seen[name] = true
++		switch name {
++		case "format":
++			var format string
++			err = decoder.Decode(&format)
++			if format != "loki-gateway-1" {
++				return cfg, errGatewayConfig
++			}
++		case "listen":
++			err = decoder.Decode(&cfg.Listen)
++		case "hosts":
++			err = decoder.Decode(&cfg.Hosts)
++		case "luci_https_ports":
++			err = decoder.Decode(&cfg.LuCIPorts)
++		case "certificate":
++			err = decoder.Decode(&cfg.Certificate)
++		case "key":
++			err = decoder.Decode(&cfg.Key)
++		default:
++			return cfg, errGatewayConfig
++		}
++		if err != nil {
++			return cfg, errGatewayConfig
++		}
++	}
++	end, err := decoder.Token()
++	if err != nil || end != json.Delim('}') || decoder.Decode(new(any)) != io.EOF || len(seen) != 6 {
++		return cfg, errGatewayConfig
++	}
++	if len(cfg.Listen) == 0 || len(cfg.Listen) > 16 ||
++		len(cfg.Hosts) == 0 || len(cfg.Hosts) > 16 || len(cfg.LuCIPorts) == 0 || len(cfg.LuCIPorts) > 8 ||
++		!canonicalPath(cfg.Certificate) || !canonicalPath(cfg.Key) {
++		return cfg, errGatewayConfig
++	}
++	hosts := make(map[string]bool)
++	for _, host := range cfg.Hosts {
++		if !canonicalHost(host) || hosts[host] {
++			return cfg, errGatewayConfig
++		}
++		hosts[host] = true
++	}
++	listeners := make(map[string]bool)
++	for _, listen := range cfg.Listen {
++		host, port, err := net.SplitHostPort(listen)
++		address, parseErr := netip.ParseAddr(host)
++		if err != nil || parseErr != nil || address.Zone() != "" || address.Is4In6() || address.IsMulticast() ||
++			port != strconv.Itoa(gatewayPort) || net.JoinHostPort(address.String(), port) != listen ||
++			!hosts[address.String()] || listeners[listen] {
++			return cfg, errGatewayConfig
++		}
++		listeners[listen] = true
++	}
++	ports := make(map[int]bool)
++	for _, port := range cfg.LuCIPorts {
++		if port < 1 || port > 65535 || ports[port] {
++			return cfg, errGatewayConfig
++		}
++		ports[port] = true
++	}
++	return cfg, nil
++}
++
++func loadGatewayConfig(directory string) (gatewayConfig, string, error) {
++	var cfg gatewayConfig
++	data, err := readPrivate(directory, "gateway.json", 16384)
++	if err != nil {
++		return cfg, "", err
++	}
++	cfg, err = decodeGatewayConfig(data)
++	if err != nil {
++		return cfg, "", err
++	}
++	key, err := readPrivate(directory, "controller.secret", 64)
++	if err != nil || len(key) != 64 || strings.Trim(string(key), "0") == "" {
++		return cfg, "", errGatewayConfig
++	}
++	for _, c := range key {
++		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f') {
++			return cfg, "", errGatewayConfig
++		}
++	}
++	return cfg, string(key), nil
++}
+diff --git a/common/lokigateway/config_linux_test.go b/common/lokigateway/config_linux_test.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..c70b2a277febe3d4308eb85a81cbcc07dcda3312
+--- /dev/null
++++ b/common/lokigateway/config_linux_test.go
+@@ -0,0 +1,296 @@
++package lokigateway
++
++import (
++	"bytes"
++	"encoding/json"
++	"errors"
++	"fmt"
++	"os"
++	"path/filepath"
++	"strings"
++	"sync"
++	"syscall"
++	"testing"
++	"time"
++)
++
++const validGatewayJSON = `{"format":"loki-gateway-1","listen":["127.0.0.1:9091"],"hosts":["router.example","127.0.0.1","fd00::1"],"luci_https_ports":[443,8443],"certificate":"/etc/uhttpd.crt","key":"/etc/uhttpd.key"}`
++
++func privateDirectoryForTest(t *testing.T) string {
++	t.Helper()
++	directory := t.TempDir()
++	if err := os.Chmod(directory, 0o700); err != nil {
++		t.Fatal(err)
++	}
++	return directory
++}
++
++func writePrivateForTest(t *testing.T, directory, name string, data []byte) {
++	t.Helper()
++	if err := os.WriteFile(filepath.Join(directory, name), data, 0o600); err != nil {
++		t.Fatal(err)
++	}
++}
++
++func TestGatewayConfigBindsThePrivateCredentialWithoutChangingFiles(t *testing.T) {
++	directory := privateDirectoryForTest(t)
++	writePrivateForTest(t, directory, "gateway.json", []byte(validGatewayJSON))
++	writePrivateForTest(t, directory, "controller.secret", []byte(testSecret))
++	configuration, secret, err := loadGatewayConfig(directory)
++	if err != nil || secret != testSecret || len(configuration.Listen) != 1 || configuration.Listen[0] != "127.0.0.1:9091" || len(configuration.Hosts) != 3 || len(configuration.LuCIPorts) != 2 {
++		t.Fatal("valid private configuration refused")
++	}
++	for name, value := range map[string]string{"gateway.json": validGatewayJSON, "controller.secret": testSecret} {
++		data, err := os.ReadFile(filepath.Join(directory, name))
++		if err != nil || string(data) != value {
++			t.Fatal("private input changed")
++		}
++	}
++}
++
++func TestPrivateGatewayInputsRejectLinksPermissionsSpecialFilesAndOversize(t *testing.T) {
++	for _, mode := range []string{"symlink", "hardlink", "fifo", "directory", "public", "oversized", "missing"} {
++		t.Run(mode, func(t *testing.T) {
++			directory := privateDirectoryForTest(t)
++			path := filepath.Join(directory, "gateway.json")
++			switch mode {
++			case "symlink":
++				writePrivateForTest(t, directory, "keep", []byte(validGatewayJSON))
++				if err := os.Symlink("keep", path); err != nil {
++					t.Fatal(err)
++				}
++			case "hardlink":
++				writePrivateForTest(t, directory, "keep", []byte(validGatewayJSON))
++				if err := os.Link(filepath.Join(directory, "keep"), path); err != nil {
++					t.Fatal(err)
++				}
++			case "fifo":
++				if err := syscall.Mkfifo(path, 0o600); err != nil {
++					t.Fatal(err)
++				}
++			case "directory":
++				if err := os.Mkdir(path, 0o700); err != nil {
++					t.Fatal(err)
++				}
++			case "public":
++				writePrivateForTest(t, directory, "gateway.json", []byte(validGatewayJSON))
++				if err := os.Chmod(path, 0o644); err != nil {
++					t.Fatal(err)
++				}
++			case "oversized":
++				writePrivateForTest(t, directory, "gateway.json", bytes.Repeat([]byte("x"), 16385))
++			}
++			start := time.Now()
++			if _, err := readPrivate(directory, "gateway.json", 16384); !errors.Is(err, errGatewayConfig) {
++				t.Fatal("unsafe private input accepted")
++			}
++			if time.Since(start) > time.Second {
++				t.Fatal("special file blocked private reader")
++			}
++			if mode == "symlink" || mode == "hardlink" {
++				data, err := os.ReadFile(filepath.Join(directory, "keep"))
++				if err != nil || string(data) != validGatewayJSON {
++					t.Fatal("unrelated target changed")
++				}
++			}
++		})
++	}
++	directory := privateDirectoryForTest(t)
++	writePrivateForTest(t, directory, "gateway.json", []byte(validGatewayJSON))
++	writePrivateForTest(t, directory, "controller.secret", []byte(testSecret))
++	if err := os.Chmod(directory, 0o755); err != nil {
++		t.Fatal(err)
++	}
++	if _, _, err := loadGatewayConfig(directory); !errors.Is(err, errGatewayConfig) {
++		t.Fatal("public parent accepted")
++	}
++	if err := os.Chmod(directory, 0o700); err != nil {
++		t.Fatal(err)
++	}
++	alias := filepath.Join(t.TempDir(), "linked")
++	if err := os.Symlink(directory, alias); err != nil {
++		t.Fatal(err)
++	}
++	if _, _, err := loadGatewayConfig(alias); !errors.Is(err, errGatewayConfig) {
++		t.Fatal("linked parent accepted")
++	}
++	if _, err := readPrivate(directory, "../gateway.json", 16384); !errors.Is(err, errGatewayConfig) {
++		t.Fatal("traversal accepted")
++	}
++	if _, err := readPrivate(directory+"/.", "gateway.json", 16384); !errors.Is(err, errGatewayConfig) {
++		t.Fatal("noncanonical directory accepted")
++	}
++}
++
++func TestPrivateGatewayCredentialIsMandatoryAndStrict(t *testing.T) {
++	directory := privateDirectoryForTest(t)
++	writePrivateForTest(t, directory, "gateway.json", []byte(validGatewayJSON))
++	for _, value := range []string{"", "short", strings.Repeat("0", 64), strings.ToUpper(testSecret), testSecret + "\n", testSecret + "\x00"} {
++		writePrivateForTest(t, directory, "controller.secret", []byte(value))
++		if _, _, err := loadGatewayConfig(directory); !errors.Is(err, errGatewayConfig) {
++			t.Fatal("invalid controller credential accepted")
++		}
++		data, err := os.ReadFile(filepath.Join(directory, "controller.secret"))
++		if err != nil || string(data) != value {
++			t.Fatal("existing credential repaired")
++		}
++	}
++}
++
++func TestGatewayConfigurationRejectsUnknownDuplicateAndAmbiguousFields(t *testing.T) {
++	for _, raw := range []string{"null", "[]", validGatewayJSON + "{}", strings.Replace(validGatewayJSON, `"format":"loki-gateway-1",`, "", 1), strings.Replace(validGatewayJSON, `"format":`, `"format":"loki-gateway-1","format":`, 1), strings.Replace(validGatewayJSON, `"listen":`, `"listen":["127.0.0.1:9091"],"listen":`, 1),
++		strings.Replace(validGatewayJSON, `"key":`, `"unexpected":true,"key":`, 1), strings.Replace(validGatewayJSON, `"listen"`, `"li\u0073ten"`, 1) + "\x00",
++		`{"listen":null}`, string(bytes.Repeat([]byte("x"), 16385)), strings.Replace(validGatewayJSON, "router.example", "router\xff.example", 1)} {
++		if _, err := decodeGatewayConfig([]byte(raw)); !errors.Is(err, errGatewayConfig) {
++			t.Fatal("ambiguous configuration accepted")
++		}
++	}
++	for name, value := range map[string]any{
++		"format": "unowned", "listen": "http://127.0.0.1:9091", "hosts": []string{"attacker.test:443"}, "luci_https_ports": []int{0}, "certificate": "relative.crt", "key": "/etc/../key",
++	} {
++		var object map[string]any
++		if err := json.Unmarshal([]byte(validGatewayJSON), &object); err != nil {
++			t.Fatal(err)
++		}
++		object[name] = value
++		raw, err := json.Marshal(object)
++		if err != nil {
++			t.Fatal(err)
++		}
++		if _, err := decodeGatewayConfig(raw); !errors.Is(err, errGatewayConfig) {
++			t.Fatal("invalid field accepted")
++		}
++	}
++	for _, host := range []string{"", "UPPER.example", "router.example.", "-router.example", "router-.example", "router..example", "127.01.0.1", "2130706433", "0.0.0.0", "::", "ff02::1", "fe80::1%eth0", "[::1]", "user@router.example", "router.example/path", "*", "router\n.example", strings.Repeat("x", 64) + ".example"} {
++		if canonicalHost(host) {
++			t.Fatalf("noncanonical host accepted: %q", host)
++		}
++	}
++	for _, host := range []string{"router.example", "localhost", "127.0.0.1", "fd00::1", "::1", "xn--e1afmkfd.xn--p1ai"} {
++		if !canonicalHost(host) {
++			t.Fatal("canonical host refused")
++		}
++	}
++}
++
++func TestGatewayConfigurationBoundsHostsAndPorts(t *testing.T) {
++	for _, mutate := range []func(map[string]any){
++		func(m map[string]any) { m["hosts"] = []string{} }, func(m map[string]any) { m["hosts"] = []string{"router.example", "router.example"} },
++		func(m map[string]any) {
++			hosts := []string{"127.0.0.1"}
++			for i := 0; i < 16; i++ {
++				hosts = append(hosts, fmt.Sprintf("host%d.example", i))
++			}
++			m["hosts"] = hosts
++		},
++		func(m map[string]any) { m["luci_https_ports"] = []int{} }, func(m map[string]any) { m["luci_https_ports"] = []int{443, 443} },
++		func(m map[string]any) { m["luci_https_ports"] = []int{65536} }, func(m map[string]any) { m["luci_https_ports"] = []int{1, 2, 3, 4, 5, 6, 7, 8, 9} },
++		func(m map[string]any) { m["listen"] = []string{"127.0.0.1:9092"} }, func(m map[string]any) { m["listen"] = []string{"router.example:9091"} },
++		func(m map[string]any) { m["listen"] = []string{"[::ffff:127.0.0.1]:9091"} }, func(m map[string]any) { m["listen"] = []string{"[fe80::1%eth0]:9091"} },
++	} {
++		var object map[string]any
++		json.Unmarshal([]byte(validGatewayJSON), &object)
++		mutate(object)
++		raw, err := json.Marshal(object)
++		if err != nil {
++			t.Fatal(err)
++		}
++		if _, err := decodeGatewayConfig(raw); !errors.Is(err, errGatewayConfig) {
++			t.Fatal("configuration resource or bind limit bypassed")
++		}
++	}
++}
++
++func TestGatewayConfigurationRequiresAnAdvertisedConcreteBind(t *testing.T) {
++	for _, listen := range []string{"0.0.0.0:9091", "[::]:9091", "198.51.100.99:9091", "[fd00::99]:9091"} {
++		raw := strings.Replace(validGatewayJSON, `"listen":["127.0.0.1:9091"]`, `"listen":["`+listen+`"]`, 1)
++		if _, err := decodeGatewayConfig([]byte(raw)); !errors.Is(err, errGatewayConfig) {
++			t.Fatalf("gateway accepted an unadvertised or wildcard bind: %s", listen)
++		}
++	}
++	for _, listen := range []string{"127.0.0.1:9091", "[fd00::1]:9091"} {
++		raw := strings.Replace(validGatewayJSON, `"listen":["127.0.0.1:9091"]`, `"listen":["`+listen+`"]`, 1)
++		if _, err := decodeGatewayConfig([]byte(raw)); err != nil {
++			t.Fatalf("advertised concrete bind refused: %s", listen)
++		}
++	}
++}
++
++func TestGatewayConfigurationBindsEveryExplicitLANAddress(t *testing.T) {
++	var object map[string]any
++	if err := json.Unmarshal([]byte(validGatewayJSON), &object); err != nil {
++		t.Fatal(err)
++	}
++	object["listen"] = []string{"127.0.0.1:9091", "[fd00::1]:9091"}
++	raw, err := json.Marshal(object)
++	if err != nil {
++		t.Fatal(err)
++	}
++	cfg, err := decodeGatewayConfig(raw)
++	if err != nil {
++		t.Fatal("gateway refused simultaneous IPv4 and IPv6 LAN binds", err)
++	}
++	encoded, err := json.Marshal(cfg.Listen)
++	if err != nil || string(encoded) != `["127.0.0.1:9091","[fd00::1]:9091"]` {
++		t.Fatal("gateway lost a configured LAN bind")
++	}
++	for _, invalid := range []any{nil, []string{}, "127.0.0.1:9091", []string{"127.0.0.1:9091", "127.0.0.1:9091"},
++		[]string{"127.0.0.1:9091", "[::]:9091"}, []string{"127.0.0.1:9091", "[fd00::99]:9091"},
++		[]string{"127.0.0.1:9091", "[fd00::1]:9092"}, []any{"127.0.0.1:9091", nil}} {
++		object["listen"] = invalid
++		raw, err = json.Marshal(object)
++		if err != nil {
++			t.Fatal(err)
++		}
++		if _, err := decodeGatewayConfig(raw); !errors.Is(err, errGatewayConfig) {
++			t.Fatal("ambiguous, repeated or unsafe multi-address bind accepted")
++		}
++	}
++}
++
++func TestPrivateReaderNeverReturnsAMixedAtomicReplacement(t *testing.T) {
++	directory := privateDirectoryForTest(t)
++	one, two := bytes.Repeat([]byte("a"), 4096), bytes.Repeat([]byte("b"), 4096)
++	writePrivateForTest(t, directory, "gateway.json", one)
++	stop := make(chan struct{})
++	failures := make(chan error, 1)
++	var worker sync.WaitGroup
++	worker.Add(1)
++	go func() {
++		defer worker.Done()
++		for i := 0; ; i++ {
++			select {
++			case <-stop:
++				return
++			default:
++			}
++			data := one
++			if i%2 != 0 {
++				data = two
++			}
++			if err := os.WriteFile(filepath.Join(directory, "new"), data, 0o600); err != nil {
++				failures <- err
++				return
++			}
++			if err := os.Rename(filepath.Join(directory, "new"), filepath.Join(directory, "gateway.json")); err != nil {
++				failures <- err
++				return
++			}
++		}
++	}()
++	for i := 0; i < 100; i++ {
++		data, err := readPrivate(directory, "gateway.json", 16384)
++		if err == nil && !bytes.Equal(data, one) && !bytes.Equal(data, two) {
++			close(stop)
++			worker.Wait()
++			t.Fatal("mixed file accepted")
++		}
++	}
++	close(stop)
++	worker.Wait()
++	select {
++	case err := <-failures:
++		t.Fatal(err)
++	default:
++	}
++}
+diff --git a/common/lokigateway/identity_file_linux.go b/common/lokigateway/identity_file_linux.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..d4981dc88eddb3147b6d91d1ec7884f476702bcd
+--- /dev/null
++++ b/common/lokigateway/identity_file_linux.go
+@@ -0,0 +1,66 @@
++// Modified for LoKi on 2026-11-05: inspect existing HTTPS files without modifying shared state.
++package lokigateway
++
++import (
++	"crypto/tls"
++	"io"
++	"os"
++	"strings"
++	"syscall"
++	"time"
++)
++
++func readIdentityFile(path string, private bool) ([]byte, error) {
++	if !canonicalPath(path) {
++		return nil, errTLSIdentity
++	}
++	root, err := os.OpenRoot("/")
++	if err != nil {
++		return nil, errTLSIdentity
++	}
++	defer root.Close()
++	name := strings.TrimPrefix(path, "/")
++	file, err := root.OpenFile(name, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
++	if err != nil {
++		return nil, errTLSIdentity
++	}
++	defer file.Close()
++	info, err := file.Stat()
++	if err != nil || !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > 65536 || info.Mode().Perm()&0o022 != 0 ||
++		private && info.Mode().Perm()&0o077 != 0 {
++		return nil, errTLSIdentity
++	}
++	first, ok := statIdentity(info)
++	if !ok || first.Nlink != 1 {
++		return nil, errTLSIdentity
++	}
++	data, err := io.ReadAll(io.LimitReader(file, 65537))
++	if err != nil || int64(len(data)) != info.Size() {
++		return nil, errTLSIdentity
++	}
++	after, err := file.Stat()
++	if err != nil {
++		return nil, errTLSIdentity
++	}
++	last, ok := statIdentity(after)
++	if !ok || !sameStorageSnapshot(first, last) {
++		return nil, errTLSIdentity
++	}
++	named, err := root.Lstat(name)
++	if err != nil || !named.Mode().IsRegular() || !os.SameFile(info, named) {
++		return nil, errTLSIdentity
++	}
++	return data, nil
++}
++
++func existingIdentity(cfg gatewayConfig) (tls.Certificate, error) {
++	certificate, err := readIdentityFile(cfg.Certificate, false)
++	if err != nil {
++		return tls.Certificate{}, errTLSIdentity
++	}
++	key, err := readIdentityFile(cfg.Key, true)
++	if err != nil {
++		return tls.Certificate{}, errTLSIdentity
++	}
++	return tlsIdentity(certificate, key, time.Now())
++}
+diff --git a/common/lokigateway/policy.go b/common/lokigateway/policy.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..198fedc21a734b2976e6823650ae23b935ac49fc
+--- /dev/null
++++ b/common/lokigateway/policy.go
+@@ -0,0 +1,149 @@
++// Modified for LoKi on 2026-11-05: expose only the controller operations used by LoKi and YACD.
++package lokigateway
++
++import (
++	"net/http"
++	"net/url"
++	"strconv"
++	"strings"
++	"unicode"
++	"unicode/utf8"
++)
++
++const apiPrefix = "/cgi-bin/luci/loki-gateway/api"
++
++type operation struct {
++	write   bool
++	configs bool
++}
++
++func safeName(raw string) bool {
++	name, err := url.PathUnescape(raw)
++	if err != nil || name == "" || name == "." || name == ".." || len(name) > 1024 || !utf8.ValidString(name) {
++		return false
++	}
++	return strings.IndexFunc(name, unicode.IsControl) < 0
++}
++
++func exactQuery(values url.Values, keys ...string) bool {
++	if len(values) != len(keys) {
++		return false
++	}
++	for _, key := range keys {
++		if len(values[key]) != 1 || values[key][0] == "" {
++			return false
++		}
++	}
++	return true
++}
++
++func probeQuery(values url.Values, exit bool) bool {
++	if exit {
++		if !exactQuery(values, "timeout") {
++			return false
++		}
++	} else {
++		if !exactQuery(values, "url", "timeout") {
++			return false
++		}
++		value := values.Get("url")
++		target, err := url.Parse(value)
++		if err != nil || len(value) > 2048 || target.User != nil || target.Host == "" ||
++			target.Fragment != "" || (target.Scheme != "http" && target.Scheme != "https") ||
++			strings.IndexFunc(value, unicode.IsControl) >= 0 {
++			return false
++		}
++	}
++	text := values.Get("timeout")
++	value, err := strconv.Atoi(text)
++	return err == nil && value >= 1 && value <= 60000 && strconv.Itoa(value) == text
++}
++
++func classify(method string, target *url.URL, stream bool) (operation, bool) {
++	var result operation
++	path := target.EscapedPath()
++	if target.IsAbs() || target.Host != "" || target.Fragment != "" || target.ForceQuery ||
++		len(path)+len(target.RawQuery) > 4096 || !strings.HasPrefix(path, apiPrefix+"/") {
++		return result, false
++	}
++	path = strings.TrimPrefix(path, apiPrefix)
++	parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
++	for _, part := range parts {
++		if !safeName(part) {
++			return result, false
++		}
++	}
++	query, err := url.ParseQuery(target.RawQuery)
++	if err != nil {
++		return result, false
++	}
++	if stream {
++		if method != http.MethodGet {
++			return result, false
++		}
++		switch path {
++		case "/traffic", "/memory":
++			return result, len(query) == 0
++		case "/connections":
++			if len(query) == 0 {
++				return result, true
++			}
++			if !exactQuery(query, "interval") {
++				return result, false
++			}
++			interval, err := strconv.Atoi(query.Get("interval"))
++			return result, err == nil && interval >= 1000 && interval <= 60000 && strconv.Itoa(interval) == query.Get("interval")
++		case "/logs":
++			if len(query) == 0 {
++				return result, true
++			}
++			if exactQuery(query, "level") {
++				switch query.Get("level") {
++				case "debug", "info", "warning", "error", "silent":
++					return result, true
++				}
++			}
++			return result, false
++		default:
++			return result, false
++		}
++	}
++	if method == http.MethodGet {
++		if len(query) == 0 {
++			switch path {
++			case "/configs":
++				result.configs = true
++				return result, true
++			case "/version", "/proxies", "/group", "/providers/proxies", "/providers/rules", "/rules", "/connections":
++				return result, true
++			}
++			if len(parts) == 2 && (parts[0] == "proxies" || parts[0] == "group") ||
++				len(parts) == 3 && parts[0] == "providers" && (parts[1] == "proxies" || parts[1] == "rules") {
++				return result, true
++			}
++			if len(parts) == 3 && parts[0] == "proxies" && parts[2] == "link" ||
++				len(parts) == 4 && parts[0] == "providers" && parts[1] == "proxies" && parts[3] == "healthcheck" {
++				result.write = true
++				return result, true
++			}
++		}
++		if len(parts) == 3 && (parts[0] == "proxies" || parts[0] == "group") && parts[2] == "delay" && probeQuery(query, false) ||
++			len(parts) == 3 && parts[0] == "proxies" && parts[2] == "exit" && probeQuery(query, true) {
++			result.write = true
++			return result, true
++		}
++		return result, false
++	}
++	if len(query) != 0 {
++		return result, false
++	}
++	result.write = true
++	if method == http.MethodDelete {
++		return result, path == "/connections" || len(parts) == 2 && parts[0] == "connections"
++	}
++	if method == http.MethodPut {
++		return result, len(parts) == 2 && parts[0] == "proxies" || path == "/providers/rules" ||
++			len(parts) == 3 && parts[0] == "providers" && (parts[1] == "proxies" || parts[1] == "rules")
++	}
++	return result, false
++}
+diff --git a/common/lokigateway/policy_test.go b/common/lokigateway/policy_test.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..3c33462d41c93b561dba11e7039f3fdba71a37ac
+--- /dev/null
++++ b/common/lokigateway/policy_test.go
+@@ -0,0 +1,102 @@
++package lokigateway
++
++import (
++	"net/url"
++	"strings"
++	"testing"
++)
++
++func TestOperationPolicySeparatesReadsFromEffects(t *testing.T) {
++	for _, test := range []struct {
++		method, path  string
++		stream, write bool
++	}{
++		{"GET", "/version", false, false}, {"GET", "/configs", false, false},
++		{"GET", "/proxies", false, false}, {"GET", "/group", false, false},
++		{"GET", "/proxies/Office%2FOUT", false, false}, {"GET", "/group/Office%2FOUT", false, false},
++		{"GET", "/proxies/Node%20%231%3FEU%2FOUT", false, false},
++		{"PUT", "/proxies/Node%20%231%3FEU%2FOUT", false, true},
++		{"GET", "/proxies/Node%252FOUT", false, false},
++		{"GET", "/proxies/name%5Cpart", false, false},
++		{"GET", "/providers/proxies/Office%2Fpremium", false, false}, {"GET", "/providers/rules", false, false},
++		{"GET", "/rules", false, false}, {"GET", "/connections", false, false},
++		{"GET", "/connections", true, false}, {"GET", "/traffic", true, false},
++		{"GET", "/connections?interval=1000", true, false},
++		{"GET", "/connections?interval=5000", true, false},
++		{"GET", "/connections?interval=60000", true, false},
++		{"GET", "/memory", true, false}, {"GET", "/logs?level=debug", true, false},
++		{"GET", "/proxies/node/link", false, true},
++		{"GET", "/proxies/node/exit?timeout=5000", false, true},
++		{"GET", "/proxies/node/delay?url=https%3A%2F%2Fexample.test%2F204&timeout=5000", false, true},
++		{"GET", "/group/Office%2FOUT/delay?url=http%3A%2F%2Fexample.test%2F204&timeout=40000", false, true},
++		{"GET", "/providers/proxies/Office%2Fpremium/healthcheck", false, true},
++		{"PUT", "/proxies/Office%2FOUT", false, true}, {"PUT", "/providers/proxies/Office%2Fpremium", false, true},
++		{"PUT", "/providers/rules", false, true}, {"PUT", "/providers/rules/rule1", false, true},
++		{"DELETE", "/connections", false, true}, {"DELETE", "/connections/connection1", false, true},
++	} {
++		t.Run(test.method+test.path, func(t *testing.T) {
++			target, err := url.Parse(apiPrefix + test.path)
++			if err != nil {
++				t.Fatal(err)
++			}
++			result, ok := classify(test.method, target, test.stream)
++			if !ok || result.write != test.write || result.configs != (test.path == "/configs") {
++				t.Fatalf("unexpected policy: %+v %v", result, ok)
++			}
++		})
++	}
++}
++
++func TestOperationPolicyRejectsUnlistedAndAmbiguousRequests(t *testing.T) {
++	for _, test := range []struct {
++		method, path string
++		stream       bool
++	}{
++		{"GET", "/configs?token=secret", false}, {"PATCH", "/configs", false},
++		{"PUT", "/configs", false}, {"PATCH", "/rules/disable", false},
++		{"POST", "/cache/dns/flush", false}, {"POST", "/upgrade/ui", false},
++		{"CONNECT", "/version", false}, {"HEAD", "/version", false},
++		{"GET", "/version/", false}, {"GET", "/proxies//link", false},
++		{"GET", "/proxies/../link", false}, {"GET", "/proxies/%2e%2e/link", false},
++		{"GET", "/providers%5Cproxies/name", false}, {"GET", "/proxies/name%0Apart", false},
++		{"GET", "/%70roxies", false}, {"GET", "/proxies%2Fnode%2Fdelay?url=https://example.test&timeout=5", false},
++		{"GET", "/logs?level=info%7Cwarning", true}, {"GET", "/logs?level=trace", true},
++		{"GET", "/traffic?token=secret", true}, {"GET", "/connections?interval=0", true},
++		{"GET", "/connections?interval=999", true}, {"GET", "/connections?interval=60001", true},
++		{"GET", "/connections?interval=-1", true}, {"GET", "/connections?interval=05000", true},
++		{"GET", "/connections?interval=1000&interval=5000", true},
++		{"GET", "/connections?interval=1000&token=private", true},
++		{"GET", "/connections?interval=999999999999999999999999999", true},
++		{"GET", "/traffic?interval=5000", true}, {"GET", "/connections?interval=5000", false},
++		{"GET", "/version", true}, {"PUT", "/proxies/node", true},
++		{"GET", "/traffic", false}, {"GET", "/logs", false},
++		{"GET", "/proxies/node/exit?timeout=0", false}, {"GET", "/proxies/node/exit?timeout=60001", false},
++		{"GET", "/proxies/node/exit?timeout=05000", false}, {"GET", "/proxies/node/exit?timeout=5&timeout=6", false},
++		{"GET", "/proxies/node/delay?url=file:///etc/passwd&timeout=5", false},
++		{"GET", "/proxies/node/delay?url=https://user:password@example.test&timeout=5", false},
++		{"GET", "/proxies/node/delay?url=https://example.test%23fragment&timeout=5", false},
++		{"GET", "/proxies/node/delay?url=https://example.test&timeout=5&extra=1", false},
++		{"GET", "/proxies/node/delay?url=https://example.test&timeout=5;extra=1", false},
++		{"GET", "/version?", false}, {"GET", "/version#fragment", false},
++		{"GET", "/proxies/" + strings.Repeat("a", 1025), false},
++	} {
++		t.Run(test.method+test.path, func(t *testing.T) {
++			target, err := url.Parse(apiPrefix + test.path)
++			if err != nil {
++				t.Fatal(err)
++			}
++			if result, ok := classify(test.method, target, test.stream); ok {
++				t.Fatalf("unlisted operation allowed: %+v", result)
++			}
++		})
++	}
++	for _, raw := range []string{"https://attacker.test" + apiPrefix + "/version", "//attacker.test" + apiPrefix + "/version", "/version", apiPrefix + "/" + strings.Repeat("a", 4096)} {
++		target, err := url.Parse(raw)
++		if err != nil {
++			t.Fatal(err)
++		}
++		if _, ok := classify("GET", target, false); ok {
++			t.Fatal("external or oversized target allowed")
++		}
++	}
++}
+diff --git a/common/lokigateway/server_linux.go b/common/lokigateway/server_linux.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..b8e615d5e5cc256e0967a576bd5284ce13e88da5
+--- /dev/null
++++ b/common/lokigateway/server_linux.go
+@@ -0,0 +1,144 @@
++// Modified for LoKi on 2026-11-05: serve a separate HTTPS gateway without starting routing.
++package lokigateway
++
++import (
++	"context"
++	"crypto/tls"
++	"errors"
++	"io"
++	"log"
++	"net"
++	"net/http"
++	"strconv"
++	"strings"
++	"sync"
++	"time"
++)
++
++var errGatewayListener = errors.New("gateway HTTPS listener unavailable; check its address and port conflict")
++
++func httpsOrigin(host string, port int) string {
++	authority := net.JoinHostPort(host, strconv.Itoa(port))
++	if port == 443 {
++		authority = strings.TrimSuffix(authority, ":443")
++	}
++	return "https://" + authority
++}
++
++func configuredGateway(ctx context.Context, cfg gatewayConfig, secret string) *gateway {
++	origins := make(map[string]map[string]bool)
++	for _, host := range cfg.Hosts {
++		authority := net.JoinHostPort(host, strconv.Itoa(gatewayPort))
++		allowed := map[string]bool{httpsOrigin(host, gatewayPort): true}
++		for _, port := range cfg.LuCIPorts {
++			allowed[httpsOrigin(host, port)] = true
++		}
++		origins[authority] = allowed
++	}
++	return &gateway{ctx: ctx, origins: origins, secret: secret, authorize: newSessionAuthorizer().allowed,
++		client: controllerClient(), requests: make(chan struct{}, 8), streams: make(chan struct{}, 4), recheckEvery: 5 * time.Second}
++}
++
++type boundedListener struct {
++	net.Listener
++	slots chan struct{}
++	done  chan struct{}
++	once  sync.Once
++	err   error
++}
++
++type boundedConn struct {
++	net.Conn
++	once    sync.Once
++	release func()
++	err     error
++}
++
++func (c *boundedConn) Close() error {
++	c.once.Do(func() { c.err = c.Conn.Close(); c.release() })
++	return c.err
++}
++
++func (l *boundedListener) Accept() (net.Conn, error) {
++	select {
++	case l.slots <- struct{}{}:
++	case <-l.done:
++		return nil, net.ErrClosed
++	}
++	connection, err := l.Listener.Accept()
++	if err != nil {
++		<-l.slots
++		return nil, err
++	}
++	return &boundedConn{Conn: connection, release: func() { <-l.slots }}, nil
++}
++
++func (l *boundedListener) Close() error {
++	l.once.Do(func() { close(l.done); l.err = l.Listener.Close() })
++	return l.err
++}
++
++func serveGateway(parent context.Context, g *gateway, identity tls.Certificate, listeners ...net.Listener) error {
++	if len(listeners) == 0 {
++		return errGatewayListener
++	}
++	ctx, cancel := context.WithCancel(parent)
++	defer cancel()
++	g.ctx = ctx
++	slots := make(chan struct{}, 32)
++	server := &http.Server{Handler: g, BaseContext: func(net.Listener) context.Context { return ctx },
++		TLSConfig:         &tls.Config{MinVersion: tls.VersionTLS12, Certificates: []tls.Certificate{identity}, NextProtos: []string{"http/1.1"}},
++		TLSNextProto:      map[string]func(*http.Server, *tls.Conn, http.Handler){},
++		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 70 * time.Second, WriteTimeout: 70 * time.Second,
++		IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16384, ErrorLog: log.New(io.Discard, "", 0)}
++	stopped := make(chan struct{})
++	go func() {
++		defer close(stopped)
++		<-ctx.Done()
++		g.stopRequests()
++		shutdown, stop := context.WithTimeout(context.Background(), 5*time.Second)
++		defer stop()
++		server.Shutdown(shutdown)
++		server.Close()
++		g.handlers.Wait()
++	}()
++	results := make(chan error, len(listeners))
++	for _, listener := range listeners {
++		bounded := &boundedListener{Listener: listener, slots: slots, done: make(chan struct{})}
++		go func() { results <- server.ServeTLS(bounded, "", "") }()
++	}
++	err := <-results
++	cancel()
++	<-stopped
++	for remaining := len(listeners) - 1; remaining > 0; remaining-- {
++		if next := <-results; next != nil && !errors.Is(next, http.ErrServerClosed) {
++			err = next
++		}
++	}
++	g.client.CloseIdleConnections()
++	if err != nil && !errors.Is(err, http.ErrServerClosed) {
++		return errGatewayListener
++	}
++	return nil
++}
++
++func Run(ctx context.Context) error {
++	cfg, secret, err := loadGatewayConfig(gatewayDirectory)
++	if err != nil {
++		return err
++	}
++	identity, err := existingIdentity(cfg)
++	if err != nil {
++		return err
++	}
++	listeners := make([]net.Listener, 0, len(cfg.Listen))
++	for _, address := range cfg.Listen {
++		listener, err := net.Listen("tcp", address)
++		if err != nil {
++			return errGatewayListener
++		}
++		defer listener.Close()
++		listeners = append(listeners, listener)
++	}
++	return serveGateway(ctx, configuredGateway(ctx, cfg, secret), identity, listeners...)
++}
+diff --git a/common/lokigateway/server_linux_test.go b/common/lokigateway/server_linux_test.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..eb9a970977fe7e2a465e9ac7dd59d6d8e2c26be5
+--- /dev/null
++++ b/common/lokigateway/server_linux_test.go
+@@ -0,0 +1,374 @@
++package lokigateway
++
++import (
++	"context"
++	"crypto/ecdsa"
++	"crypto/elliptic"
++	"crypto/rand"
++	"crypto/tls"
++	"crypto/x509"
++	"errors"
++	"io"
++	"math/big"
++	"net"
++	"net/http"
++	"net/http/httptest"
++	"os"
++	"path/filepath"
++	"strings"
++	"sync/atomic"
++	"syscall"
++	"testing"
++	"time"
++)
++
++func fileIdentityForTest(t *testing.T) (gatewayConfig, tls.Certificate, *x509.CertPool) {
++	t.Helper()
++	directory := privateDirectoryForTest(t)
++	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
++	if err != nil {
++		t.Fatal(err)
++	}
++	now := time.Now()
++	certificate := &x509.Certificate{SerialNumber: big.NewInt(19), DNSNames: []string{"router.example"},
++		IPAddresses: []net.IP{net.IPv4(127, 0, 0, 1), net.IPv6loopback}, NotBefore: now.Add(-time.Hour), NotAfter: now.Add(time.Hour),
++		KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}
++	der, err := x509.CreateCertificate(rand.Reader, certificate, certificate, &key.PublicKey, key)
++	if err != nil {
++		t.Fatal(err)
++	}
++	keyDER, err := x509.MarshalECPrivateKey(key)
++	if err != nil {
++		t.Fatal(err)
++	}
++	writePrivateForTest(t, directory, "cert.der", der)
++	writePrivateForTest(t, directory, "key.der", keyDER)
++	if err := os.Chmod(filepath.Join(directory, "cert.der"), 0o644); err != nil {
++		t.Fatal(err)
++	}
++	cfg := gatewayConfig{Listen: []string{"127.0.0.1:9091"}, Hosts: []string{"router.example", "127.0.0.1", "fd00::1"},
++		LuCIPorts: []int{443, 8443}, Certificate: filepath.Join(directory, "cert.der"), Key: filepath.Join(directory, "key.der")}
++	identity, err := existingIdentity(cfg)
++	if err != nil {
++		t.Fatal(err)
++	}
++	roots := x509.NewCertPool()
++	roots.AddCert(identity.Leaf)
++	return cfg, identity, roots
++}
++
++func TestConfiguredOriginsKeepAliasesAndLuCIPortsSeparate(t *testing.T) {
++	cfg, _, _ := fileIdentityForTest(t)
++	g := configuredGateway(context.Background(), cfg, testSecret)
++	defer g.client.CloseIdleConnections()
++	for _, test := range []struct {
++		host, origin string
++		allowed      bool
++	}{
++		{"router.example:9091", "https://router.example", true}, {"router.example:9091", "https://router.example:8443", true},
++		{"router.example:9091", "https://router.example:9091", true}, {"127.0.0.1:9091", "https://127.0.0.1", true},
++		{"[fd00::1]:9091", "https://[fd00::1]", true}, {"[fd00::1]:9091", "https://[fd00::1]:8443", true},
++		{"router.example:9091", "https://127.0.0.1", false}, {"router.example:9091", "https://attacker.test", false},
++		{"attacker.test:9091", "https://attacker.test", false}, {"router.example:9091", "http://router.example", false},
++		{"router.example:9091", "https://router.example:8444", false}, {"router.example:9092", "https://router.example", false},
++	} {
++		r := httptest.NewRequest("GET", "https://"+test.host+apiPrefix+"/version", nil)
++		r.Host = test.host
++		r.Header.Set("Origin", test.origin)
++		if _, allowed := g.origin(r); allowed != test.allowed {
++			t.Fatalf("origin boundary failed: %s %s", test.host, test.origin)
++		}
++	}
++}
++
++func TestExistingIdentityFilesAreReadOnlyAndRefuseUnsafeLeaves(t *testing.T) {
++	cfg, _, _ := fileIdentityForTest(t)
++	for _, path := range []string{cfg.Certificate, cfg.Key} {
++		before, err := os.ReadFile(path)
++		if err != nil {
++			t.Fatal(err)
++		}
++		info, err := os.Lstat(path)
++		if err != nil {
++			t.Fatal(err)
++		}
++		if _, err := readIdentityFile(path, path == cfg.Key); err != nil {
++			t.Fatal(err)
++		}
++		after, err := os.ReadFile(path)
++		if err != nil {
++			t.Fatal(err)
++		}
++		last, err := os.Lstat(path)
++		if err != nil {
++			t.Fatal(err)
++		}
++		if string(after) != string(before) || !os.SameFile(info, last) || info.Mode() != last.Mode() {
++			t.Fatal("shared HTTPS file modified")
++		}
++	}
++	if err := os.Chmod(cfg.Key, 0o400); err != nil {
++		t.Fatal(err)
++	}
++	if _, err := existingIdentity(cfg); err != nil {
++		t.Fatal("read-only private key refused")
++	}
++	if err := os.Chmod(cfg.Key, 0o644); err != nil {
++		t.Fatal(err)
++	}
++	if _, err := existingIdentity(cfg); !errors.Is(err, errTLSIdentity) {
++		t.Fatal("public private-key file accepted")
++	}
++	if info, err := os.Stat(cfg.Key); err != nil || info.Mode().Perm() != 0o644 {
++		t.Fatal("unsafe key was repaired")
++	}
++	for _, kind := range []string{"symlink", "hardlink", "fifo", "oversized", "writable"} {
++		t.Run(kind, func(t *testing.T) {
++			directory := privateDirectoryForTest(t)
++			path := filepath.Join(directory, "cert")
++			switch kind {
++			case "symlink":
++				if err := os.Symlink(cfg.Certificate, path); err != nil {
++					t.Fatal(err)
++				}
++			case "hardlink":
++				if err := os.Link(cfg.Certificate, path); err != nil {
++					t.Fatal(err)
++				}
++			case "fifo":
++				if err := syscall.Mkfifo(path, 0o600); err != nil {
++					t.Fatal(err)
++				}
++			case "oversized":
++				writePrivateForTest(t, directory, "cert", []byte(strings.Repeat("x", 65537)))
++			case "writable":
++				writePrivateForTest(t, directory, "cert", []byte("synthetic"))
++				if err := os.Chmod(path, 0o666); err != nil {
++					t.Fatal(err)
++				}
++			}
++			if _, err := readIdentityFile(path, false); !errors.Is(err, errTLSIdentity) {
++				t.Fatal("unsafe shared HTTPS input accepted")
++			}
++		})
++	}
++}
++
++type gatewayRoundTripper func(*http.Request) (*http.Response, error)
++
++func (fn gatewayRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) { return fn(r) }
++
++func TestSeparateHTTPSServerRejectsPlaintextAndDrainsBeforeReturning(t *testing.T) {
++	cfg, identity, roots := fileIdentityForTest(t)
++	listener, err := net.Listen("tcp", "127.0.0.1:0")
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer listener.Close()
++	ctx, cancel := context.WithCancel(context.Background())
++	defer cancel()
++	g := configuredGateway(ctx, cfg, testSecret)
++	host := listener.Addr().String()
++	base := "https://" + host
++	g.origins = map[string]map[string]bool{host: {base: true}}
++	g.authorize = func(context.Context, string, bool) (bool, error) { return true, nil }
++	var calls atomic.Int32
++	g.client = &http.Client{Transport: gatewayRoundTripper(func(r *http.Request) (*http.Response, error) {
++		calls.Add(1)
++		if r.URL.Host != "loki-controller" || r.Header.Get("Authorization") != "Bearer "+testSecret {
++			t.Error("fixed controller boundary failed")
++		}
++		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{}`))}, nil
++	})}
++	done := make(chan error, 1)
++	go func() { done <- serveGateway(ctx, g, identity, listener) }()
++	transport := &http.Transport{TLSClientConfig: &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}}
++	defer transport.CloseIdleConnections()
++	client := &http.Client{Transport: transport, Timeout: 2 * time.Second}
++	r, err := http.NewRequest("GET", base+apiPrefix+"/version", nil)
++	if err != nil {
++		t.Fatal(err)
++	}
++	r.Header.Set("Origin", base)
++	r.Header.Set("Cookie", "sysauth_https="+testSession)
++	status, body, headers := readResponse(t, client, r)
++	if status != 200 || body != `{}` {
++		t.Fatal("separate HTTPS server failed")
++	}
++	assertNoPrivateResponse(t, body, headers)
++	plain := &http.Client{Transport: &http.Transport{}, Timeout: time.Second}
++	response, err := plain.Get("http://" + host + apiPrefix + "/version")
++	if err != nil {
++		t.Fatal(err)
++	}
++	response.Body.Close()
++	plain.CloseIdleConnections()
++	if response.StatusCode != 400 || calls.Load() != 1 {
++		t.Fatal("plaintext reached gateway application")
++	}
++	cancel()
++	select {
++	case err := <-done:
++		if err != nil {
++			t.Fatal(err)
++		}
++	case <-time.After(7 * time.Second):
++		t.Fatal("gateway shutdown did not drain")
++	}
++	probe := httptest.NewRecorder()
++	g.ServeHTTP(probe, r)
++	if probe.Code != 503 || calls.Load() != 1 {
++		t.Fatal("stopped gateway admitted another request")
++	}
++}
++
++type quotaTestListener struct {
++	calls  atomic.Int32
++	closed atomic.Bool
++	peers  []net.Conn
++}
++
++func TestDualStackGatewaySharesConnectionBudgetAndStopsEveryListenerOnFailure(t *testing.T) {
++	cfg, identity, roots := fileIdentityForTest(t)
++	var listeners []net.Listener
++	for _, address := range []string{"127.0.0.1:0", "[::1]:0"} {
++		listener, err := net.Listen("tcp", address)
++		if err != nil {
++			t.Fatal(err)
++		}
++		defer listener.Close()
++		listeners = append(listeners, listener)
++	}
++	ctx, cancel := context.WithCancel(context.Background())
++	g := configuredGateway(ctx, cfg, testSecret)
++	g.origins = make(map[string]map[string]bool)
++	for _, listener := range listeners {
++		host := listener.Addr().String()
++		g.origins[host] = map[string]bool{"https://" + host: true}
++	}
++	g.authorize = func(context.Context, string, bool) (bool, error) { return true, nil }
++	g.client = &http.Client{Transport: gatewayRoundTripper(func(*http.Request) (*http.Response, error) {
++		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{}`))}, nil
++	})}
++	done := make(chan error, 1)
++	go func() { done <- serveGateway(ctx, g, identity, listeners...) }()
++	expectFailure := false
++	defer func() {
++		cancel()
++		select {
++		case err := <-done:
++			if expectFailure && !errors.Is(err, errGatewayListener) {
++				t.Error("listener failure was not reported", err)
++			}
++		case <-time.After(7 * time.Second):
++			t.Error("multi-listener gateway did not drain")
++		}
++	}()
++	transport := &http.Transport{DisableKeepAlives: true, TLSClientConfig: &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}}
++	defer transport.CloseIdleConnections()
++	client := &http.Client{Transport: transport, Timeout: 2 * time.Second}
++	for _, listener := range listeners {
++		base := "https://" + listener.Addr().String()
++		request, err := http.NewRequest("GET", base+apiPrefix+"/version", nil)
++		if err != nil {
++			t.Fatal(err)
++		}
++		request.Header.Set("Origin", base)
++		request.Header.Set("Cookie", "sysauth_https="+testSession)
++		status, body, _ := readResponse(t, client, request)
++		if status != 200 || body != `{}` {
++			t.Fatal("one LAN address did not serve authenticated HTTPS")
++		}
++	}
++	var connections []*tls.Conn
++	defer func() {
++		for _, connection := range connections {
++			connection.Close()
++		}
++	}()
++	for i := 0; i < 32; i++ {
++		address := listeners[i%2].Addr().String()
++		connection, err := tls.DialWithDialer(&net.Dialer{Timeout: 2 * time.Second}, "tcp", address, transport.TLSClientConfig)
++		if err != nil {
++			t.Fatal("connection budget prematurely exhausted", i, err)
++		}
++		connections = append(connections, connection)
++	}
++	for _, listener := range listeners {
++		connection, err := tls.DialWithDialer(&net.Dialer{Timeout: time.Second}, "tcp", listener.Addr().String(), transport.TLSClientConfig)
++		if connection != nil {
++			connection.Close()
++		}
++		if err == nil {
++			t.Fatal("each LAN address received a separate connection budget")
++		}
++	}
++	for _, connection := range connections[1:] {
++		connection.Close()
++	}
++	expectFailure = true
++	listeners[1].Close()
++	connections[0].SetReadDeadline(time.Now().Add(7 * time.Second))
++	if _, err := connections[0].Read(make([]byte, 1)); err == nil {
++		t.Fatal("gateway retained a live connection after listener failure")
++	} else if timeout, ok := err.(net.Error); ok && timeout.Timeout() {
++		t.Fatal("listener failure did not close the other listener's active connection")
++	}
++}
++
++func (l *quotaTestListener) Accept() (net.Conn, error) {
++	l.calls.Add(1)
++	if l.closed.Load() {
++		return nil, net.ErrClosed
++	}
++	a, b := net.Pipe()
++	l.peers = append(l.peers, b)
++	return a, nil
++}
++func (l *quotaTestListener) Close() error { l.closed.Store(true); return nil }
++func (l *quotaTestListener) Addr() net.Addr {
++	return &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 9091}
++}
++
++func TestConnectionBudgetAndCloseReleaseEveryOwnedSlot(t *testing.T) {
++	underlying := &quotaTestListener{}
++	l := &boundedListener{Listener: underlying, slots: make(chan struct{}, 2), done: make(chan struct{})}
++	a, err := l.Accept()
++	if err != nil {
++		t.Fatal(err)
++	}
++	b, err := l.Accept()
++	if err != nil {
++		t.Fatal(err)
++	}
++	done := make(chan error, 1)
++	go func() {
++		connection, err := l.Accept()
++		if connection != nil {
++			connection.Close()
++		}
++		done <- err
++	}()
++	l.Close()
++	select {
++	case err := <-done:
++		if !errors.Is(err, net.ErrClosed) {
++			t.Fatal("over-budget accept succeeded")
++		}
++	case <-time.After(time.Second):
++		t.Fatal("listener close retained waiting accept")
++	}
++	if underlying.calls.Load() != 2 {
++		t.Fatal("over-budget accept reached underlying listener")
++	}
++	a.Close()
++	a.Close()
++	b.Close()
++	l.Close()
++	for _, peer := range underlying.peers {
++		peer.Close()
++	}
++	if len(l.slots) != 0 {
++		t.Fatal("connection slots retained")
++	}
++}
+diff --git a/common/lokigateway/tls.go b/common/lokigateway/tls.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..2cde484701d3017c1380cafc86b7d1d25324bf1d
+--- /dev/null
++++ b/common/lokigateway/tls.go
+@@ -0,0 +1,79 @@
++// Modified for LoKi on 2026-11-05: use the existing HTTPS identity without changing shared key files.
++package lokigateway
++
++import (
++	"bytes"
++	"crypto/tls"
++	"crypto/x509"
++	"encoding/asn1"
++	"encoding/pem"
++	"errors"
++	"time"
++)
++
++var errTLSIdentity = errors.New("existing HTTPS certificate or private key unavailable, invalid or expired")
++
++func tlsIdentity(certificate, key []byte, now time.Time) (tls.Certificate, error) {
++	if len(certificate) == 0 || len(key) == 0 || len(certificate) > 65536 || len(key) > 65536 {
++		return tls.Certificate{}, errTLSIdentity
++	}
++	if !bytes.HasPrefix(certificate, []byte("-----BEGIN ")) {
++		if _, err := x509.ParseCertificate(certificate); err != nil {
++			return tls.Certificate{}, errTLSIdentity
++		}
++		certificate = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certificate})
++	}
++	for remaining := certificate; len(bytes.TrimSpace(remaining)) != 0; {
++		if !bytes.HasPrefix(bytes.TrimSpace(remaining), []byte("-----BEGIN CERTIFICATE-----")) {
++			return tls.Certificate{}, errTLSIdentity
++		}
++		block, rest := pem.Decode(remaining)
++		if block == nil || block.Type != "CERTIFICATE" || len(block.Headers) != 0 {
++			return tls.Certificate{}, errTLSIdentity
++		}
++		if _, err := x509.ParseCertificate(block.Bytes); err != nil {
++			return tls.Certificate{}, errTLSIdentity
++		}
++		remaining = rest
++	}
++	keyDER := key
++	if bytes.HasPrefix(key, []byte("-----BEGIN ")) {
++		block, rest := pem.Decode(key)
++		if block == nil || len(bytes.TrimSpace(rest)) != 0 || len(block.Headers) != 0 ||
++			(block.Type != "PRIVATE KEY" && block.Type != "RSA PRIVATE KEY" && block.Type != "EC PRIVATE KEY") {
++			return tls.Certificate{}, errTLSIdentity
++		}
++		if !bytes.HasPrefix(key, []byte("-----BEGIN "+block.Type+"-----")) {
++			return tls.Certificate{}, errTLSIdentity
++		}
++		keyDER = block.Bytes
++	}
++	// Some x509 key parsers ignore trailing ASN.1 bytes; an identity must consume the entire input.
++	var object asn1.RawValue
++	if rest, err := asn1.Unmarshal(keyDER, &object); err != nil || len(rest) != 0 {
++		return tls.Certificate{}, errTLSIdentity
++	}
++	if !bytes.HasPrefix(key, []byte("-----BEGIN ")) {
++		kind := "PRIVATE KEY"
++		if _, err := x509.ParsePKCS8PrivateKey(key); err != nil {
++			kind = "RSA PRIVATE KEY"
++			if _, err := x509.ParsePKCS1PrivateKey(key); err != nil {
++				kind = "EC PRIVATE KEY"
++				if _, err := x509.ParseECPrivateKey(key); err != nil {
++					return tls.Certificate{}, errTLSIdentity
++				}
++			}
++		}
++		key = pem.EncodeToMemory(&pem.Block{Type: kind, Bytes: key})
++	}
++	identity, err := tls.X509KeyPair(certificate, key)
++	if err != nil || len(identity.Certificate) == 0 {
++		return tls.Certificate{}, errTLSIdentity
++	}
++	leaf, err := x509.ParseCertificate(identity.Certificate[0])
++	if err != nil || now.Before(leaf.NotBefore) || !now.Before(leaf.NotAfter) {
++		return tls.Certificate{}, errTLSIdentity
++	}
++	identity.Leaf = leaf
++	return identity, nil
++}
+diff --git a/common/lokigateway/tls_test.go b/common/lokigateway/tls_test.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..1f6d5678f64f46f49c868ce1a12750db7926b71d
+--- /dev/null
++++ b/common/lokigateway/tls_test.go
+@@ -0,0 +1,159 @@
++package lokigateway
++
++import (
++	"bytes"
++	"crypto/ecdsa"
++	"crypto/ed25519"
++	"crypto/elliptic"
++	"crypto/rand"
++	"crypto/rsa"
++	"crypto/tls"
++	"crypto/x509"
++	"crypto/x509/pkix"
++	"encoding/pem"
++	"errors"
++	"math/big"
++	"net/http"
++	"net/http/httptest"
++	"testing"
++	"time"
++)
++
++func TestExistingHTTPSIdentityAcceptsPEMAndDERWithoutMutatingInput(t *testing.T) {
++	now := time.Date(2026, 11, 5, 0, 0, 0, 0, time.UTC)
++	rsaKey, err := rsa.GenerateKey(rand.Reader, 2048)
++	if err != nil {
++		t.Fatal(err)
++	}
++	ecKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
++	if err != nil {
++		t.Fatal(err)
++	}
++	_, edKey, err := ed25519.GenerateKey(rand.Reader)
++	if err != nil {
++		t.Fatal(err)
++	}
++	template := &x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "router.example"}, DNSNames: []string{"router.example"}, NotBefore: now.Add(-time.Hour), NotAfter: now.Add(time.Hour), KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}
++	for _, test := range []struct {
++		name string
++		key  any
++		der  []byte
++		kind string
++	}{
++		{"rsa-pkcs1", rsaKey, x509.MarshalPKCS1PrivateKey(rsaKey), "RSA PRIVATE KEY"},
++		{"ec-sec1", ecKey, func() []byte {
++			v, e := x509.MarshalECPrivateKey(ecKey)
++			if e != nil {
++				t.Fatal(e)
++			}
++			return v
++		}(), "EC PRIVATE KEY"},
++		{"ed25519-pkcs8", edKey, func() []byte {
++			v, e := x509.MarshalPKCS8PrivateKey(edKey)
++			if e != nil {
++				t.Fatal(e)
++			}
++			return v
++		}(), "PRIVATE KEY"},
++	} {
++		t.Run(test.name, func(t *testing.T) {
++			var public any
++			switch key := test.key.(type) {
++			case *rsa.PrivateKey:
++				public = &key.PublicKey
++			case *ecdsa.PrivateKey:
++				public = &key.PublicKey
++			case ed25519.PrivateKey:
++				public = key.Public()
++			}
++			certificate, err := x509.CreateCertificate(rand.Reader, template, template, public, test.key)
++			if err != nil {
++				t.Fatal(err)
++			}
++			for _, asPEM := range []bool{false, true} {
++				certInput, keyInput := certificate, test.der
++				if asPEM {
++					certInput = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certificate})
++					keyInput = pem.EncodeToMemory(&pem.Block{Type: test.kind, Bytes: test.der})
++				}
++				certBefore, keyBefore := bytes.Clone(certInput), bytes.Clone(keyInput)
++				identity, err := tlsIdentity(certInput, keyInput, now)
++				if err != nil || identity.PrivateKey == nil || identity.Leaf == nil || !bytes.Equal(identity.Certificate[0], certificate) {
++					t.Fatal("valid existing HTTPS identity refused")
++				}
++				if !bytes.Equal(certInput, certBefore) || !bytes.Equal(keyInput, keyBefore) {
++					t.Fatal("shared certificate input changed")
++				}
++				if !asPEM {
++					server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(204) }))
++					server.TLS = &tls.Config{Certificates: []tls.Certificate{identity}, MinVersion: tls.VersionTLS12}
++					server.StartTLS()
++					roots := x509.NewCertPool()
++					roots.AddCert(identity.Leaf)
++					transport := &http.Transport{TLSClientConfig: &tls.Config{RootCAs: roots, ServerName: "router.example", MinVersion: tls.VersionTLS12, Time: func() time.Time { return now }}}
++					client := &http.Client{Transport: transport, Timeout: time.Second}
++					response, err := client.Get(server.URL)
++					if err != nil {
++						server.Close()
++						t.Fatalf("DER identity failed real TLS handshake: %v", err)
++					}
++					response.Body.Close()
++					transport.CloseIdleConnections()
++					server.Close()
++					if response.StatusCode != 204 {
++						t.Fatal("DER identity did not serve HTTPS")
++					}
++				}
++				if asPEM {
++					for _, bad := range []struct{ cert, key []byte }{
++						{append(bytes.Clone(certInput), []byte("unexpected trailer")...), keyInput},
++						{certInput, append(bytes.Clone(keyInput), []byte("unexpected trailer")...)},
++						{certInput, append(bytes.Clone(keyInput), keyInput...)},
++					} {
++						if _, err := tlsIdentity(bad.cert, bad.key, now); !errors.Is(err, errTLSIdentity) {
++							t.Fatal("ambiguous PEM identity accepted")
++						}
++					}
++				}
++			}
++			for _, when := range []time.Time{now.Add(-2 * time.Hour), now.Add(time.Hour), now.Add(2 * time.Hour)} {
++				if _, err := tlsIdentity(certificate, test.der, when); !errors.Is(err, errTLSIdentity) {
++					t.Fatal("out-of-validity identity accepted")
++				}
++			}
++			for _, bad := range []struct{ cert, key []byte }{
++				{nil, test.der}, {certificate, nil}, {[]byte(testSession), test.der}, {certificate, []byte(testSecret)},
++				{append(bytes.Clone(certificate), 0), test.der}, {certificate, append(bytes.Clone(test.der), 0)},
++				{bytes.Repeat([]byte("x"), 65537), test.der}, {certificate, bytes.Repeat([]byte("x"), 65537)},
++			} {
++				if _, err := tlsIdentity(bad.cert, bad.key, now); !errors.Is(err, errTLSIdentity) {
++					t.Fatal("malformed identity accepted")
++				}
++			}
++		})
++	}
++}
++
++func TestHTTPSIdentityRejectsAMismatchedKey(t *testing.T) {
++	now := time.Now()
++	_, key, err := ed25519.GenerateKey(rand.Reader)
++	if err != nil {
++		t.Fatal(err)
++	}
++	_, other, err := ed25519.GenerateKey(rand.Reader)
++	if err != nil {
++		t.Fatal(err)
++	}
++	template := &x509.Certificate{SerialNumber: big.NewInt(2), NotBefore: now.Add(-time.Hour), NotAfter: now.Add(time.Hour)}
++	cert, err := x509.CreateCertificate(rand.Reader, template, template, key.Public(), key)
++	if err != nil {
++		t.Fatal(err)
++	}
++	der, err := x509.MarshalPKCS8PrivateKey(other)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if _, err := tlsIdentity(cert, der, now); !errors.Is(err, errTLSIdentity) {
++		t.Fatal("mismatched key accepted")
++	}
++}
+diff --git a/common/lokigateway/transport.go b/common/lokigateway/transport.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..02272bb5e57bead6988c959f0f69a85eded96f42
+--- /dev/null
++++ b/common/lokigateway/transport.go
+@@ -0,0 +1,433 @@
++// Modified for LoKi on 2026-11-05: keep browser credentials and controller credentials on separate connections.
++package lokigateway
++
++import (
++	"bytes"
++	"context"
++	"encoding/base64"
++	"encoding/json"
++	"errors"
++	"io"
++	"mime"
++	"net/http"
++	"net/url"
++	"strings"
++	"sync"
++	"time"
++	"unicode/utf8"
++
++	"github.com/coder/websocket"
++	"github.com/sagernet/sing-box/common/lokicontroller"
++)
++
++const controllerURL = "http://loki-controller"
++const responseLimit = 4 * 1024 * 1024
++
++type gateway struct {
++	lifecycle    sync.Mutex
++	closed       bool
++	handlers     sync.WaitGroup
++	ctx          context.Context
++	origins      map[string]map[string]bool
++	secret       string
++	authorize    func(context.Context, string, bool) (bool, error)
++	client       *http.Client
++	requests     chan struct{}
++	streams      chan struct{}
++	recheckEvery time.Duration
++}
++
++func controllerClient() *http.Client {
++	return &http.Client{
++		Transport: &http.Transport{
++			DialContext:     lokicontroller.DialContext,
++			MaxConnsPerHost: 8, MaxIdleConns: 8, IdleConnTimeout: 30 * time.Second,
++			ResponseHeaderTimeout: 65 * time.Second, MaxResponseHeaderBytes: 16384,
++			DisableCompression: true,
++			// Active GETs have effects; reused connections permit automatic net/http replay.
++			DisableKeepAlives: true,
++		},
++		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
++	}
++}
++
++func failure(w http.ResponseWriter, status int) {
++	http.Error(w, http.StatusText(status), status)
++}
++
++func sessionCookie(r *http.Request) string {
++	var session string
++	for _, line := range r.Header.Values("Cookie") {
++		for _, part := range strings.Split(line, ";") {
++			name, value, ok := strings.Cut(strings.TrimSpace(part), "=")
++			if name != "sysauth_https" {
++				continue
++			}
++			if !ok || session != "" || !validSession(value) {
++				return ""
++			}
++			session = value
++		}
++	}
++	return session
++}
++
++func (g *gateway) origin(r *http.Request) (string, bool) {
++	values := r.Header.Values("Origin")
++	allowed := g.origins[r.Host]
++	if r.TLS == nil || allowed == nil || len(values) > 1 {
++		return "", false
++	}
++	// Same-origin browser GETs need not send Origin; require independent browser source evidence.
++	if len(values) == 0 && r.Method == http.MethodGet && len(r.Header.Values("Upgrade")) == 0 {
++		metadata, references := r.Header.Values("Sec-Fetch-Site"), r.Header.Values("Referer")
++		if len(metadata) > 1 || len(references) > 1 || len(metadata) == 1 && metadata[0] != "same-origin" {
++			return "", false
++		}
++		if len(references) == 1 {
++			reference, err := url.Parse(references[0])
++			if err != nil || reference.Scheme != "https" || reference.Host != r.Host || reference.User != nil || reference.Fragment != "" {
++				return "", false
++			}
++			return "https://" + r.Host, true
++		}
++		return "https://" + r.Host, len(metadata) == 1
++	}
++	if len(values) != 1 {
++		return "", false
++	}
++	value := values[0]
++	return value, allowed[value]
++}
++
++func validWebSocketUpgrade(r *http.Request) bool {
++	if r.ProtoMajor != 1 || r.ProtoMinor != 1 || len(r.Header.Values("Connection")) != 1 ||
++		len(r.Header.Values("Sec-WebSocket-Version")) != 1 || r.Header.Get("Sec-WebSocket-Version") != "13" ||
++		len(r.Header.Values("Sec-WebSocket-Key")) != 1 {
++		return false
++	}
++	key := r.Header.Get("Sec-WebSocket-Key")
++	decoded, err := base64.StdEncoding.DecodeString(key)
++	if err != nil || len(decoded) != 16 || base64.StdEncoding.EncodeToString(decoded) != key {
++		return false
++	}
++	seen := make(map[string]bool)
++	for _, part := range strings.Split(strings.ToLower(r.Header.Get("Connection")), ",") {
++		token := strings.TrimSpace(part)
++		if seen[token] || token != "upgrade" && token != "keep-alive" {
++			return false
++		}
++		seen[token] = true
++	}
++	return seen["upgrade"]
++}
++
++func (g *gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
++	g.lifecycle.Lock()
++	if g.closed {
++		g.lifecycle.Unlock()
++		failure(w, http.StatusServiceUnavailable)
++		return
++	}
++	g.handlers.Add(1)
++	g.lifecycle.Unlock()
++	defer g.handlers.Done()
++	w.Header().Set("Cache-Control", "no-store")
++	w.Header().Set("X-Content-Type-Options", "nosniff")
++	w.Header().Set("Referrer-Policy", "no-referrer")
++	w.Header().Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
++	origin, ok := g.origin(r)
++	if !ok {
++		failure(w, http.StatusForbidden)
++		return
++	}
++	for _, header := range []string{"Authorization", "Proxy-Authorization", "X-HTTP-Method-Override", "X-Method-Override"} {
++		if len(r.Header.Values(header)) != 0 {
++			failure(w, http.StatusBadRequest)
++			return
++		}
++	}
++	w.Header().Set("Access-Control-Allow-Origin", origin)
++	w.Header().Set("Access-Control-Allow-Credentials", "true")
++	w.Header().Set("Vary", "Origin")
++	if r.Method == http.MethodOptions {
++		methods := r.Header.Values("Access-Control-Request-Method")
++		headers := r.Header.Values("Access-Control-Request-Headers")
++		if len(methods) != 1 || len(headers) > 1 {
++			failure(w, http.StatusBadRequest)
++			return
++		}
++		if _, ok := classify(methods[0], r.URL, false); !ok {
++			failure(w, http.StatusForbidden)
++			return
++		}
++		if len(headers) == 1 {
++			for _, header := range strings.Split(strings.ToLower(headers[0]), ",") {
++				if name := strings.TrimSpace(header); name != "x-loki-csrf" && name != "content-type" {
++					failure(w, http.StatusForbidden)
++					return
++				}
++			}
++		}
++		w.Header().Set("Access-Control-Allow-Methods", "GET, PUT, DELETE")
++		w.Header().Set("Access-Control-Allow-Headers", "X-Loki-CSRF, Content-Type")
++		w.WriteHeader(http.StatusNoContent)
++		return
++	}
++	stream := len(r.Header.Values("Upgrade")) != 0
++	if stream && (len(r.Header.Values("Upgrade")) != 1 || !strings.EqualFold(r.Header.Get("Upgrade"), "websocket") ||
++		len(r.Header.Values("Sec-WebSocket-Protocol")) != 0 || !validWebSocketUpgrade(r)) {
++		failure(w, http.StatusBadRequest)
++		return
++	}
++	op, ok := classify(r.Method, r.URL, stream)
++	if !ok {
++		failure(w, http.StatusForbidden)
++		return
++	}
++	if op.write && (len(r.Header.Values("X-Loki-CSRF")) != 1 || r.Header.Get("X-Loki-CSRF") != "1") {
++		failure(w, http.StatusForbidden)
++		return
++	}
++	session := sessionCookie(r)
++	if session == "" {
++		failure(w, http.StatusUnauthorized)
++		return
++	}
++	select {
++	case g.requests <- struct{}{}:
++		defer func() { <-g.requests }()
++	default:
++		failure(w, http.StatusServiceUnavailable)
++		return
++	}
++	allowed, err := g.authorize(r.Context(), session, op.write)
++	if err != nil {
++		failure(w, http.StatusServiceUnavailable)
++		return
++	}
++	if !allowed {
++		failure(w, http.StatusForbidden)
++		return
++	}
++	body, ok := requestBody(r)
++	if !ok {
++		failure(w, http.StatusBadRequest)
++		return
++	}
++	if stream {
++		g.stream(w, r, session)
++		return
++	}
++	g.exchange(w, r, body, op, session)
++}
++
++func (g *gateway) stopRequests() {
++	g.lifecycle.Lock()
++	g.closed = true
++	g.lifecycle.Unlock()
++}
++
++func requestBody(r *http.Request) ([]byte, bool) {
++	if r.ContentLength > 4096 {
++		return nil, false
++	}
++	body, err := io.ReadAll(io.LimitReader(r.Body, 4097))
++	if err != nil || len(body) > 4096 || !utf8.Valid(body) {
++		return nil, false
++	}
++	path := strings.TrimPrefix(r.URL.EscapedPath(), apiPrefix)
++	if r.Method != http.MethodPut || !strings.HasPrefix(path, "/proxies/") {
++		return nil, len(body) == 0
++	}
++	contentType, parameters, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
++	if err != nil || contentType != "application/json" || len(parameters) > 1 ||
++		len(parameters) == 1 && !strings.EqualFold(parameters["charset"], "utf-8") {
++		return nil, false
++	}
++	decoder := json.NewDecoder(bytes.NewReader(body))
++	first, err := decoder.Token()
++	if err != nil || first != json.Delim('{') {
++		return nil, false
++	}
++	key, err := decoder.Token()
++	if err != nil || key != "name" {
++		return nil, false
++	}
++	value, err := decoder.Token()
++	name, isString := value.(string)
++	if err != nil || !isString || len(name) > 1024 || name != "" && !safeName(url.PathEscape(name)) {
++		return nil, false
++	}
++	last, err := decoder.Token()
++	if err != nil || last != json.Delim('}') || decoder.Decode(new(any)) != io.EOF {
++		return nil, false
++	}
++	return body, true
++}
++
++func (g *gateway) safePayload(body []byte, session string) bool {
++	if len(body) > responseLimit || !json.Valid(body) {
++		return false
++	}
++	// Decode string tokens so JSON escapes cannot disguise a credential.
++	decoder := json.NewDecoder(bytes.NewReader(body))
++	decoder.UseNumber()
++	for {
++		token, err := decoder.Token()
++		if err == io.EOF {
++			return true
++		}
++		if err != nil {
++			return false
++		}
++		if value, ok := token.(string); ok && (strings.Contains(value, g.secret) || strings.Contains(value, session)) {
++			return false
++		}
++	}
++}
++
++func projectConfigs(body []byte) ([]byte, error) {
++	var value struct {
++		Mode     string   `json:"mode"`
++		ModeList []string `json:"mode-list"`
++		LogLevel string   `json:"log-level"`
++	}
++	if err := json.Unmarshal(body, &value); err != nil {
++		return nil, err
++	}
++	for _, mode := range append([]string{value.Mode}, value.ModeList...) {
++		if mode != "rule" && mode != "global" && mode != "direct" {
++			return nil, errors.New("invalid controller mode")
++		}
++	}
++	switch value.LogLevel {
++	case "debug", "info", "warn", "warning", "error", "fatal", "panic", "silent":
++	default:
++		return nil, errors.New("invalid controller log level")
++	}
++	if len(value.ModeList) > 3 {
++		return nil, errors.New("invalid controller mode list")
++	}
++	return json.Marshal(value)
++}
++
++func (g *gateway) exchange(w http.ResponseWriter, r *http.Request, body []byte, op operation, session string) {
++	budget := 5 * time.Second
++	if op.write {
++		budget = 65 * time.Second
++	}
++	ctx, cancel := context.WithTimeout(r.Context(), budget)
++	defer cancel()
++	upstream, err := http.NewRequestWithContext(ctx, r.Method, controllerURL+strings.TrimPrefix(r.URL.RequestURI(), apiPrefix), bytes.NewReader(body))
++	if err != nil {
++		failure(w, http.StatusBadGateway)
++		return
++	}
++	upstream.Header.Set("Authorization", "Bearer "+g.secret)
++	if len(body) != 0 {
++		upstream.Header.Set("Content-Type", "application/json")
++	}
++	response, err := g.client.Do(upstream)
++	if err != nil {
++		failure(w, http.StatusServiceUnavailable)
++		return
++	}
++	defer response.Body.Close()
++	if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusNoContent || response.Header.Get("Content-Encoding") != "" {
++		failure(w, http.StatusBadGateway)
++		return
++	}
++	payload, err := io.ReadAll(io.LimitReader(response.Body, responseLimit+1))
++	if err != nil || len(payload) > responseLimit {
++		failure(w, http.StatusBadGateway)
++		return
++	}
++	if response.StatusCode == http.StatusNoContent {
++		if len(payload) != 0 {
++			failure(w, http.StatusBadGateway)
++			return
++		}
++		w.WriteHeader(http.StatusNoContent)
++		return
++	}
++	if op.configs {
++		payload, err = projectConfigs(payload)
++	}
++	if err != nil || !g.safePayload(payload, session) {
++		failure(w, http.StatusBadGateway)
++		return
++	}
++	w.Header().Set("Content-Type", "application/json")
++	w.Write(payload)
++}
++
++func (g *gateway) stream(w http.ResponseWriter, r *http.Request, session string) {
++	select {
++	case g.streams <- struct{}{}:
++		defer func() { <-g.streams }()
++	default:
++		failure(w, http.StatusServiceUnavailable)
++		return
++	}
++	dialCtx, stopDial := context.WithTimeout(r.Context(), 3*time.Second)
++	upstream, _, err := websocket.Dial(dialCtx, controllerURL+strings.TrimPrefix(r.URL.RequestURI(), apiPrefix), &websocket.DialOptions{
++		HTTPClient: g.client, HTTPHeader: http.Header{"Authorization": {"Bearer " + g.secret}},
++	})
++	stopDial()
++	if err != nil {
++		failure(w, http.StatusServiceUnavailable)
++		return
++	}
++	defer upstream.CloseNow()
++	pattern := strings.NewReplacer("[", "\\[", "]", "\\]").Replace(r.Header.Get("Origin"))
++	downstream, err := websocket.Accept(w, r, &websocket.AcceptOptions{OriginPatterns: []string{pattern}})
++	if err != nil {
++		return
++	}
++	defer downstream.CloseNow()
++	upstream.SetReadLimit(responseLimit)
++	downstream.SetReadLimit(1024)
++	ctx, cancel := context.WithTimeout(g.ctx, 30*time.Minute)
++	var workers sync.WaitGroup
++	workers.Add(2)
++	defer func() { cancel(); downstream.CloseNow(); upstream.CloseNow(); workers.Wait() }()
++	done := make(chan struct{}, 2)
++	go func() {
++		defer workers.Done()
++		defer func() { done <- struct{}{} }()
++		for {
++			kind, data, err := upstream.Read(ctx)
++			if err != nil || kind != websocket.MessageText || !g.safePayload(data, session) {
++				return
++			}
++			writeCtx, stop := context.WithTimeout(ctx, 5*time.Second)
++			err = downstream.Write(writeCtx, kind, data)
++			stop()
++			if err != nil {
++				return
++			}
++		}
++	}()
++	go func() {
++		defer workers.Done()
++		defer func() { done <- struct{}{} }()
++		// Streams carry server events only; a client data frame ends the connection.
++		downstream.Read(ctx)
++	}()
++	ticker := time.NewTicker(g.recheckEvery)
++	defer ticker.Stop()
++	for {
++		select {
++		case <-ctx.Done():
++			return
++		case <-done:
++			return
++		case <-ticker.C:
++			allowed, err := g.authorize(ctx, session, false)
++			if err != nil || !allowed {
++				return
++			}
++		}
++	}
++}
+diff --git a/common/lokigateway/transport_test.go b/common/lokigateway/transport_test.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..d3da9a4c51533c17c5ad82034ef981d80a9ab797
+--- /dev/null
++++ b/common/lokigateway/transport_test.go
+@@ -0,0 +1,737 @@
++package lokigateway
++
++import (
++	"bytes"
++	"context"
++	"errors"
++	"io"
++	"net"
++	"net/http"
++	"net/http/httptest"
++	"net/url"
++	"strings"
++	"sync/atomic"
++	"testing"
++	"time"
++
++	"github.com/coder/websocket"
++)
++
++const testSecret = "123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0"
++const testLuCIOrigin = "https://127.0.0.1"
++
++func testGateway(t *testing.T, handler http.HandlerFunc) (*gateway, *httptest.Server) {
++	t.Helper()
++	upstream := httptest.NewServer(handler)
++	t.Cleanup(upstream.Close)
++	ctx, cancel := context.WithCancel(context.Background())
++	t.Cleanup(cancel)
++	g := &gateway{
++		ctx: ctx, secret: testSecret, client: controllerClient(),
++		requests: make(chan struct{}, 8), streams: make(chan struct{}, 4), recheckEvery: 20 * time.Millisecond,
++		authorize: func(_ context.Context, session string, _ bool) (bool, error) { return session == testSession, nil },
++	}
++	target, err := url.Parse(upstream.URL)
++	if err != nil {
++		t.Fatal(err)
++	}
++	transport := g.client.Transport.(*http.Transport)
++	transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
++		if address != "loki-controller:80" {
++			return nil, errors.New("unexpected controller destination")
++		}
++		return (&net.Dialer{Timeout: time.Second}).DialContext(ctx, network, target.Host)
++	}
++	t.Cleanup(transport.CloseIdleConnections)
++	server := httptest.NewUnstartedServer(g)
++	host := server.Listener.Addr().String()
++	g.origins = map[string]map[string]bool{host: {"https://" + host: true, testLuCIOrigin: true}}
++	server.StartTLS()
++	t.Cleanup(server.Close)
++	return g, server
++}
++
++func gatewayRequest(t *testing.T, server *httptest.Server, method, path, body string) *http.Request {
++	t.Helper()
++	r, err := http.NewRequest(method, server.URL+apiPrefix+path, strings.NewReader(body))
++	if err != nil {
++		t.Fatal(err)
++	}
++	r.Header.Set("Origin", server.URL)
++	r.Header.Set("Cookie", "other=public; sysauth_https="+testSession)
++	if method == "PUT" {
++		r.Header.Set("Content-Type", "application/json")
++	}
++	return r
++}
++
++func readResponse(t *testing.T, client *http.Client, r *http.Request) (int, string, http.Header) {
++	t.Helper()
++	response, err := client.Do(r)
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer response.Body.Close()
++	body, err := io.ReadAll(response.Body)
++	if err != nil {
++		t.Fatal(err)
++	}
++	return response.StatusCode, string(body), response.Header
++}
++
++func assertNoPrivateResponse(t *testing.T, body string, headers http.Header) {
++	t.Helper()
++	text := body + headers.Get("Location") + headers.Get("Set-Cookie")
++	if strings.Contains(text, testSession) || strings.Contains(text, testSecret) {
++		t.Fatal("private credential disclosed")
++	}
++}
++
++func TestHTTPUsesOnlyTheFixedControllerCredentialAndRechecksEachRequest(t *testing.T) {
++	var upstreamCalls, authCalls atomic.Int32
++	var allowed atomic.Bool
++	allowed.Store(true)
++	g, server := testGateway(t, func(w http.ResponseWriter, r *http.Request) {
++		upstreamCalls.Add(1)
++		if r.Host != "loki-controller" || r.URL.RequestURI() != "/proxies/Office%2FOUT" ||
++			r.Header.Get("Authorization") != "Bearer "+testSecret || r.Header.Get("Cookie") != "" || r.Header.Get("Origin") != "" ||
++			r.Header.Get("X-Forwarded-For") != "" || r.Header.Get("X-Loki-CSRF") != "" {
++			t.Error("upstream credential or path boundary broken")
++		}
++		w.Header().Set("Set-Cookie", "private="+testSecret)
++		w.Header().Set("X-Private", testSecret)
++		io.WriteString(w, `{"name":"Office/OUT"}`)
++	})
++	g.authorize = func(_ context.Context, session string, write bool) (bool, error) {
++		authCalls.Add(1)
++		if session != testSession || write {
++			t.Error("wrong read authorization")
++		}
++		return allowed.Load(), nil
++	}
++	r := gatewayRequest(t, server, "GET", "/proxies/Office%2FOUT", "")
++	r.Header.Set("X-Forwarded-For", "untrusted")
++	status, body, headers := readResponse(t, server.Client(), r)
++	if status != 200 || body != `{"name":"Office/OUT"}` || headers.Get("X-Private") != "" {
++		t.Fatal("safe read failed")
++	}
++	assertNoPrivateResponse(t, body, headers)
++	allowed.Store(false)
++	status, body, headers = readResponse(t, server.Client(), gatewayRequest(t, server, "GET", "/proxies/Office%2FOUT", ""))
++	if status != 403 || upstreamCalls.Load() != 1 || authCalls.Load() != 2 {
++		t.Fatal("revoked HTTP session reused")
++	}
++	assertNoPrivateResponse(t, body, headers)
++}
++
++func TestSameOriginBrowserGETCanUseFetchMetadataOrReferer(t *testing.T) {
++	_, server := testGateway(t, func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, `{}`) })
++	for _, metadata := range []bool{false, true} {
++		r := gatewayRequest(t, server, "GET", "/version", "")
++		r.Header.Del("Origin")
++		if metadata {
++			r.Header.Set("Sec-Fetch-Site", "same-origin")
++		} else {
++			r.Header.Set("Referer", server.URL+"/cgi-bin/luci/loki-gateway/yacd/")
++		}
++		status, _, _ := readResponse(t, server.Client(), r)
++		if status != 200 {
++			t.Fatal("same-origin browser GET incorrectly requires an Origin header")
++		}
++	}
++}
++
++func TestEncodedConnectionNamesKeepTheirPathAndSelectorValue(t *testing.T) {
++	var calls atomic.Int32
++	_, server := testGateway(t, func(w http.ResponseWriter, r *http.Request) {
++		calls.Add(1)
++		if r.URL.RequestURI() != "/proxies/Node%20%231%3FEU%2FOUT" || r.URL.RawQuery != "" {
++			t.Error("encoded name changed the controller route")
++		}
++		if r.Method == "PUT" {
++			body, _ := io.ReadAll(r.Body)
++			if string(body) != `{"name":"Node #1?EU/OUT"}` {
++				t.Error("selector value changed")
++			}
++			w.WriteHeader(204)
++			return
++		}
++		io.WriteString(w, `{"name":"Node #1?EU/OUT"}`)
++	})
++	r := gatewayRequest(t, server, "GET", "/proxies/Node%20%231%3FEU%2FOUT", "")
++	status, _, _ := readResponse(t, server.Client(), r)
++	if status != 200 {
++		t.Fatal("connection name refused")
++	}
++	r = gatewayRequest(t, server, "PUT", "/proxies/Node%20%231%3FEU%2FOUT", `{"name":"Node #1?EU/OUT"}`)
++	r.Header.Set("X-Loki-CSRF", "1")
++	status, _, _ = readResponse(t, server.Client(), r)
++	if status != 204 || calls.Load() != 2 {
++		t.Fatal("selector with encoded delimiters refused")
++	}
++}
++
++func TestHTTPRejectsCredentialAmbiguityHostOriginAndCSRFBeforeAuthorization(t *testing.T) {
++	var calls atomic.Int32
++	g, server := testGateway(t, func(http.ResponseWriter, *http.Request) { t.Error("forbidden request reached controller") })
++	g.authorize = func(context.Context, string, bool) (bool, error) { calls.Add(1); return true, nil }
++	host := strings.TrimPrefix(server.URL, "https://")
++	for name, mutate := range map[string]func(*http.Request){
++		"missing-cookie":   func(r *http.Request) { r.Header.Del("Cookie") },
++		"anonymous":        func(r *http.Request) { r.Header.Set("Cookie", "sysauth_https="+strings.Repeat("0", 32)) },
++		"duplicate-cookie": func(r *http.Request) { r.Header.Add("Cookie", "sysauth_https="+testSession) },
++		"quoted-cookie":    func(r *http.Request) { r.Header.Set("Cookie", `sysauth_https="`+testSession+`"`) },
++		"host":             func(r *http.Request) { r.Host = "attacker.test:9091" },
++		"missing-origin":   func(r *http.Request) { r.Header.Del("Origin") },
++		"cross-site-metadata": func(r *http.Request) {
++			r.Header.Del("Origin")
++			r.Header.Set("Sec-Fetch-Site", "cross-site")
++			r.Header.Set("Referer", "https://"+host+"/")
++		},
++		"same-site-metadata": func(r *http.Request) { r.Header.Del("Origin"); r.Header.Set("Sec-Fetch-Site", "same-site") },
++		"duplicate-metadata": func(r *http.Request) {
++			r.Header.Del("Origin")
++			r.Header["Sec-Fetch-Site"] = []string{"same-origin", "same-origin"}
++		},
++		"cross-referer": func(r *http.Request) { r.Header.Del("Origin"); r.Header.Set("Referer", "https://attacker.test/") },
++		"referer-userinfo": func(r *http.Request) {
++			r.Header.Del("Origin")
++			r.Header.Set("Referer", "https://attacker.test@"+host+"/")
++		},
++		"duplicate-referer": func(r *http.Request) {
++			r.Header.Del("Origin")
++			r.Header["Referer"] = []string{"https://" + host + "/", "https://" + host + "/"}
++		},
++		"conflicting-reference": func(r *http.Request) {
++			r.Header.Del("Origin")
++			r.Header.Set("Sec-Fetch-Site", "same-origin")
++			r.Header.Set("Referer", "https://attacker.test/")
++		},
++		"ws-missing-origin": func(r *http.Request) {
++			r.Header.Del("Origin")
++			r.Header.Set("Sec-Fetch-Site", "same-origin")
++			r.Header.Set("Upgrade", "websocket")
++		},
++		"http-origin":      func(r *http.Request) { r.Header.Set("Origin", "http://"+host) },
++		"cross-origin":     func(r *http.Request) { r.Header.Set("Origin", "https://attacker.test") },
++		"origin-userinfo":  func(r *http.Request) { r.Header.Set("Origin", "https://attacker.test@"+host) },
++		"duplicate-origin": func(r *http.Request) { r.Header.Add("Origin", r.Header.Get("Origin")) },
++		"bearer":           func(r *http.Request) { r.Header.Set("Authorization", "Bearer "+testSecret) },
++		"empty-bearer":     func(r *http.Request) { r.Header["Authorization"] = []string{""} },
++		"override":         func(r *http.Request) { r.Header.Set("X-HTTP-Method-Override", "DELETE") },
++		"missing-csrf":     func(r *http.Request) { r.Method = "DELETE"; r.URL.Path = apiPrefix + "/connections" },
++		"duplicate-csrf": func(r *http.Request) {
++			r.Method = "DELETE"
++			r.URL.Path = apiPrefix + "/connections"
++			r.Header["X-Loki-CSRF"] = []string{"1", "1"}
++		},
++		"active-get":  func(r *http.Request) { r.URL.Path = apiPrefix + "/proxies/node/exit"; r.URL.RawQuery = "timeout=5000" },
++		"query-token": func(r *http.Request) { r.URL.RawQuery = "token=" + testSecret },
++		"ws-subprotocol": func(r *http.Request) {
++			r.Header.Set("Upgrade", "websocket")
++			r.Header.Set("Sec-WebSocket-Protocol", testSecret)
++		},
++	} {
++		t.Run(name, func(t *testing.T) {
++			r := gatewayRequest(t, server, "GET", "/connections", "")
++			mutate(r)
++			status, body, headers := readResponse(t, server.Client(), r)
++			if status < 400 {
++				t.Fatal("invalid request accepted")
++			}
++			assertNoPrivateResponse(t, body, headers)
++		})
++	}
++	if calls.Load() != 0 {
++		t.Fatal("invalid request invoked authorizer")
++	}
++	r := gatewayRequest(t, server, "GET", "/connections", "")
++	r.TLS = nil
++	recorder := httptest.NewRecorder()
++	g.ServeHTTP(recorder, r)
++	if recorder.Code != 403 {
++		t.Fatal("plaintext request accepted")
++	}
++}
++
++func TestEffectsRequireWriteAndStrictSelectorBody(t *testing.T) {
++	var writes, calls atomic.Int32
++	g, server := testGateway(t, func(w http.ResponseWriter, r *http.Request) { calls.Add(1); w.WriteHeader(204) })
++	g.authorize = func(_ context.Context, _ string, write bool) (bool, error) {
++		if write {
++			writes.Add(1)
++		}
++		return write, nil
++	}
++	for _, body := range []string{`{"name":"Office/Node"}`, `{"name":""}`} {
++		r := gatewayRequest(t, server, "PUT", "/proxies/Office%2FOUT", body)
++		r.Header.Set("X-Loki-CSRF", "1")
++		status, _, _ := readResponse(t, server.Client(), r)
++		if status != 204 {
++			t.Fatal("valid selector mutation refused")
++		}
++	}
++	for _, body := range []string{`{"name":null}`, `{"name":1}`, `{"name":[]}`, `{"name":"one","name":"two"}`, `{"name":"one","extra":1}`, `{"name":"one"}{}`, `{"name":"line\nfeed"}`, "{\"name\":\"\xff\"}", strings.Repeat("x", 4097)} {
++		r := gatewayRequest(t, server, "PUT", "/proxies/Office%2FOUT", body)
++		r.Header.Set("X-Loki-CSRF", "1")
++		status, _, _ := readResponse(t, server.Client(), r)
++		if status != 400 {
++			t.Fatal("malformed selector mutation accepted")
++		}
++	}
++	if calls.Load() != 2 || writes.Load() != 11 {
++		t.Fatal("write body or permission boundary broken")
++	}
++	r := gatewayRequest(t, server, "GET", "/proxies/node/exit?timeout=5000", "")
++	r.Header.Set("X-Loki-CSRF", "1")
++	status, _, _ := readResponse(t, server.Client(), r)
++	if status != 204 || calls.Load() != 3 || writes.Load() != 12 {
++		t.Fatal("active GET did not require write")
++	}
++	for _, path := range []string{"/connections", "/providers/rules"} {
++		method := "DELETE"
++		if path == "/providers/rules" {
++			method = "PUT"
++		}
++		r := gatewayRequest(t, server, method, path, "unwanted body")
++		r.Header.Set("X-Loki-CSRF", "1")
++		status, _, _ := readResponse(t, server.Client(), r)
++		if status != 400 {
++			t.Fatal("unexpected body accepted")
++		}
++	}
++}
++
++func TestActiveHTTPRequestsCanWaitLongerThanTheWebSocketHandshake(t *testing.T) {
++	_, server := testGateway(t, func(w http.ResponseWriter, r *http.Request) {
++		select {
++		case <-time.After(3200 * time.Millisecond):
++			w.WriteHeader(204)
++		case <-r.Context().Done():
++		}
++	})
++	r := gatewayRequest(t, server, "GET", "/proxies/node/exit?timeout=5000", "")
++	r.Header.Set("X-Loki-CSRF", "1")
++	status, _, _ := readResponse(t, server.Client(), r)
++	if status != 204 {
++		t.Fatal("active request incorrectly uses the short handshake deadline")
++	}
++}
++
++func TestActiveGETIsNotReplayedWhenTheControllerClosesAfterItsEffect(t *testing.T) {
++	for _, path := range []string{
++		"/proxies/node/exit?timeout=5000",
++		"/proxies/node/delay?url=https%3A%2F%2Fexample.invalid&timeout=5000",
++		"/group/node/delay?url=https%3A%2F%2Fexample.invalid&timeout=5000",
++	} {
++		t.Run(path, func(t *testing.T) {
++			var effects atomic.Int32
++			_, server := testGateway(t, func(w http.ResponseWriter, r *http.Request) {
++				if r.URL.Path == "/version" {
++					io.WriteString(w, `{}`)
++					return
++				}
++				if effects.Add(1) == 1 {
++					connection, _, err := w.(http.Hijacker).Hijack()
++					if err != nil {
++						t.Error(err)
++						return
++					}
++					connection.Close()
++					return
++				}
++				w.WriteHeader(http.StatusNoContent)
++			})
++			status, _, _ := readResponse(t, server.Client(), gatewayRequest(t, server, "GET", "/version", ""))
++			if status != http.StatusOK {
++				t.Fatal("controller connection could not be primed")
++			}
++			r := gatewayRequest(t, server, "GET", path, "")
++			r.Header.Set("X-Loki-CSRF", "1")
++			status, body, headers := readResponse(t, server.Client(), r)
++			if status != http.StatusServiceUnavailable || effects.Load() != 1 {
++				t.Fatalf("active GET was replayed after its effect: status=%d effects=%d", status, effects.Load())
++			}
++			assertNoPrivateResponse(t, body, headers)
++		})
++	}
++}
++
++func TestConfigsProjectionDropsAllOtherControllerFields(t *testing.T) {
++	_, server := testGateway(t, func(w http.ResponseWriter, r *http.Request) {
++		io.WriteString(w, `{"mode":"rule","mode-list":["rule","global","direct"],"log-level":"info","secret":"`+testSecret+`","authentication":["`+testSession+`"],"external-controller":"0.0.0.0:9092"}`)
++	})
++	status, body, headers := readResponse(t, server.Client(), gatewayRequest(t, server, "GET", "/configs", ""))
++	if status != 200 || body != `{"mode":"rule","mode-list":["rule","global","direct"],"log-level":"info"}` {
++		t.Fatal("unsafe or incompatible config projection")
++	}
++	assertNoPrivateResponse(t, body, headers)
++}
++
++func TestControllerFailuresLimitsAndRedirectsDoNotExposePrivateData(t *testing.T) {
++	var mode atomic.Int32
++	var unexpected atomic.Int32
++	_, server := testGateway(t, func(w http.ResponseWriter, r *http.Request) {
++		switch mode.Load() {
++		case 0:
++			w.Header().Set("Location", "http://127.0.0.1:9092/redirect?token="+testSecret)
++			w.WriteHeader(302)
++		case 1:
++			w.WriteHeader(500)
++			io.WriteString(w, testSecret+testSession)
++		case 2:
++			io.WriteString(w, `{"secret":"`+testSecret+`"}`)
++		case 3:
++			io.WriteString(w, `{"sid":"`+testSession+`"}`)
++		case 4:
++			io.WriteString(w, strings.Repeat("x", responseLimit+1))
++		case 5:
++			io.WriteString(w, `{"broken":`)
++		case 6:
++			w.Header().Set("Content-Encoding", "gzip")
++			io.WriteString(w, `{}`)
++		case 7:
++			io.WriteString(w, `{"secret":"`+strings.ReplaceAll(testSecret, "1", `\u0031`)+`"}`)
++		case 8:
++			io.WriteString(w, `{"sid":"`+strings.ReplaceAll(testSession, "1", `\u0031`)+`"}`)
++		default:
++			unexpected.Add(1)
++		}
++		if strings.HasPrefix(r.URL.Path, "/redirect") {
++			unexpected.Add(1)
++		}
++	})
++	for i := int32(0); i <= 8; i++ {
++		mode.Store(i)
++		status, body, headers := readResponse(t, server.Client(), gatewayRequest(t, server, "GET", "/version", ""))
++		if status != 502 {
++			t.Fatalf("unsafe response accepted: %d %d", i, status)
++		}
++		assertNoPrivateResponse(t, body, headers)
++	}
++	if unexpected.Load() != 0 {
++		t.Fatal("controller redirect followed")
++	}
++}
++
++func TestCORSPreflightOnlyAllowsTheConfiguredOriginAndHeaders(t *testing.T) {
++	g, server := testGateway(t, func(http.ResponseWriter, *http.Request) { t.Error("preflight reached controller") })
++	g.authorize = func(context.Context, string, bool) (bool, error) {
++		t.Error("preflight authorizes without an operation")
++		return false, nil
++	}
++	r := gatewayRequest(t, server, "OPTIONS", "/connections", "")
++	r.Header.Del("Cookie")
++	r.Header.Set("Origin", testLuCIOrigin)
++	r.Header.Set("Access-Control-Request-Method", "DELETE")
++	r.Header.Set("Access-Control-Request-Headers", "x-loki-csrf, content-type")
++	status, _, headers := readResponse(t, server.Client(), r)
++	if status != 204 || headers.Get("Access-Control-Allow-Origin") != testLuCIOrigin || headers.Get("Access-Control-Allow-Credentials") != "true" {
++		t.Fatal("valid preflight refused")
++	}
++	r.Header.Set("Access-Control-Request-Headers", "authorization")
++	status, _, _ = readResponse(t, server.Client(), r)
++	if status != 403 {
++		t.Fatal("unexpected header allowed")
++	}
++	r.Header.Set("Origin", "https://attacker.test")
++	status, _, headers = readResponse(t, server.Client(), r)
++	if status != 403 || headers.Get("Access-Control-Allow-Origin") != "" {
++		t.Fatal("untrusted CORS origin reflected")
++	}
++}
++
++func TestHTTPUnavailableAndSaturationFailClosed(t *testing.T) {
++	g, server := testGateway(t, func(http.ResponseWriter, *http.Request) { t.Error("failed authorization reached controller") })
++	g.authorize = func(context.Context, string, bool) (bool, error) { return false, errors.New(testSession + testSecret) }
++	status, body, headers := readResponse(t, server.Client(), gatewayRequest(t, server, "GET", "/version", ""))
++	if status != 503 {
++		t.Fatal("unavailable authorization accepted")
++	}
++	assertNoPrivateResponse(t, body, headers)
++	for i := 0; i < cap(g.requests); i++ {
++		g.requests <- struct{}{}
++	}
++	status, _, _ = readResponse(t, server.Client(), gatewayRequest(t, server, "GET", "/version", ""))
++	if status != 503 {
++		t.Fatal("request budget exceeded")
++	}
++	for len(g.requests) > 0 {
++		<-g.requests
++	}
++}
++
++func dialGateway(t *testing.T, server *httptest.Server, path string) (*websocket.Conn, error) {
++	t.Helper()
++	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
++	defer cancel()
++	connection, _, err := websocket.Dial(ctx, server.URL+apiPrefix+path, &websocket.DialOptions{
++		HTTPClient: server.Client(), HTTPHeader: http.Header{"Origin": {server.URL}, "Cookie": {"sysauth_https=" + testSession}},
++	})
++	return connection, err
++}
++
++func TestWebSocketRevocationAndOutageCloseBothSides(t *testing.T) {
++	for _, outage := range []bool{false, true} {
++		t.Run(map[bool]string{false: "revoked", true: "unavailable"}[outage], func(t *testing.T) {
++			closed := make(chan struct{}, 1)
++			var revoke atomic.Bool
++			var calls atomic.Int32
++			g, server := testGateway(t, func(w http.ResponseWriter, r *http.Request) {
++				if r.Header.Get("Authorization") != "Bearer "+testSecret || r.Header.Get("Cookie") != "" || r.Header.Get("Origin") != "" {
++					t.Error("WS credential boundary broken")
++				}
++				connection, err := websocket.Accept(w, r, nil)
++				if err != nil {
++					return
++				}
++				defer connection.CloseNow()
++				ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
++				defer cancel()
++				connection.Write(ctx, websocket.MessageText, []byte(`{"up":1,"down":2}`))
++				connection.Read(ctx)
++				closed <- struct{}{}
++			})
++			g.authorize = func(_ context.Context, _ string, write bool) (bool, error) {
++				calls.Add(1)
++				if write {
++					t.Error("stream used write role")
++				}
++				if revoke.Load() {
++					if outage {
++						return false, errors.New(testSecret)
++					}
++					return false, nil
++				}
++				return true, nil
++			}
++			connection, err := dialGateway(t, server, "/traffic")
++			if err != nil {
++				t.Fatal(err)
++			}
++			defer connection.CloseNow()
++			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
++			defer cancel()
++			kind, body, err := connection.Read(ctx)
++			if err != nil || kind != websocket.MessageText || !bytes.Equal(body, []byte(`{"up":1,"down":2}`)) {
++				t.Fatal("WS event missing")
++			}
++			revoke.Store(true)
++			if _, _, err = connection.Read(ctx); err == nil {
++				t.Fatal("revoked stream remained open")
++			}
++			select {
++			case <-closed:
++			case <-ctx.Done():
++				t.Fatal("upstream retained after revocation")
++			}
++			if calls.Load() < 2 {
++				t.Fatal("stream permission was not rechecked")
++			}
++		})
++	}
++}
++
++func TestMalformedWebSocketHeadersNeverReachUpstreamOrReflectCredentials(t *testing.T) {
++	var calls atomic.Int32
++	_, server := testGateway(t, func(w http.ResponseWriter, r *http.Request) {
++		calls.Add(1)
++		connection, err := websocket.Accept(w, r, nil)
++		if err != nil {
++			return
++		}
++		defer connection.CloseNow()
++		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
++		defer cancel()
++		connection.Read(ctx)
++	})
++	for name, mutate := range map[string]func(*http.Request){
++		"key":               func(r *http.Request) { r.Header.Set("Sec-WebSocket-Key", testSession) },
++		"version":           func(r *http.Request) { r.Header.Set("Sec-WebSocket-Version", testSession) },
++		"connection":        func(r *http.Request) { r.Header.Set("Connection", testSession) },
++		"duplicate-key":     func(r *http.Request) { r.Header.Add("Sec-WebSocket-Key", r.Header.Get("Sec-WebSocket-Key")) },
++		"duplicate-version": func(r *http.Request) { r.Header.Add("Sec-WebSocket-Version", "13") },
++	} {
++		t.Run(name, func(t *testing.T) {
++			r := gatewayRequest(t, server, "GET", "/traffic", "")
++			r.Header.Set("Connection", "Upgrade")
++			r.Header.Set("Upgrade", "websocket")
++			r.Header.Set("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
++			r.Header.Set("Sec-WebSocket-Version", "13")
++			mutate(r)
++			status, body, headers := readResponse(t, server.Client(), r)
++			if status != 400 {
++				t.Fatal("malformed handshake not refused before upgrade")
++			}
++			assertNoPrivateResponse(t, body, headers)
++		})
++	}
++	if calls.Load() != 0 {
++		t.Fatal("malformed handshake reached controller")
++	}
++}
++
++func TestWebSocketNeverForwardsClientCommands(t *testing.T) {
++	received := make(chan bool, 1)
++	_, server := testGateway(t, func(w http.ResponseWriter, r *http.Request) {
++		connection, err := websocket.Accept(w, r, nil)
++		if err != nil {
++			return
++		}
++		defer connection.CloseNow()
++		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
++		defer cancel()
++		_, _, err = connection.Read(ctx)
++		received <- err == nil
++	})
++	connection, err := dialGateway(t, server, "/connections")
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer connection.CloseNow()
++	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
++	defer cancel()
++	if err = connection.Write(ctx, websocket.MessageText, []byte(`{"command":"delete-all"}`)); err != nil {
++		t.Fatal(err)
++	}
++	select {
++	case forwarded := <-received:
++		if forwarded {
++			t.Fatal("client command forwarded")
++		}
++	case <-ctx.Done():
++		t.Fatal("upstream not closed")
++	}
++	if _, _, err = connection.Read(ctx); err == nil {
++		t.Fatal("client data frame did not end stream")
++	}
++}
++
++func TestWebSocketBudgetAndGatewayShutdownDoNotRetainConnections(t *testing.T) {
++	closed := make(chan struct{}, 4)
++	var upstreamCalls atomic.Int32
++	g, server := testGateway(t, func(w http.ResponseWriter, r *http.Request) {
++		upstreamCalls.Add(1)
++		connection, err := websocket.Accept(w, r, nil)
++		if err != nil {
++			return
++		}
++		defer connection.CloseNow()
++		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
++		defer cancel()
++		connection.Write(ctx, websocket.MessageText, []byte(`{}`))
++		connection.Read(ctx)
++		closed <- struct{}{}
++	})
++	ctx, cancel := context.WithCancel(g.ctx)
++	g.ctx = ctx
++	defer cancel()
++	var connections []*websocket.Conn
++	for i := 0; i < 4; i++ {
++		connection, err := dialGateway(t, server, "/traffic")
++		if err != nil {
++			t.Fatal(err)
++		}
++		connections = append(connections, connection)
++		defer connection.CloseNow()
++		readCtx, stop := context.WithTimeout(context.Background(), time.Second)
++		_, _, err = connection.Read(readCtx)
++		stop()
++		if err != nil {
++			t.Fatal(err)
++		}
++	}
++	if connection, err := dialGateway(t, server, "/traffic"); err == nil {
++		connection.CloseNow()
++		t.Fatal("stream budget exceeded")
++	}
++	if upstreamCalls.Load() != 4 {
++		t.Fatal("over-budget stream reached controller")
++	}
++	cancel()
++	deadline, stop := context.WithTimeout(context.Background(), 2*time.Second)
++	defer stop()
++	for _, connection := range connections {
++		if _, _, err := connection.Read(deadline); err == nil {
++			t.Fatal("stream survived gateway shutdown")
++		}
++	}
++	for i := 0; i < 4; i++ {
++		select {
++		case <-closed:
++		case <-deadline.Done():
++			t.Fatal("shutdown retained upstream")
++		}
++	}
++}
++
++func TestWebSocketRejectsOversizedBinaryAndPrivateMessages(t *testing.T) {
++	for name, payload := range map[string][]byte{
++		"oversized": []byte(`{"data":"` + strings.Repeat("x", responseLimit) + `"}`),
++		"private":   []byte(`{"secret":"` + testSecret + `"}`), "sid": []byte(`{"sid":"` + testSession + `"}`),
++		"escaped-private": []byte(`{"secret":"` + strings.ReplaceAll(testSecret, "1", `\u0031`) + `"}`),
++		"invalid":         []byte(`not json`), "binary": []byte(`{}`),
++	} {
++		t.Run(name, func(t *testing.T) {
++			_, server := testGateway(t, func(w http.ResponseWriter, r *http.Request) {
++				connection, err := websocket.Accept(w, r, nil)
++				if err != nil {
++					return
++				}
++				defer connection.CloseNow()
++				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
++				defer cancel()
++				kind := websocket.MessageText
++				if name == "binary" {
++					kind = websocket.MessageBinary
++				}
++				connection.Write(ctx, kind, payload)
++				connection.Read(ctx)
++			})
++			connection, err := dialGateway(t, server, "/logs")
++			if err != nil {
++				t.Fatal(err)
++			}
++			defer connection.CloseNow()
++			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
++			defer cancel()
++			if _, _, err = connection.Read(ctx); err == nil {
++				t.Fatal("unsafe stream message delivered")
++			}
++		})
++	}
++}
++
++func TestConnectionsSnapshotIntervalReachesControllerUnchanged(t *testing.T) {
++	seen := make(chan string, 1)
++	_, server := testGateway(t, func(w http.ResponseWriter, r *http.Request) {
++		seen <- r.URL.RequestURI()
++		connection, err := websocket.Accept(w, r, nil)
++		if err != nil {
++			t.Error(err)
++			return
++		}
++		defer connection.CloseNow()
++		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
++		defer cancel()
++		if err := connection.Write(ctx, websocket.MessageText, []byte(`{"connections":[]}`)); err != nil {
++			t.Error(err)
++			return
++		}
++		connection.Read(ctx)
++	})
++	connection, err := dialGateway(t, server, "/connections?interval=5000")
++	if err != nil {
++		t.Fatal("configured snapshot interval refused:", err)
++	}
++	defer connection.CloseNow()
++	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
++	defer cancel()
++	kind, data, err := connection.Read(ctx)
++	if err != nil || kind != websocket.MessageText || string(data) != `{"connections":[]}` {
++		t.Fatal("interval stream did not deliver its snapshot")
++	}
++	if <-seen != "/connections?interval=5000" {
++		t.Fatal("snapshot interval changed before reaching controller")
++	}
++}
+diff --git a/experimental/clashapi/common.go b/experimental/clashapi/common.go
+index 416289c05b2af4769a3aca4b9754cc0b13e59633..574047b7de45fd2d0d588668101f93025d5511cd 100644
+--- a/experimental/clashapi/common.go
++++ b/experimental/clashapi/common.go
+@@ -7,11 +7,13 @@ import (
+ 	"github.com/go-chi/chi/v5"
+ )
+ 
+-// When name is composed of a partial escape string, Golang does not unescape it
++// Chi routes through RawPath when present; Path has already been unescaped by net/http.
+ func getEscapeParam(r *http.Request, paramName string) string {
+ 	param := chi.URLParam(r, paramName)
+-	if newParam, err := url.PathUnescape(param); err == nil {
+-		param = newParam
++	if r.URL.RawPath != "" {
++		if decoded, err := url.PathUnescape(param); err == nil {
++			param = decoded
++		}
+ 	}
+ 	return param
+ }
+diff --git a/experimental/clashapi/common_gateway_test.go b/experimental/clashapi/common_gateway_test.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..7aa6d7a978b75dfb0b7d1676aa3b06808a77ad25
+--- /dev/null
++++ b/experimental/clashapi/common_gateway_test.go
+@@ -0,0 +1,27 @@
++package clashapi
++
++import (
++	"net/http"
++	"net/http/httptest"
++	"net/url"
++	"testing"
++
++	"github.com/go-chi/chi/v5"
++)
++
++func TestEscapedControllerNamesAreDecodedExactlyOnce(t *testing.T) {
++	for _, name := range []string{"Office/OUT", "Node #1?EU", "Node%2FOUT", "Node%20EU", "Node%23EU", "Node%25EU", "Node%broken", "Node%", "Node+EU", "节点/欧洲"} {
++		t.Run(name, func(t *testing.T) {
++			for _, parameter := range []string{"name", "tag"} {
++				router := chi.NewRouter()
++				router.Get("/proxies/{"+parameter+"}", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(getEscapeParam(r, parameter))) })
++				request := httptest.NewRequest("GET", "http://controller.test/proxies/"+url.PathEscape(name), nil)
++				response := httptest.NewRecorder()
++				router.ServeHTTP(response, request)
++				if response.Code != 200 || response.Body.String() != name {
++					t.Fatalf("controller name changed after routing: %q => %q", name, response.Body.String())
++				}
++			}
++		})
++	}
++}
+diff --git a/experimental/clashapi/server.go b/experimental/clashapi/server.go
+index 1582b764dc1cb665183b586d32ac637cba669683..aef03ee322df888d14d98734bf491be4461d35ce 100644
+--- a/experimental/clashapi/server.go
++++ b/experimental/clashapi/server.go
+@@ -1,3 +1,4 @@
++// Modified for LoKi on 2026-11-05: support the fixed private Unix controller.
+ package clashapi
+ 
+ import (
+@@ -15,6 +16,7 @@ import (
+ 
+ 	"github.com/sagernet/cors"
+ 	"github.com/sagernet/sing-box/adapter"
++	"github.com/sagernet/sing-box/common/lokicontroller"
+ 	"github.com/sagernet/sing-box/common/trafficcontrol"
+ 	"github.com/sagernet/sing-box/common/urltest"
+ 	C "github.com/sagernet/sing-box/constant"
+@@ -63,6 +65,7 @@ type Server struct {
+ 	groupDelayAccess         sync.Mutex
+ 	groupDelayAttempts       map[string]time.Time
+ 	externalController       bool
++	privateController        bool
+ 	externalUI               string
+ 	externalUIDownloadURL    string
+ 	externalUIDownloadDetour string
+@@ -70,6 +73,9 @@ type Server struct {
+ }
+ 
+ func NewServer(ctx context.Context, logFactory log.ObservableFactory, options option.ClashAPIOptions) (adapter.LifecycleService, error) {
++	if options.ExternalControllerUnix != "" && (options.ExternalControllerUnix != lokicontroller.Path || options.ExternalController != "") {
++		return nil, E.New("private LoKi controller requires its fixed Unix socket without a TCP listener")
++	}
+ 	trafficManager := service.PtrFromContext[trafficcontrol.Manager](ctx)
+ 	if trafficManager == nil {
+ 		return nil, E.New("missing traffic manager")
+@@ -101,7 +107,8 @@ func NewServer(ctx context.Context, logFactory log.ObservableFactory, options op
+ 		urlTestHistory:           urlTestHistory,
+ 		clashMode:                clashMode,
+ 		logDebug:                 logFactory.Level() >= log.LevelDebug,
+-		externalController:       options.ExternalController != "",
++		externalController:       options.ExternalController != "" || options.ExternalControllerUnix != "",
++		privateController:        options.ExternalControllerUnix != "",
+ 		externalUIDownloadURL:    options.ExternalUIDownloadURL,
+ 		externalUIDownloadDetour: options.ExternalUIDownloadDetour,
+ 	}
+@@ -190,6 +197,9 @@ var (
+ )
+ 
+ func (s *Server) listen() (listener net.Listener, err error) {
++	if s.privateController {
++		return lokicontroller.Listen()
++	}
+ 	for range 3 {
+ 		listener, err = net.Listen(M.NetworkFromNetAddr(N.NetworkTCP, M.ParseSocksaddr(s.httpServer.Addr).Addr), s.httpServer.Addr)
+ 		if runtime.GOOS == "android" && errors.Is(err, syscall.EADDRINUSE) {
+diff --git a/experimental/clashapi/server_private_controller_test.go b/experimental/clashapi/server_private_controller_test.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..f957b0b8523dead90be233b34800d26dbaef16cc
+--- /dev/null
++++ b/experimental/clashapi/server_private_controller_test.go
+@@ -0,0 +1,33 @@
++package clashapi
++
++import (
++	"context"
++	"strings"
++	"testing"
++
++	"github.com/sagernet/sing-box/common/lokicontroller"
++	"github.com/sagernet/sing-box/log"
++	"github.com/sagernet/sing-box/option"
++)
++
++func TestPrivateControllerOptionRejectsCustomPathsAndMixedTCP(t *testing.T) {
++	for _, options := range []option.ClashAPIOptions{
++		{ExternalControllerUnix: "/tmp/foreign.sock"},
++		{ExternalControllerUnix: "@loki-controller"},
++		{ExternalControllerUnix: "/tmp/loki/../controller.sock"},
++		{ExternalControllerUnix: lokicontroller.Path, ExternalController: "127.0.0.1:9092"},
++	} {
++		_, err := NewServer(context.Background(), log.NewNOPFactory(), options)
++		if err == nil || !strings.Contains(err.Error(), "fixed Unix socket without a TCP listener") {
++			t.Fatal("ambiguous private controller option accepted", err)
++		}
++	}
++	service, err := NewServer(clashTestContext(context.Background()), log.NewNOPFactory(), option.ClashAPIOptions{ExternalControllerUnix: lokicontroller.Path})
++	if err != nil {
++		t.Fatal(err)
++	}
++	server := service.(*Server)
++	if !server.privateController || !server.externalController || server.httpServer.Addr != "" {
++		t.Fatal("private controller accidentally selected TCP")
++	}
++}
+diff --git a/option/experimental.go b/option/experimental.go
+index faa2451792286146937e52836de4aad6c3569c19..de37ec31fdc7d55e0d6d5b0269ce6d5bfc45656d 100644
+--- a/option/experimental.go
++++ b/option/experimental.go
+@@ -1,3 +1,4 @@
++// Modified for LoKi on 2026-11-05: support the fixed private Unix controller.
+ package option
+ 
+ import "github.com/sagernet/sing/common/json/badoption"
+@@ -24,6 +25,7 @@ type CacheFileOptions struct {
+ 
+ type ClashAPIOptions struct {
+ 	ExternalController               string                     `json:"external_controller,omitempty"`
++	ExternalControllerUnix           string                     `json:"external_controller_unix,omitempty"`
+ 	ExternalUI                       string                     `json:"external_ui,omitempty"`
+ 	ExternalUIDownloadURL            string                     `json:"external_ui_download_url,omitempty"`
+ 	ExternalUIDownloadDetour         string                     `json:"external_ui_download_detour,omitempty" reference:"outbound"`

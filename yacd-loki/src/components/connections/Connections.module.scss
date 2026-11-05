@@ -1,0 +1,22 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.tableArea {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  margin: 12px 32px 24px;
+
+  @media (max-width: 1024px) {
+    margin: 12px 16px 16px;
+  }
+
+  @media (max-width: 768px) {
+    margin: 8px 12px 10px;
+  }
+}

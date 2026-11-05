@@ -61,6 +61,14 @@
       "sum": "h1:w8e9Uj1oP3m4zxkyZDewPk0EcQbvVxb7Nn+rapEx4fc=",
       "version": "v0.0.11"
     },
+    "github.com/coder/websocket": {
+      "files": {
+        "LICENSE.txt": "cc0975a5f6305145bdd7b41ce9479632fdac3870e6ac4281f28017f18c767c4e"
+      },
+      "replacement": null,
+      "sum": "h1:9L0p0iKiNOibykf283eHkKUHHrpG7f65OE3BhhO7v9g=",
+      "version": "v1.8.14"
+    },
     "github.com/database64128/netx-go": {
       "files": {
         "LICENSE": "911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad"

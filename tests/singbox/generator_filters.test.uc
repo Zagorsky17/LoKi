@@ -5,7 +5,7 @@ let generator = require("singbox.generator");
 
 function build(data) {
     fixture.seed(data);
-    return generator.build({ service_address: "127.0.0.1" });
+    return generator.build({ controller_secret: fixture.CONTROLLER_SECRET, service_address: "127.0.0.1" });
 }
 
 const SETTINGS = { dns_server: [ "1.1.1.1" ], bootstrap_dns_server: [ "1.1.1.1" ], service_listen_address: "127.0.0.1" };

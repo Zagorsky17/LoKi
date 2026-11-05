@@ -7,7 +7,7 @@ let has = q.has;
 
 function build(data) {
     fixture.seed(data);
-    return generator.build({ service_address: "127.0.0.1" });
+    return generator.build({ service_address: "127.0.0.1", controller_secret: fixture.CONTROLLER_SECRET });
 }
 
 function settings(extra) {
@@ -449,7 +449,7 @@ t.test("downloads through a section get service inbounds and rule-set detours", 
         "lists download through a section as a rule-set detour and open no port for it");
 });
 
-t.test("the Clash API dashboard downloads its interface direct, wherever the lists download", () => {
+t.test("the controller never downloads or serves a separate unauthenticated interface", () => {
     let sections = [
         { ".name": "proxy", enabled: "1", action: "connection", outbound_jsons: [ "{\"type\":\"direct\"}" ], destinations: "example.org" },
         { ".name": "lists_proxy", enabled: "1", action: "connection", outbound_jsons: [ "{\"type\":\"direct\"}" ], destinations: "lists.example" }
@@ -458,8 +458,8 @@ t.test("the Clash API dashboard downloads its interface direct, wherever the lis
         settings: settings({ enable_yacd: "1", download_lists_via_proxy: "1", download_lists_via_proxy_section: "lists_proxy" }),
         section: sections
     });
-    t.eq([ through_section.experimental.clash_api.external_ui, through_section.experimental.clash_api.external_ui_download_detour ],
-        [ "ui", "direct-out" ]);
+    for (let name in [ "external_ui", "external_ui_download_url", "external_ui_download_detour" ])
+        t.eq(through_section.experimental.clash_api[name], null);
     let without_ui = build({
         settings: settings({ download_lists_via_proxy: "1", download_lists_via_proxy_section: "lists_proxy" }),
         section: sections
@@ -467,23 +467,36 @@ t.test("the Clash API dashboard downloads its interface direct, wherever the lis
     t.eq(without_ui.experimental.clash_api.external_ui_download_detour, null, "no interface, nothing to download");
 });
 
-t.test("the Clash API asks for the key with YACD and without it", () => {
+t.test("the controller uses only its server-owned credential with YACD and without it", () => {
     let section = [ { ".name": "proxy", enabled: "1", action: "connection", outbound_jsons: [ "{\"type\":\"direct\"}" ], destinations: "example.org" } ];
     for (let yacd in [ "0", "1" ]) {
         let api = build({ settings: settings({ enable_yacd: yacd, yacd_secret_key: "0123abcd" }), section }).experimental.clash_api;
-        t.eq([ api.external_controller, api.secret ], [ "127.0.0.1:9090", "0123abcd" ], "YACD " + yacd);
+        t.eq([ api.external_controller, api.external_controller_unix, api.secret ], [ null, "/tmp/loki/controller.sock", fixture.CONTROLLER_SECRET ], "YACD " + yacd);
     }
 });
 
-t.test("with access from the WAN the Clash API listens on both address families", () => {
+t.test("the controller stays on its fixed Unix socket regardless of legacy LAN and WAN settings", () => {
     let section = [ { ".name": "proxy", enabled: "1", action: "connection", outbound_jsons: [ "{\"type\":\"direct\"}" ], destinations: "example.org" } ];
     let controller = (extra, address) => {
         fixture.seed({ settings: settings(extra), section });
-        return generator.build({ service_address: address }).experimental.clash_api.external_controller;
+        return generator.build({ service_address: address, controller_secret: fixture.CONTROLLER_SECRET }).experimental.clash_api.external_controller_unix;
     };
-    t.eq(controller({ enable_yacd: "1", enable_yacd_wan_access: "1" }, "192.168.1.1"), "[::]:9090");
-    t.eq(controller({ enable_yacd: "0", enable_yacd_wan_access: "1" }, "192.168.1.1"), "192.168.1.1:9090", "no WAN access without YACD");
-    t.eq(controller({ enable_yacd: "1" }, "fd00::1"), "[fd00::1]:9090", "an IPv6 LAN address");
+    t.eq(controller({ enable_yacd: "1", enable_yacd_wan_access: "1" }, "192.168.1.1"), "/tmp/loki/controller.sock");
+    t.eq(controller({ enable_yacd: "0", enable_yacd_wan_access: "1" }, "192.168.1.1"), "/tmp/loki/controller.sock");
+    t.eq(controller({ enable_yacd: "1" }, "fd00::1"), "/tmp/loki/controller.sock");
+    t.eq(controller({}, ""), "/tmp/loki/controller.sock");
+});
+
+t.test("missing and malformed controller credentials never produce a usable configuration", () => {
+    let section = [ { ".name": "proxy", enabled: "1", action: "connection", outbound_jsons: [ "{\"type\":\"direct\"}" ], destinations: "example.org" } ];
+    for (let value in [ null, false, 1, "", "short", sprintf("%064d", 0), uc(fixture.CONTROLLER_SECRET),
+        fixture.CONTROLLER_SECRET + "\n", fixture.CONTROLLER_SECRET + "\u0000" ]) {
+        fixture.seed({ settings: settings({ yacd_secret_key: "user-value-cannot-replace-the-controller-key" }), section });
+        let failure = t.throws(() => generator.build({ service_address: "127.0.0.1", controller_secret: value }));
+        t.contains(failure.message, "controller credential");
+        t.excludes(failure.message, "user-value-cannot-replace-the-controller-key");
+        t.excludes(failure.message, fixture.CONTROLLER_SECRET);
+    }
 });
 
 t.test("fully routed devices follow their section at its priority", () => {
@@ -573,7 +586,8 @@ t.test("removed server records cannot add listeners, endpoints or routes", () =>
             server_client: [ { ".name": "account", server: "unsupported", name: "client-secret", password: "password-secret" } ]
         });
         t.eq(config, expected, protocol);
-        t.excludes(sprintf("%J", config), "secret");
+        for (let canary in [ "server-secret", "private-secret", "auth-secret", "client-secret", "password-secret" ])
+            t.excludes(sprintf("%J", config), canary);
         t.ok(generator.runnable(), "the subscription section remains usable");
     }
 });
@@ -582,7 +596,7 @@ t.test("server records alone never make a configuration runnable", () => {
     for (let protocol in [ "vless", "wireguard", "openvpn", "tailscale", "json_inbound" ]) {
         fixture.seed({ settings: settings(), server: [ { ".name": "unsupported", enabled: "1", protocol, inbound_json: "invalid-secret-json" } ] });
         t.eq(generator.runnable(), false, protocol);
-        t.eq(t.throws(() => generator.build({ service_address: "127.0.0.1" })).message, "no usable sections");
+        t.eq(t.throws(() => generator.build({ controller_secret: fixture.CONTROLLER_SECRET, service_address: "127.0.0.1" })).message, "no usable sections");
     }
 });
 

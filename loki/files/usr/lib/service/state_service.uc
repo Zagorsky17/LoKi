@@ -121,10 +121,11 @@ function append_log_lines(lines) {
 function log_reply(cursor) {
     cursor = int(cursor || 0);
     let lines = [];
+    let redact = require("service.gateway_secret").redactor();
 
     for (let entry in log_lines)
         if (entry.cursor > cursor)
-            push(lines, entry.line);
+            push(lines, redact(entry.line));
 
     return { cursor: log_cursor, lines };
 }
@@ -429,7 +430,7 @@ function object_methods() {
                 if (request.args.cursor != null && int(request.args.cursor) == log_cursor)
                     return { cursor: log_cursor, unchanged: true };
                 let read = exec.capture_parallel([ [ "logread", "-e", LOG_PATTERN ] ])[0];
-                return { cursor: log_cursor, text: read.status == 0 ? read.stdout : "" };
+                return { cursor: log_cursor, text: require("service.gateway_secret").redactor()(read.status == 0 ? read.stdout : "") };
             },
             args: { cursor: 0, ubus_rpc_session: "" }
         },

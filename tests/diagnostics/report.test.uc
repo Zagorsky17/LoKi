@@ -100,4 +100,21 @@ t.test("configured credentials repeated in any masked attachment stay private", 
             t.excludes(value[key], secret, key + " must hide a repeated credential or public address");
 });
 
+t.test("raw and masked report attachments never expose the private controller credential", () => {
+    let secret = require("service.gateway_secret");
+    let original = secret.redactor;
+    secret.redactor = () => (value) => join("SERVER_ONLY", split(value, fixture.CONTROLLER_SECRET));
+    let values = [];
+    for (let visibility in [ "raw", "masked" ]) {
+        seed();
+        fs.writefile(report.paths.loki_config, "config settings 'settings'\n option label '" + fixture.CONTROLLER_SECRET + "'\n");
+        stub.commands([ [ () => true, { stdout: fixture.CONTROLLER_SECRET + "\n" } ] ]);
+        push(values, report.report(visibility, fixture.CONTROLLER_SECRET));
+        stub.restore();
+    }
+    secret.redactor = original;
+    for (let value in values)
+        t.excludes(sprintf("%J", value), fixture.CONTROLLER_SECRET, "private controller report projection");
+});
+
 t.done();

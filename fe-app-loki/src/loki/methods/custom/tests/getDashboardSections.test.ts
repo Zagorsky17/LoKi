@@ -20,7 +20,8 @@ vi.mock('../../shell', () => ({
 
 vi.mock('../../../../helpers/getClashApiUrl', () => ({
   canUseDirectClashApi: mocks.canUseDirectClashApi,
-  getClashApiUrl: () => 'http://router.example:9090',
+  getClashApiUrl: () =>
+    'https://router.example:9091/cgi-bin/luci/loki-gateway/api',
 }));
 vi.mock('../../../../helpers/isCopyableProxyLink', () => ({
   isCopyableProxyLink: (link?: string) => Boolean(link),
@@ -692,7 +693,7 @@ describe('getDashboardSections', () => {
 
     expect(result.success).toBe(true);
     expect(fetchMock).toHaveBeenCalledWith(
-      'http://router.example:9090/proxies',
+      'https://router.example:9091/cgi-bin/luci/loki-gateway/api/proxies',
       expect.objectContaining({ signal: expect.anything() }),
     );
     expect(mocks.clashApi).not.toHaveBeenCalled();
@@ -736,7 +737,7 @@ describe('getDashboardSections', () => {
 
     expect(result.success).toBe(true);
     expect(fetchMock).toHaveBeenLastCalledWith(
-      'http://router.example:9090/proxies/Office%2FOUT',
+      'https://router.example:9091/cgi-bin/luci/loki-gateway/api/proxies/Office%2FOUT',
       expect.objectContaining({
         method: 'PUT',
         body: JSON.stringify({ name: 'Office/Node' }),
@@ -774,17 +775,17 @@ describe('getDashboardSections', () => {
 
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
-      'http://router.example:9090/proxies/Office%2FNode/link',
+      'https://router.example:9091/cgi-bin/luci/loki-gateway/api/proxies/Office%2FNode/link',
       expect.anything(),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
-      'http://router.example:9090/providers/proxies/Office%2Fpremium',
+      'https://router.example:9091/cgi-bin/luci/loki-gateway/api/providers/proxies/Office%2Fpremium',
       expect.objectContaining({ method: 'PUT' }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       3,
-      'http://router.example:9090/providers/proxies/Office%2Fbackup',
+      'https://router.example:9091/cgi-bin/luci/loki-gateway/api/providers/proxies/Office%2Fbackup',
       expect.objectContaining({ method: 'PUT' }),
     );
     expect(mocks.clashApi).not.toHaveBeenCalled();
@@ -876,7 +877,7 @@ describe('getDashboardSections', () => {
     });
     expect(fetchMock).toHaveBeenCalledOnce();
     expect(fetchMock).toHaveBeenCalledWith(
-      'http://router.example:9090/providers/rules',
+      'https://router.example:9091/cgi-bin/luci/loki-gateway/api/providers/rules',
       expect.objectContaining({ method: 'PUT' }),
     );
   });
@@ -969,7 +970,7 @@ describe('getDashboardSections', () => {
     await getClashApiConnectionsSummary();
     await vi.waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
-        'http://router.example:9090/version',
+        'https://router.example:9091/cgi-bin/luci/loki-gateway/api/version',
         expect.anything(),
       ),
     );
@@ -1090,7 +1091,7 @@ describe('getDashboardSections', () => {
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
 
     expect(fetchMock).toHaveBeenLastCalledWith(
-      'http://router.example:9090/version',
+      'https://router.example:9091/cgi-bin/luci/loki-gateway/api/version',
       expect.anything(),
     );
     expect(mocks.clashApi).toHaveBeenLastCalledWith('GET', '/connections', '');
@@ -1124,7 +1125,7 @@ describe('getDashboardSections', () => {
     });
 
     expect(fetchMock).toHaveBeenCalledWith(
-      'http://router.example:9090/version',
+      'https://router.example:9091/cgi-bin/luci/loki-gateway/api/version',
       expect.anything(),
     );
   });
@@ -1155,7 +1156,7 @@ describe('getDashboardSections', () => {
 
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
-      'http://router.example:9090/version',
+      'https://router.example:9091/cgi-bin/luci/loki-gateway/api/version',
       expect.anything(),
     );
   });

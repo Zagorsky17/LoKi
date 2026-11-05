@@ -1,0 +1,401 @@
+.card {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  border-radius: 16px;
+  background: var(--color-card);
+  border: 1px solid var(--color-card-border);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+
+  @media (max-width: 768px) {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    border-radius: 0;
+  }
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---------- 表头 ---------- */
+
+.headWrap {
+  overflow: hidden;
+  flex-shrink: 0;
+  background: var(--color-track);
+  border-bottom: 1px solid var(--color-card-border);
+}
+
+// 列间距和左右内边距由 ConnectionTable 的 COLUMN_GAP / ROW_PADDING_X 内联施加，
+// 因为列宽计算必须扣掉它们，写在这里两边会不同步
+.headRow {
+  display: grid;
+  align-items: center;
+  height: 42px;
+}
+
+.headCell {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  user-select: none;
+
+  &:focus-visible {
+    outline: 2px solid var(--color-focus-blue);
+    outline-offset: -2px;
+    border-radius: 4px;
+  }
+}
+
+.headCellSortable {
+  cursor: pointer;
+
+  &:hover {
+    color: var(--color-text-highlight);
+  }
+}
+
+.headCellActive {
+  color: var(--color-focus-blue);
+
+  &:hover {
+    color: var(--color-focus-blue);
+  }
+}
+
+.headText {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.headArrow {
+  font-size: 0.62rem;
+  flex-shrink: 0;
+}
+
+/* ---------- 行 ---------- */
+
+.listWrap {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+
+.list {
+  overflow-x: auto;
+}
+
+.mobileList {
+  overflow-x: hidden;
+}
+
+.rowWrap {
+  border-bottom: 1px solid var(--color-separator);
+}
+
+// 同上，gap / padding 见 ConnectionTable 的常量
+.row {
+  display: grid;
+  align-items: center;
+  height: 44px;
+  cursor: pointer;
+  user-select: none;
+
+  &:hover {
+    background: var(--color-hover-soft);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--color-focus-blue);
+    outline-offset: -2px;
+  }
+}
+
+.cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.cellRight {
+  justify-content: flex-end;
+}
+
+/* ---------- 单元格内容 ---------- */
+
+.closeBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--color-badge-bg);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+
+  &:hover {
+    background: var(--color-danger-soft-bg);
+    color: var(--color-danger);
+  }
+}
+
+.dot {
+  flex: 0 0 7px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.dotBusy {
+  background: var(--color-success);
+  box-shadow: 0 0 0 3px var(--color-success-soft-bg);
+  animation: pulseDot 2.4s ease-in-out infinite;
+}
+
+.dotIdle {
+  background: var(--color-text-secondary);
+  opacity: 0.4;
+}
+
+@keyframes pulseDot {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(0.82);
+  }
+}
+
+.hostText {
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--color-text-highlight);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chip {
+  display: inline-block;
+  max-width: 100%;
+  padding: 3px 8px;
+  border-radius: 7px;
+  font-size: 0.7rem;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chipTcp {
+  background: var(--color-accent-soft-bg);
+  color: var(--color-accent-soft-fg);
+}
+
+.chipUdp {
+  background: var(--color-udp-bg);
+  color: var(--color-udp-fg);
+}
+
+.chipNeutral {
+  background: var(--color-badge-bg);
+  color: var(--color-badge-fg);
+}
+
+.chainGroup,
+.chainFull {
+  font-size: 0.76rem;
+  color: var(--color-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chainSep {
+  flex: 0 0 auto;
+  font-size: 0.7rem;
+  color: var(--color-text-secondary);
+  opacity: 0.6;
+}
+
+.chainNode {
+  font-size: 0.76rem;
+  font-weight: 500;
+  color: var(--color-focus-blue);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chainDirect {
+  color: var(--color-success);
+}
+
+.chainReject {
+  color: var(--color-danger);
+}
+
+.num {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.speed {
+  font-size: 0.76rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.speedDl {
+  color: var(--color-success);
+}
+
+.speedUl {
+  color: var(--color-focus-blue);
+}
+
+.speedDim {
+  color: var(--color-text-secondary);
+  opacity: 0.55;
+}
+
+/* ---------- 空态 ---------- */
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 100%;
+}
+
+.emptyTitle {
+  font-size: 0.88rem;
+  color: var(--color-text);
+}
+
+.emptyHint {
+  font-size: 0.78rem;
+  color: var(--color-text-secondary);
+}
+
+/* ---------- 页脚 ---------- */
+
+.footer {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 36px;
+  flex-shrink: 0;
+  padding: 0 18px;
+  border-top: 1px solid var(--color-card-border);
+  background: var(--color-track);
+  font-size: 0.72rem;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.footerNote {
+  margin-left: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+
+  @media (max-width: 768px) {
+    display: none;
+  }
+}
+
+/* ---------- 移动端排序工具条 ---------- */
+
+.mobileToolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 42px;
+  flex-shrink: 0;
+}
+
+.sortSelect {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 10px;
+  background: var(--color-card);
+  border: 1px solid var(--color-card-border);
+  color: var(--color-text);
+  font-size: 0.82rem;
+
+  span {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  select {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    cursor: pointer;
+  }
+}
+
+.sortSelectArrow {
+  flex-shrink: 0;
+  color: var(--color-text-secondary);
+}
+
+.sortDirBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  border: 1px solid var(--color-card-border);
+  background: var(--color-card);
+  color: var(--color-focus-blue);
+  cursor: pointer;
+}

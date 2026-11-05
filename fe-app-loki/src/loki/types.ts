@@ -267,7 +267,6 @@ export namespace Loki {
     header?: string[];
     show_dashboard_metadata?: '0' | '1';
     tag?: string;
-    yacd_secret_key?: string;
     latency_test_url?: string;
   }
 

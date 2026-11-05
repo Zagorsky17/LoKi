@@ -1,0 +1,38 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "react", "jsx-a11y"],
+  "categories": {
+    "correctness": "error"
+  },
+  "env": {
+    "browser": true,
+    "node": true,
+    "es2024": true
+  },
+  "globals": {
+    "__DEV__": "readonly",
+    "__VERSION__": "readonly"
+  },
+  "ignorePatterns": ["public", "dist", "node_modules", "bin", "assets"],
+  "rules": {
+    "no-empty": ["error", { "allowEmptyCatch": true }],
+    "no-use-before-define": "off",
+    "typescript/no-explicit-any": "off",
+    "typescript/no-empty-object-type": "off",
+    "typescript/explicit-function-return-type": "off",
+    "typescript/explicit-module-boundary-types": "off",
+    "typescript/ban-ts-comment": "off",
+    "typescript/no-unused-vars": ["error", { "argsIgnorePattern": "^_", "caughtErrors": "none" }],
+    "typescript/no-unused-expressions": [
+      "error",
+      { "allowShortCircuit": true, "allowTernary": true }
+    ],
+    "typescript/no-use-before-define": ["error", { "functions": false }],
+    "react-hooks/rules-of-hooks": "error",
+    "react-hooks/exhaustive-deps": "warn",
+    // 与原来 eslint-plugin-jsx-a11y 的 recommended 保持一致：
+    // 这两条在 recommended 里本来就是 off / 未收录，oxlint 默认把它们打开了
+    "jsx-a11y/prefer-tag-over-role": "off",
+    "jsx-a11y/control-has-associated-label": "off"
+  }
+}

@@ -32,7 +32,7 @@ function providers_config() {
         ],
         urltest: [ { ".name": "fast", section: "proxy", name: "Fastest", server_filter_mode: "include", include_regex: "🇺🇸", exclude_regex: "slow" } ]
     });
-    return generator.build({ service_address: "127.0.0.1" });
+    return generator.build({ controller_secret: fixture.CONTROLLER_SECRET, service_address: "127.0.0.1" });
 }
 
 const REMOVED_PARAMETER_FILTERS = [ "include_types", "include_transports", "include_securities", "exclude_types", "exclude_transports", "exclude_securities" ];
@@ -84,7 +84,7 @@ t.test("a subscription override carries the name changes, the cascade and the pa
             override_patch: "{\"packet_encoding\":\"xudp\",\"tls\":{\"insecure\":true},\"multiplex\":{\"enabled\":true,\"protocol\":\"h2mux\"}}"
         } ]
     });
-    let provider = q.provider(generator.build({ service_address: "127.0.0.1" }), "proxy/sub1");
+    let provider = q.provider(generator.build({ controller_secret: fixture.CONTROLLER_SECRET, service_address: "127.0.0.1" }), "proxy/sub1");
     let override = provider.override;
     t.eq([ override.prefix, override.suffix ], [ "[Premium] ", " *" ]);
     t.eq(override.rename, [ { pattern: "^HK-(.*)$", target: "Hong Kong $1" }, { pattern: "-([0-9]+)$", target: "#$1" } ]);
@@ -107,7 +107,7 @@ t.test("two subscriptions of one address are two providers", () => {
             { ".name": "cascaded", section: "proxy", url: "https://example.com/sub", tag: "sub2", detour_section: "hop", subscription_update_enabled: "0" }
         ]
     });
-    let config = generator.build({ service_address: "127.0.0.1" });
+    let config = generator.build({ controller_secret: fixture.CONTROLLER_SECRET, service_address: "127.0.0.1" });
     t.eq(q.tags(config.providers), [ "proxy/sub1", "proxy/sub2" ]);
     let direct = q.provider(config, "proxy/sub1");
     let cascaded = q.provider(config, "proxy/sub2");

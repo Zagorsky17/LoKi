@@ -1,0 +1,36 @@
+.input {
+  -webkit-appearance: none;
+  // 和顶栏搜索框一套：凹槽色垫底 + 卡片边框色描边，垫在卡片上才看得出是输入区
+  background-color: var(--color-track);
+  background-image: none;
+  border-radius: 8px;
+  border: 1px solid var(--color-card-border);
+  box-sizing: border-box;
+  color: var(--color-text);
+  display: inline-block;
+  height: 35px;
+  outline: none;
+  padding: 0 15px;
+  width: 100%;
+  font-size: small;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+
+  &::placeholder {
+    color: var(--color-text-secondary);
+    opacity: 0.75;
+  }
+}
+
+.input:focus {
+  border-color: var(--color-focus-blue);
+  // 与开关的聚焦圈同一个 token，别再写死一个对不上的蓝
+  box-shadow: 0 0 0 3px var(--color-accent-soft-bg);
+}
+
+input::-webkit-outer-spin-button,
+input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}

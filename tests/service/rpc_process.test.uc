@@ -246,11 +246,9 @@ t.test("fixed Monitoring and dashboard snapshots above128KiB cross real HTTP and
             endpoint == "/proxies" ? { proxies } : { providers: { fixture: { proxies: connections } } });
         controller.reply({ status: 200, body });
         let run = setup([ "clash_api", "GET", endpoint, "" ], "rpc_read");
-        let config = run.fixtures + "/runtime.json";
-        fs.writefile(config, sprintf("%J", { experimental: { clash_api: {
-            external_controller: controller.endpoint, secret: "synthetic-controller-key" } } }));
         let driver = run.fixtures + "/snapshot.uc";
-        fs.writefile(driver, 'require("fixture").seed({ settings: { config_path: ' + sprintf("%J", config) + ' } });\n' +
+        fs.writefile(driver, 'require("service.gateway_secret").load = () => require("fixture").CONTROLLER_SECRET;\n' +
+            'require("controller").redirect(' + sprintf("%J", controller.path) + ');\n' +
             'require("ubus").__on("session.access", { access: true });\n' +
             'exit(require("service.rpc").run(' + sprintf("%J", run.request.args.argv) + ', ' +
             sprintf("%J", repo.path("loki/files/usr/lib")) + ', "rpc_read"));\n');
@@ -273,7 +271,7 @@ t.test("fixed Monitoring and dashboard snapshots above128KiB cross real HTTP and
         }
         t.ok(length(restored) > run.rpc.MAX_OUTPUT_BYTES);
         t.eq(json(restored), { status: 200, body });
-        t.excludes(restored, "synthetic-controller-key");
+        t.excludes(restored, require("fixture").CONTROLLER_SECRET);
         let busy = run.rpc.prepare({ args: { argv: run.request.args.argv,
             ubus_rpc_session: run.request.args.ubus_rpc_session } }, "rpc_read");
         t.eq(busy.success, false, "a held large snapshot returns explicit busy rather than an empty success");

@@ -11,7 +11,8 @@ vi.mock('../../shell', () => ({
 }));
 vi.mock('../../../../helpers/getClashApiUrl', () => ({
   canUseDirectClashApi: () => true,
-  getClashApiUrl: () => 'http://router.example:9090',
+  getClashApiUrl: () =>
+    'https://router.example:9091/cgi-bin/luci/loki-gateway/api',
 }));
 
 beforeEach(() => {
@@ -38,7 +39,7 @@ it('chooses the CLI before sending concurrent first mutations to an unreachable 
   );
   expect(fetchMock).toHaveBeenCalledOnce();
   expect(fetchMock).toHaveBeenCalledWith(
-    'http://router.example:9090/version',
+    'https://router.example:9091/cgi-bin/luci/loki-gateway/api/version',
     expect.anything(),
   );
   expect(mocks.clashApi).toHaveBeenCalledTimes(2);
@@ -62,7 +63,7 @@ it('asks for the exit of an outbound by its encoded tag', async () => {
     data: report,
   });
   expect(fetchMock).toHaveBeenLastCalledWith(
-    'http://router.example:9090/proxies/main-out%2Fselector/exit?timeout=5000',
+    'https://router.example:9091/cgi-bin/luci/loki-gateway/api/proxies/main-out%2Fselector/exit?timeout=5000',
     expect.anything(),
   );
 });
@@ -76,7 +77,34 @@ it('loads the configured test URL before the first latency request', async () =>
 
   await getClashApiProxyLatency('node');
   expect(fetchMock).toHaveBeenLastCalledWith(
-    'http://router.example:9090/proxies/node/delay?url=https%3A%2F%2Fexample.com%2Fcheck&timeout=5000',
+    'https://router.example:9091/cgi-bin/luci/loki-gateway/api/proxies/node/delay?url=https%3A%2F%2Fexample.com%2Fcheck&timeout=5000',
     expect.anything(),
   );
+});
+
+it('uses only LuCI session credentials and the fixed CSRF marker, never a configured controller bearer', async () => {
+  mocks.config.mockResolvedValue([
+    { '.type': 'settings', yacd_secret_key: 'synthetic-browser-secret' },
+  ]);
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValue({ status: 204, text: async () => '' });
+  vi.stubGlobal('fetch', fetchMock);
+  const { setClashApiGroupProxy } = await import('../clashApi');
+  await setClashApiGroupProxy('Office/OUT', 'Node #1');
+  expect(fetchMock).toHaveBeenCalled();
+  for (const [url, init] of fetchMock.mock.calls) {
+    expect(url).toMatch(
+      /^https:\/\/router\.example:9091\/cgi-bin\/luci\/loki-gateway\/api\//,
+    );
+    expect(init.credentials).toBe('include');
+    expect(init.headers).toEqual(
+      init.method === 'PUT'
+        ? { 'Content-Type': 'application/json', 'X-Loki-CSRF': '1' }
+        : { 'X-Loki-CSRF': '1' },
+    );
+    expect(JSON.stringify([url, init])).not.toContain(
+      'synthetic-browser-secret',
+    );
+  }
 });

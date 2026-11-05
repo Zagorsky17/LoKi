@@ -6,6 +6,11 @@ let repo = require("repo");
 let cli = require("service.cli");
 let clash = require("singbox.clash_api");
 let controller = require("controller").start();
+let socket = require("socket");
+let gateway_secret = require("service.gateway_secret");
+let private_secret = fixture.CONTROLLER_SECRET;
+gateway_secret.load = () => private_secret;
+let redirect = require("controller").redirect(controller.path);
 
 let dir = stub.tmpdir();
 
@@ -17,6 +22,7 @@ function numbers(count) {
 }
 
 function config(address, secret) {
+    redirect.unavailable = address == "127.0.0.1:1";
     let path = dir + "/config.json";
     let clash_api = address == null ? null : { external_controller: address, secret: secret ?? "local-secret" };
     fs.writefile(path, sprintf("%J", { experimental: clash_api == null ? {} : { clash_api } }));
@@ -52,11 +58,11 @@ t.test("an allowlisted request reaches the controller as asked, with the secret 
     t.eq([ result.status, result.reply.status, json(result.reply.body).url ], [ 0, 200, "vless://id@example.com:443" ]);
     let request = received()[0];
     t.eq(request.line, "GET /proxies/provider%2Fnode/link HTTP/1.0", "the path goes as the page wrote it");
-    t.eq([ request.headers.host, request.headers.authorization ], [ controller.endpoint, "Bearer local-secret" ]);
+    t.eq([ request.headers.host, request.headers.authorization ], [ "loki-controller", "Bearer " + fixture.CONTROLLER_SECRET ]);
 
     config(controller.endpoint, "");
     call([ "clash_api", "GET", "/proxies" ]);
-    t.eq(received()[0].headers.authorization, null, "a controller without a secret gets no header");
+    t.eq(received()[0].headers.authorization, "Bearer " + fixture.CONTROLLER_SECRET, "stale configuration cannot disable the private credential");
 });
 
 t.test("the pages' own requests pass, with their methods and bodies", () => {
@@ -116,6 +122,7 @@ t.test("a controller that is not there, answers no HTTP or drops the reply fails
 });
 
 t.test("a reply that does not come in time is given up at the deadline", () => {
+    config(controller.endpoint);
     let api = { endpoint: controller.endpoint, secret: "" };
     controller.reply({ status: 200, body: "{}", delay_ms: 3000 });
     let start = clock(true);
@@ -127,6 +134,7 @@ t.test("a reply that does not come in time is given up at the deadline", () => {
 });
 
 t.test("a reply is decoded as it arrives when the caller asks for it", () => {
+    config(controller.endpoint);
     let api = { endpoint: controller.endpoint, secret: "" };
     let body = sprintf("{\"revision\":3,\"providers\":{%s}}", join(",", map(numbers(3000), (i) => sprintf("\"p%d\":{\"revision\":%d}", i, i))));
     controller.reply({ status: 200, body });
@@ -156,12 +164,19 @@ t.test("anything else is refused before it reaches the controller", () => {
     t.eq(received(), []);
 });
 
-t.test("the controller is the address the configuration bound", () => {
-    for (let pair in [ [ "192.168.1.1:9090", "192.168.1.1:9090" ], [ "0.0.0.0:9090", "127.0.0.1:9090" ], [ "[::]:9090", "127.0.0.1:9090" ],
-        [ "[fd00::1]:9090", "[fd00::1]:9090" ], [ null, "127.0.0.1:9090" ] ]) {
-        config(pair[0]);
-        t.eq(clash.controller().endpoint, pair[1], "" + pair[0]);
+t.test("the controller always uses its private Unix socket and the boot credential, ignoring UCI and generated endpoint data", () => {
+    for (let address in [ "192.168.1.1:9090", "0.0.0.0:9090", "[::]:9090", "[fd00::1]:9090", "attacker.example:443", null ]) {
+        config(address, "generated-secret");
+        t.eq(clash.controller(), { endpoint: "/tmp/loki/controller.sock", secret: private_secret }, "fixed private controller");
     }
+    let original = gateway_secret.load;
+    let failure;
+    gateway_secret.load = () => die("Private LoKi controller credential is unsafe or unavailable");
+    try { clash.request("GET", "/proxies", ""); }
+    catch (e) { failure = e; }
+    gateway_secret.load = original;
+    t.contains(failure?.message, "Private LoKi controller credential");
+    t.eq(received(), [], "an unavailable private credential never permits an unauthenticated request");
 });
 
 t.test("the summary carries the totals and the count, never the connection list", () => {
@@ -243,6 +258,60 @@ t.test("the buffered-body bound does not truncate a rule-provider decoder stream
     } });
     t.eq(reply, { status: 200, value: bytes });
     received();
+});
+
+t.test("unsafe socket metadata is refused before any connection or credential transmission", () => {
+    config(controller.endpoint);
+    let original = { lstat: fs.lstat, connect: socket.connect };
+    let attempts = 0;
+    socket.connect = () => { attempts++; die("unsafe socket reached connect"); };
+    let before = original.lstat("/tmp/loki/controller.sock");
+    try {
+        for (let extra in [ { type: "link" }, { type: "file" }, { uid: before.uid + 1 }, { nlink: 2 }, { mode: 0666 } ]) {
+            fs.lstat = (path) => path == "/tmp/loki/controller.sock" ? { ...before, ...extra } : original.lstat(path);
+            t.eq(clash.exchange(clash.controller(), "GET", "/proxies", { seconds: 1 }), null);
+        }
+    }
+    catch (e) { fs.lstat = original.lstat; socket.connect = original.connect; die(e.message); }
+    fs.lstat = original.lstat;
+    socket.connect = original.connect;
+    t.eq(attempts, 0);
+});
+
+t.test("peer identity and post-connect metadata are checked before sending the bearer", () => {
+    config(controller.endpoint);
+    let original = { lstat: fs.lstat, connect: socket.connect };
+    let uid = fs.stat("/proc/self").uid;
+    try {
+        for (let peer in [ null, {}, { uid: uid + 1, pid: 1 }, { uid, pid: 0 }, { uid, pid: false }, "throw", "changed-inode" ]) {
+            let closed = 0;
+            let sent = 0;
+            let stats = 0;
+            fs.lstat = (path) => {
+                let value = original.lstat(path);
+                if (path == "/tmp/loki/controller.sock" && ++stats > 1 && peer == "changed-inode")
+                    value.inode++;
+                return value;
+            };
+            socket.connect = (host, port) => {
+                t.eq(host, { path: "/tmp/loki/controller.sock" });
+                t.eq(port, null);
+                return {
+                    getopt: () => {
+                        if (peer == "throw") die("synthetic credential inspection failure");
+                        return peer == "changed-inode" ? { uid, pid: 1 } : peer;
+                    },
+                    send: () => { sent++; return 1; },
+                    close: () => { closed++; }
+                };
+            };
+            t.eq(clash.exchange(clash.controller(), "GET", "/proxies", { seconds: 1 }), null);
+            t.eq([ sent, closed ], [ 0, 1 ], "no credential bytes before a verified peer");
+        }
+    }
+    catch (e) { fs.lstat = original.lstat; socket.connect = original.connect; die(e.message); }
+    fs.lstat = original.lstat;
+    socket.connect = original.connect;
 });
 
 t.done();

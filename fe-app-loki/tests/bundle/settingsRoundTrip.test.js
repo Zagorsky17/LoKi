@@ -390,9 +390,6 @@ describe('a value behind a switch that is off', () => {
     harness.uci.add('loki', 'settings', 'settings');
     Object.assign(harness.store.get('settings'), {
       config_version: '2.0.0',
-      enable_yacd: '1',
-      enable_yacd_wan_access: '0',
-      yacd_secret_key: 'yacd-secret',
       enable_native_api: '0',
       native_api_secret: 'api-secret',
       list_update_enabled: '0',
@@ -406,7 +403,6 @@ describe('a value behind a switch that is off', () => {
     await parseEveryOption(section, 'settings');
 
     for (const [name, value] of [
-      ['yacd_secret_key', 'yacd-secret'],
       ['native_api_secret', 'api-secret'],
       ['update_interval', '6h'],
       // Without it the next install or start takes the configuration for a foreign one.
@@ -436,31 +432,42 @@ describe('a number the backend reads as digits only', () => {
   });
 });
 
-describe('the Clash API key', () => {
-  async function keyOption(values) {
-    harness.uci.add('loki', 'settings', 'settings');
-    Object.assign(harness.store.get('settings'), values);
-    const map = new harness.form.Map('loki');
-    const section = map.section(harness.form.NamedSection, 'settings');
-    harness.bundle.createSettingsContent(section);
-    section.cfgsections = () => ['settings'];
-    await section.load();
-    return section.children.find(
-      (option) => option.option === 'yacd_secret_key',
-    );
-  }
-
+describe('session-authenticated YACD access', () => {
   it.each([
-    [{}, true],
-    [{ enable_yacd: '1' }, true],
-    [{ enable_yacd: '0', enable_yacd_wan_access: '1' }, true],
-    [{ enable_yacd: '1', enable_yacd_wan_access: '1' }, 'Required'],
-  ])('may stay empty with %o: %s', async (values, verdict) => {
-    const option = await keyOption(values);
-
-    expect(option.validate('settings', '')).toBe(verdict);
-    expect(option.validate('settings', 'chosen')).toBe(true);
-  });
+    {},
+    { enable_yacd: '1' },
+    { enable_yacd: '0', enable_yacd_wan_access: '1' },
+    {
+      enable_yacd: '1',
+      enable_yacd_wan_access: '1',
+      yacd_secret_key: 'synthetic-retired-key',
+    },
+  ])(
+    'has no browser controller key or raw WAN control with %o',
+    async (values) => {
+      harness.uci.add('loki', 'settings', 'settings');
+      Object.assign(harness.store.get('settings'), values);
+      const map = new harness.form.Map('loki');
+      const section = map.section(harness.form.NamedSection, 'settings');
+      harness.bundle.createSettingsContent(section);
+      section.cfgsections = () => ['settings'];
+      await section.load();
+      const names = section.children.map((option) => option.option);
+      expect(names).not.toContain('yacd_secret_key');
+      expect(names).not.toContain('enable_yacd_wan_access');
+      expect(names).not.toContain('enable_yacd');
+      const option = section.children.find(
+        (item) => item.option === '_yacd_link',
+      );
+      expect(option.cfgvalue()).toContain(
+        'https://router.lan:9091/cgi-bin/luci/loki-gateway/',
+      );
+      expect(option.cfgvalue()).toContain('rel="noopener noreferrer"');
+      expect(option.cfgvalue()).not.toMatch(
+        /secret=|token=|synthetic-retired-key/,
+      );
+    },
+  );
 });
 
 describe('LoKi configuration identity', () => {

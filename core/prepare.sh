@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Modified for LoKi on 2026-11-05: include the reviewed notice recipe and PSL notices in core sources.
 set -euo pipefail
+umask 022
 
 HERE=$(cd -- "$(dirname -- "$0")" && pwd)
 source "$HERE/upstream.env"

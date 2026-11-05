@@ -10,7 +10,7 @@ function build(settings) {
         settings: { dns_server: [ "127.0.0.1" ], bootstrap_dns_server: [ "127.0.0.1" ], ...(settings ?? {}) },
         section: [ { ".name": "main", action: "bypass", destinations: "example.test" } ]
     });
-    return generator.build({ service_address: "127.0.0.1", local_prefixes: [] });
+    return generator.build({ controller_secret: fixture.CONTROLLER_SECRET, service_address: "127.0.0.1", local_prefixes: [] });
 }
 
 t.test("the verified 10s DNS default is omitted without changing resolvers or the stored setting", () => {

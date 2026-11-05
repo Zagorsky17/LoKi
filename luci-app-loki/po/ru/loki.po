@@ -7,8 +7,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: LOKI\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-03 15:13+0300\n"
-"PO-Revision-Date: 2026-11-03 15:13+0300\n"
+"POT-Creation-Date: 2026-11-05 09:58+0300\n"
+"PO-Revision-Date: 2026-11-05 09:58+0300\n"
 "Last-Translator: ushan0v\n"
 "Language-Team: none\n"
 "Language: ru\n"
@@ -115,9 +115,6 @@ msgstr "URL или абсолютный путь к файлу на роутер
 
 msgid "About the address on ipinfo.io"
 msgstr "Об адресе на ipinfo.io"
-
-msgid "Access to YACD from the internet. The port has to be opened in the firewall"
-msgstr "Доступ к YACD из интернета. Порт нужно открыть в файрволе"
 
 msgid "Accurate latency measurement"
 msgstr "Точное измерение задержки"
@@ -313,9 +310,6 @@ msgstr "Выберите режим шифрования"
 
 msgid "Choose explicitly. Server addresses must match the selected protocol; changing the mode does not rewrite them."
 msgstr "Выберите режим явно. Адреса серверов должны соответствовать выбранному протоколу; смена режима не переписывает их."
-
-msgid "Clash API key"
-msgstr "Ключ Clash API"
 
 msgid "Clash API request timed out after it was sent"
 msgstr "Запрос к Clash API был отправлен, но истекло время ожидания ответа"
@@ -568,12 +562,6 @@ msgstr "Включить встроенный DNS-резолвер для дом
 
 msgid "Enable Output Network Interface"
 msgstr "Включить выходной сетевой интерфейс"
-
-msgid "Enable YACD"
-msgstr "Включить YACD"
-
-msgid "Enable YACD WAN Access"
-msgstr "Включить доступ YACD WAN"
 
 msgid "Enabled"
 msgstr "Включено"
@@ -964,6 +952,18 @@ msgstr "LoKi полностью игнорирует эти устройства
 
 msgid "LoKi system logs"
 msgstr "Системные логи LoKi"
+
+msgid "loki-core %s"
+msgstr "loki-core %s"
+
+msgid "loki-core %s (%s)"
+msgstr "loki-core %s (%s)"
+
+msgid "loki-core %s is outdated: %s or newer is needed"
+msgstr "loki-core %s устарел: нужен %s или новее"
+
+msgid "loki-core is not installed"
+msgstr "loki-core не установлен"
 
 msgid "Main DNS"
 msgstr "Основной DNS"
@@ -1415,18 +1415,6 @@ msgstr "sing-box собран без %s"
 msgid "sing-box log level"
 msgstr "Уровень логов sing-box"
 
-msgid "loki-core %s"
-msgstr "loki-core %s"
-
-msgid "loki-core %s (%s)"
-msgstr "loki-core %s (%s)"
-
-msgid "loki-core %s is outdated: %s or newer is needed"
-msgstr "loki-core %s устарел: нужен %s или новее"
-
-msgid "loki-core is not installed"
-msgstr "loki-core не установлен"
-
 msgid "Skipped: LoKi is not running"
 msgstr "Пропущено: LoKi не запущен"
 
@@ -1717,9 +1705,6 @@ msgstr "Целое число от %d"
 
 msgid "Whole number from %d to %d"
 msgstr "Целое число от %d до %d"
-
-msgid "YACD and other Clash API clients log in with it"
-msgstr "С ним входят YACD и другие клиенты Clash API"
 
 msgid "YAML is not supported"
 msgstr "YAML не поддерживается"

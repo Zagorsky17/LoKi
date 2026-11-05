@@ -21,7 +21,7 @@ t.test("the explicit DNS mode accepts UDP, DoH and DoT without changing the chos
         let input = data({ dns_encryption: entry[0], dns_encrypted_protocol: entry[1], dns_server: [ entry[2] ] });
         v.accepts(input);
         fixture.seed(input);
-        let config = generator.build({ service_address: "192.168.1.1" });
+        let config = generator.build({ controller_secret: fixture.CONTROLLER_SECRET, service_address: "192.168.1.1" });
         t.eq(q.dns_server_tag(config, "dns-server").type, entry[3]);
         t.eq(q.dns_server_tag(config, "bootstrap-dns-server").type, "udp");
     }
@@ -43,7 +43,7 @@ t.test("invalid and mismatching encryption settings are refused by both validati
         let input = data({ dns_encryption: entry[0], dns_encrypted_protocol: entry[1], dns_server: [ entry[2] ] });
         v.refuses(input, entry[3]);
         fixture.seed(input);
-        t.contains(t.throws(() => generator.build({ service_address: "192.168.1.1" })).message, entry[3]);
+        t.contains(t.throws(() => generator.build({ controller_secret: fixture.CONTROLLER_SECRET, service_address: "192.168.1.1" })).message, entry[3]);
     }
 });
 
@@ -58,14 +58,14 @@ t.test("an explicit encryption mode keeps bootstrap on UDP by IP", () => {
     let input = data({ dns_encryption: "0", dns_server: [ "192.0.2.54" ], bootstrap_dns_server: [ "tls://192.0.2.53" ] });
     v.refuses(input, "Bootstrap DNS must use UDP");
     fixture.seed(input);
-    t.contains(t.throws(() => generator.build({ service_address: "192.168.1.1" })).message, "Bootstrap DNS must use UDP");
+    t.contains(t.throws(() => generator.build({ controller_secret: fixture.CONTROLLER_SECRET, service_address: "192.168.1.1" })).message, "Bootstrap DNS must use UDP");
 });
 
 t.test("legacy DNS URIs stay unchanged until an explicit encryption mode is saved", () => {
     let input = data({ dns_server: [ "https://dns.example/dns-query", "tls://other.example" ] });
     v.accepts(input);
     fixture.seed(input);
-    let config = generator.build({ service_address: "192.168.1.1" });
+    let config = generator.build({ controller_secret: fixture.CONTROLLER_SECRET, service_address: "192.168.1.1" });
     t.eq(map(q.dns_server_tag(config, "dns-server").servers, (tag) => q.dns_server_tag(config, tag).type), [ "https", "tls" ]);
 });
 

@@ -18,8 +18,8 @@ let stub = require("stub");
 
 let contract = json(fs.readfile(repo.path("tests/fixtures/page_contract.json")));
 
-t.test("the reserved ports are every port Loki's own inbounds bind", () => {
-    let ports = [ constants.CLASH_API_CONTROLLER_PORT ];
+t.test("the reserved ports include the HTTPS gateway and routing inbounds, without a TCP controller", () => {
+    let ports = [ constants.HTTPS_GATEWAY_PORT ];
     for (let name in keys(constants))
         if (match(name, /_INBOUND_PORT$/))
             push(ports, constants[name]);

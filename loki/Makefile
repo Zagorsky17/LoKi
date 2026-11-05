@@ -77,6 +77,8 @@ define Package/loki/install
 
 	$(INSTALL_DIR) $(1)/usr/bin
 	$(INSTALL_BIN) ./files/usr/bin/loki $(1)/usr/bin/loki
+	$(INSTALL_DIR) $(1)/usr/libexec
+	$(INSTALL_BIN) ./files/usr/libexec/loki-gateway $(1)/usr/libexec/loki-gateway
 
 	$(INSTALL_DIR) $(1)/usr/lib/loki
 	$(CP) ./files/usr/lib/. $(1)/usr/lib/loki/

@@ -26,7 +26,8 @@ const SYSTEM_DNS_INBOUND_ADDRESS = "::";
 const SYSTEM_DNS_INBOUND_PORT = 1605;
 
 const DIRECT_OUTBOUND_TAG = "direct-out";
-const CLASH_API_CONTROLLER_PORT = 9090;
+const CLASH_API_CONTROLLER_SOCKET = "/tmp/loki/controller.sock";
+const HTTPS_GATEWAY_PORT = 9091;
 // The mark loki-core puts on its own traffic is the one the nft table lets pass.
 const OUTBOUND_MARK = hex(require("core.constants").NFT_OUTBOUND_MARK);
 // The cache file keeps a name for every address until the range wraps, about 170 bytes each in
@@ -156,7 +157,8 @@ return {
     SYSTEM_DNS_INBOUND_ADDRESS,
     SYSTEM_DNS_INBOUND_PORT,
     DIRECT_OUTBOUND_TAG,
-    CLASH_API_CONTROLLER_PORT,
+    CLASH_API_CONTROLLER_SOCKET,
+    HTTPS_GATEWAY_PORT,
     OUTBOUND_MARK,
     FAKEIP_INET4_RANGE,
     FAKEIP_INET6_RANGE,

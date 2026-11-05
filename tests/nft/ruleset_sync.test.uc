@@ -9,6 +9,9 @@ let sync = require("nft.ruleset_sync");
 
 let dir = stub.tmpdir();
 let config_path = dir + "/config.json";
+let gateway_secret = require("service.gateway_secret");
+let boot_secret = fixture.CONTROLLER_SECRET;
+gateway_secret.load = () => boot_secret;
 fs.writefile(config_path, "{\"experimental\":{\"clash_api\":{\"external_controller\":\"[::]:9090\",\"secret\":\"test-secret\"}}}");
 
 const ALPHA = "https://example.com/alpha.srs";
@@ -271,17 +274,17 @@ t.test("the worker follows the provider events and asks a controller that is not
         null
     ]);
     t.eq(map(result.calls, (call) => call.url), [
-        "http://127.0.0.1:9090/providers/rules",
-        "http://127.0.0.1:9090/providers/rules",
-        "http://127.0.0.1:9090/providers/rules/events?since=5",
-        "http://127.0.0.1:9090/providers/rules/events?since=5",
-        "http://127.0.0.1:9090/providers/rules",
-        "http://127.0.0.1:9090/providers/rules/events?since=5",
-        "http://127.0.0.1:9090/providers/rules",
-        "http://127.0.0.1:9090/providers/rules"
+        "http:///tmp/loki/controller.sock/providers/rules",
+        "http:///tmp/loki/controller.sock/providers/rules",
+        "http:///tmp/loki/controller.sock/providers/rules/events?since=5",
+        "http:///tmp/loki/controller.sock/providers/rules/events?since=5",
+        "http:///tmp/loki/controller.sock/providers/rules",
+        "http:///tmp/loki/controller.sock/providers/rules/events?since=5",
+        "http:///tmp/loki/controller.sock/providers/rules",
+        "http:///tmp/loki/controller.sock/providers/rules"
     ], "a timed-out wait is waited again, an event is synced from");
     t.eq(result.sleeps, [ 3000, 3000, 6000, 12000 ], "the retry waits double while the controller does not answer, and start over once it does");
-    t.eq(uniq(map(result.calls, (call) => call.secret)), [ "test-secret" ], "the secret loki-core runs with");
+    t.eq(uniq(map(result.calls, (call) => call.secret)), [ fixture.CONTROLLER_SECRET ], "the private boot credential");
     t.eq(uniq(map(result.calls, (call) => call.method + " " + call.seconds)), [ "GET 10", "GET 60" ], "a snapshot within 10 s, an event within a minute");
 });
 
@@ -301,12 +304,15 @@ t.test("each reload of the core is followed by the same short wait, however soon
     t.eq(result.sleeps, [ 3000, 3000, 3000 ], "a controller that answered again is no longer one that does not answer");
 });
 
-t.test("a controller that stopped answering is looked up again before it is asked again", () => {
+t.test("a controller outage rechecks the private credential without following a changed configuration endpoint", () => {
     let section = { ".name": "moved", enabled: "1", action: "connection", rule_set_with_subnets: [ ALPHA ] };
     let original = fs.readfile(config_path);
+    let original_secret = boot_secret;
+    let next_secret = replace(boot_secret, /1/g, "2");
     let result = run_worker([ section ], [
         SNAPSHOT,
         () => {
+            boot_secret = next_secret;
             fs.writefile(config_path, "{\"experimental\":{\"clash_api\":{\"external_controller\":\"127.0.0.1:9191\",\"secret\":\"test-secret\"}}}");
             return null;
         },
@@ -314,11 +320,13 @@ t.test("a controller that stopped answering is looked up again before it is aske
         null
     ]);
     fs.writefile(config_path, original);
+    boot_secret = original_secret;
+    t.eq(map(result.calls, (call) => call.secret), [ original_secret, original_secret, next_secret, next_secret ]);
     t.eq(map(result.calls, (call) => call.url), [
-        "http://127.0.0.1:9090/providers/rules",
-        "http://127.0.0.1:9090/providers/rules/events?since=5",
-        "http://127.0.0.1:9191/providers/rules",
-        "http://127.0.0.1:9191/providers/rules/events?since=5"
+        "http:///tmp/loki/controller.sock/providers/rules",
+        "http:///tmp/loki/controller.sock/providers/rules/events?since=5",
+        "http:///tmp/loki/controller.sock/providers/rules",
+        "http:///tmp/loki/controller.sock/providers/rules/events?since=5"
     ]);
 });
 
