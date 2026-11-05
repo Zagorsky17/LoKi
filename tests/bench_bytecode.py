@@ -37,9 +37,10 @@ let library = loadfile(source + "/core/bytecode.uc")().refresh();
 if ((getenv("LOKI_BYTECODE_CACHE") == "1") == (library == source))
     die("Unexpected source/cache mode");
 unshift(REQUIRE_SEARCH_PATH, library + "/*.uc");
-require("fixture").seed({ settings: { dns_server: [ "127.0.0.1" ], bootstrap_dns_server: [ "127.0.0.1" ] },
+let fixture = require("fixture");
+fixture.seed({ settings: { dns_server: [ "127.0.0.1" ], bootstrap_dns_server: [ "127.0.0.1" ] },
     section: [ { ".name": "direct", enabled: "1", action: "bypass", destinations: "example.invalid" } ] });
-print(sprintf("%J", require("singbox.generator").build({ service_address: "127.0.0.1", local_prefixes: [] })));
+print(sprintf("%J", require("singbox.generator").build({ service_address: "127.0.0.1", local_prefixes: [], controller_secret: fixture.CONTROLLER_SECRET })));
 ''')
         expected = None
         rows = []
