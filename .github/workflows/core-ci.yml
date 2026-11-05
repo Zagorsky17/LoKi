@@ -57,6 +57,7 @@ jobs:
           source core/upstream.env
           core/prepare.sh "$RUNNER_TEMP/core-source"
           export SOURCE_DATE_EPOCH=$CORE_SOURCE_DATE_EPOCH
+          python3 -B core/module_sources.py --fetch-go-source
           (cd "$RUNNER_TEMP/core-source" && ./build.sh --binary-only --version "$CORE_VERSION" --output "$RUNNER_TEMP/core-build" amd64)
           python3 -B core/module_sources.py "$RUNNER_TEMP/core-source" "$RUNNER_TEMP/core-module-sources.tar.gz" "$RUNNER_TEMP/core-build/build/amd64/base/sing-box"
           python3 core/tests/dns_bootstrap.py "$RUNNER_TEMP/core-build/build/amd64/base/sing-box" "$RUNNER_TEMP/core-dns-results"

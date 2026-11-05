@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Modified for LoKi on 2026-11-05: prepare pinned Go sources before building.
 set -euo pipefail
 
 HERE=$(cd -- "$(dirname -- "$0")" && pwd)
@@ -14,6 +15,7 @@ if [[ $(go env GOVERSION) != "go$(cat "$HERE/GO_VERSION")" ]]; then
     echo "Use Go $(cat "$HERE/GO_VERSION") to build this core" >&2
     exit 1
 fi
+python3 -B "$HERE/module_sources.py" --fetch-go-source > /dev/null
 work=$(mktemp -d)
 trap 'rm -rf -- "$work"' EXIT
 "$HERE/prepare.sh" "$work/source"
