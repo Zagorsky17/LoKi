@@ -33,6 +33,12 @@ jobs:
         with:
           go-version-file: core/GO_VERSION
           cache: false
+      - name: Prepare a private Go workspace
+        shell: bash
+        run: |
+          python3 -B core/isolate_toolchain.py "$RUNNER_TEMP/loki-go"
+          printf 'GOROOT=%s\n' "$RUNNER_TEMP/loki-go" >> "$GITHUB_ENV"
+          printf '%s/bin\n' "$RUNNER_TEMP/loki-go" >> "$GITHUB_PATH"
       - name: Install test dependencies
         run: |
           sudo apt-get update
@@ -47,6 +53,7 @@ jobs:
         run: |
           python3 core/tests/test_release.py
           python3 -B core/tests/test_module_sources.py
+          python3 -B core/tests/test_toolchain_workspace.py
           python3 -B core/tests/test_subscription_selection.py
           python3 -B core/tests/test_compatibility.py
           python3 -B core/tests/test_dns_timeout.py
