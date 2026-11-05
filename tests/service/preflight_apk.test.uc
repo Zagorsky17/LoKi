@@ -79,7 +79,9 @@ t.test("APK collector compares exact candidate paths and does not execute PM or 
     let before = fs.readfile(path);
     let query4 = "exec /usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin LC_ALL=C timeout -s KILL 2 /sbin/ip -Numeric -j -4 rule list";
     let query6 = replace(query4, "-j -4", "-j -6");
-    stub.commands([[ query4, { stdout: "[]" } ], [ query6, { stdout: "[]" } ],
+    let resources = "exec /usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin LC_ALL=C timeout -s KILL 2 /bin/df -Pk / /tmp";
+    stub.commands([[ resources, { stdout: "Filesystem 1024-blocks Used Available Capacity Mounted on\nrootfs 1000 400 500 45% /\ntmpfs 2000 100 1900 5% /tmp\n" } ],
+        [ query4, { stdout: "[]" } ], [ query6, { stdout: "[]" } ],
         [ "exec timeout", { stdout: "{}" } ]]);
     let first = preflight.collect(root);
     let second = preflight.collect(root);
@@ -89,8 +91,8 @@ t.test("APK collector compares exact candidate paths and does not execute PM or 
     t.ok(has(first, "checked", "metadata-read-complete"));
     t.eq(fs.readfile(path), before);
     t.eq(stub.command_lines(), [ "exec timeout -s KILL 5 ubus call service list {\"verbose\":true}",
-        query4, query4, query6, query6,
-        "exec timeout -s KILL 5 ubus call service list {\"verbose\":true}", query4, query4, query6, query6 ]);
+        query4, query4, query6, query6, resources,
+        "exec timeout -s KILL 5 ubus call service list {\"verbose\":true}", query4, query4, query6, query6, resources ]);
 });
 
 t.test("APK conflicting owners survive and names never establish own provenance", () => {
