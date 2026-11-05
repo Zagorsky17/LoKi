@@ -38,9 +38,17 @@ it('generates catalogs from current sources and ignores a stale shipped bundle',
     "export const label = _('Current LoKi string');\n",
   );
   fs.writeFileSync(path.join(view, 'main.js'), "_('Stale bundled string');\n");
+  const notices = [
+    '# Copyright (C) 2017 Original translation contributors',
+    '# Copyright (C) 2023 Additional contributors',
+  ];
+  fs.writeFileSync(
+    path.join(po, 'templates/loki.pot'),
+    `${notices.join('\n')}\n`,
+  );
   fs.writeFileSync(
     path.join(po, 'ru/loki.po'),
-    'msgid "Current LoKi string"\nmsgstr "Текущая строка"\n',
+    `${notices.join('\n')}\nmsgid "Current LoKi string"\nmsgstr "Текущая строка"\n`,
   );
   execFileSync(process.execPath, ['sync-locales.js'], {
     cwd: app,
@@ -51,4 +59,10 @@ it('generates catalogs from current sources and ignores a stale shipped bundle',
   expect(template).toContain('Current LoKi string');
   expect(template).not.toContain('Stale bundled string');
   expect(translated).toContain('msgstr "Текущая строка"');
+  for (const notice of notices) {
+    expect(template, 'original template copyright notice').toContain(notice);
+    expect(translated, 'original translation copyright notice').toContain(
+      notice,
+    );
+  }
 });

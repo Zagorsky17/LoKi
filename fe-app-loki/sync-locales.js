@@ -138,11 +138,13 @@ function parseTranslations(content) {
   return translations;
 }
 
-function renderPot(entries, { name, email }, now) {
+function renderPot(entries, { name, email }, now, previous) {
   const stamp = timestamp(now);
   const header = [
     '# SOME DESCRIPTIVE TITLE.',
-    `# Copyright (C) ${now.getFullYear()} THE PACKAGE'S COPYRIGHT HOLDER`,
+    ...(previous.match(/^# Copyright[^\r\n]*$/gm) ?? [
+      `# Copyright (C) ${now.getFullYear()} THE PACKAGE'S COPYRIGHT HOLDER`,
+    ]),
     `# This file is distributed under the same license as the ${PROJECT_ID} package.`,
     `# ${name} <${email}>, ${now.getFullYear()}.`,
     '#, fuzzy',
@@ -175,11 +177,13 @@ function renderPot(entries, { name, email }, now) {
   return `${header}\n${body}`;
 }
 
-function renderPo(entries, translations, language, { name }, now) {
+function renderPo(entries, translations, language, { name }, now, previous) {
   const stamp = timestamp(now);
   const header = [
     `# ${language.toUpperCase()} translations for ${PROJECT_ID} package.`,
-    `# Copyright (C) ${now.getFullYear()} THE ${PROJECT_ID} COPYRIGHT HOLDER`,
+    ...(previous.match(/^# Copyright[^\r\n]*$/gm) ?? [
+      `# Copyright (C) ${now.getFullYear()} THE ${PROJECT_ID} COPYRIGHT HOLDER`,
+    ]),
     `# This file is distributed under the same license as the ${PROJECT_ID} package.`,
     `# ${name}, ${now.getFullYear()}.`,
     '#',
@@ -220,7 +224,11 @@ const identity =
 const now = new Date();
 
 await fs.mkdir(path.dirname(potPath), { recursive: true });
-await fs.writeFile(potPath, renderPot(entries, identity, now), 'utf8');
+await fs.writeFile(
+  potPath,
+  renderPot(entries, identity, now, previousPot),
+  'utf8',
+);
 console.log(`${entries.length} strings -> ${path.relative(repoRoot, potPath)}`);
 
 for (const language of LANGUAGES) {
@@ -230,7 +238,7 @@ for (const language of LANGUAGES) {
   await fs.mkdir(path.dirname(poPath), { recursive: true });
   await fs.writeFile(
     poPath,
-    renderPo(entries, translations, language, identity, now),
+    renderPo(entries, translations, language, identity, now, previous),
     'utf8',
   );
 
