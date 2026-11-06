@@ -8,11 +8,13 @@ let exec = require("core.exec");
 let constants = require("core.constants");
 let core_ip = require("core.ip");
 let library = require("core.library");
-let uci = require("core.uci");
 let worker_process = require("service.worker");
+let context = require("service.ruleset_context");
+let runtime = require("singbox.runtime");
+let health = require("service.health");
+let lock = require("service.lock");
 let clash_api = require("singbox.clash_api");
 let nft_apply = require("nft.apply");
-let nft_sections = require("nft.sections");
 let connections = require("config.connections");
 
 const TABLE = constants.NFT_TABLE_NAME;
@@ -28,6 +30,7 @@ let as_string = common.as_string;
 // refused key is not tried again until a provider or the section changes.
 let applied = {};
 let refused = {};
+let paths = { lock: "/var/run/loki/start.lock", planned_stop: "/var/run/loki/loki-core-watch.planned-stop" };
 
 function normalize_ranges(ranges) {
     sort(ranges, (left, right) => left.start == right.start ? left.end - right.end : left.start - right.start);
@@ -322,7 +325,7 @@ function write_set(handle, set_name, elements) {
 }
 
 // Written to a file, so what this process holds is released before nft starts allocating.
-function apply_plan(plan) {
+function apply_plan(plan, guard) {
     let now = clock();
     let base = sprintf("/tmp/loki-ruleset-sync.%d.%d.%d", common.own_pid(), now[0], now[1]);
     if (!fs.mkdir(base, 0700))
@@ -346,9 +349,27 @@ function apply_plan(plan) {
         // Older fs.close() ignores a failed buffered flush; verify the resulting file as well.
         if (expected == null || !closed || fs.stat(path)?.size != expected)
             die("cannot finish the complete nft transaction");
-        let result = exec.combined([ "nft", "-f", path ]);
-        if (result.status != 0)
-            die(nft_apply.refusal({ status: result.status, stderr: result.output }));
+        let owner = common.own_pid();
+        let acquired = false;
+        let permitted = false;
+        try {
+            acquired = guard == null || lock.acquire(paths.lock, owner);
+            permitted = acquired && (guard == null || guard());
+        }
+        catch (e) {}
+        try {
+            if (permitted) {
+                let result = exec.combined([ "nft", "-f", path ]);
+                if (result.status != 0)
+                    die(nft_apply.refusal({ status: result.status, stderr: result.output }));
+            }
+        }
+        catch (e) {
+            if (guard != null && acquired) lock.release(paths.lock, owner);
+            die(e.message);
+        }
+        if (guard != null && acquired) lock.release(paths.lock, owner);
+        if (!permitted) count = null;
     }
     catch (e) {
         if (handle)
@@ -371,24 +392,9 @@ function plan_key(snapshot, entry) {
     return join("\t", parts);
 }
 
-function native_sections(sections) {
-    return filter(nft_sections.with_priority_sets(sections).sections, (entry) => length(entry.matchers.subnet_tags) > 0);
-}
-
-function configured_sections() {
-    return uci.section_objects(constants.LOKI_CONFIG_NAME, "section");
-}
-
-function subnet_sources(sections) {
-    let result = {};
-    for (let entry in native_sections(sections))
-        result[as_string(entry.section[".name"])] = entry.matchers.subnet_tags;
-    return result;
-}
-
-function sync(snapshot, sections) {
-    let native = native_sections(sections);
+function sync(snapshot, native, guard) {
     let loaded = 0, written = 0;
+    let deferred = false;
     for (let entry in native) {
         let name = as_string(entry.section[".name"]);
         let key = plan_key(snapshot, entry);
@@ -399,7 +405,9 @@ function sync(snapshot, sections) {
             let plan = section_plan(snapshot, entry);
             if (plan == null)
                 continue;
-            loaded += apply_plan(plan);
+            let count = apply_plan(plan, guard == null ? null : () => guard(entry));
+            if (count == null) { deferred = true; continue; }
+            loaded += count;
             applied[name] = key;
             delete refused[name];
             written++;
@@ -414,7 +422,7 @@ function sync(snapshot, sections) {
     if (written > 0)
         exec.log("info", "Loaded " + loaded + " rule-set subnets into nftables" +
             (written == length(native) ? "" : " for " + written + " of " + length(native) + " sections"));
-    return { loaded, written };
+    return { loaded, written, deferred };
 }
 
 // Decoded as it arrives, so a country-sized list is never held twice.
@@ -425,15 +433,13 @@ function snapshot(api) {
 }
 
 // The revision synced, null without a snapshot, false when no section reads a provider.
-function sync_once(api) {
-    let sections = configured_sections();
-    if (length(native_sections(sections)) == 0)
+function sync_once(api, sections, guard) {
+    if (length(sections) == 0)
         return false;
     let value = snapshot(api);
     if (value == null)
         return null;
-    sync(value, sections);
-    return value.revision;
+    return sync(value, sections, guard).deferred ? null : value.revision;
 }
 
 // true on a provider change, false when the wait ran out, null when the controller is unreachable.
@@ -444,54 +450,125 @@ function next_change(api, revision, seconds) {
     return reply?.status == 200 && type(common.parse_json(reply.body)?.revision) == "int" ? true : null;
 }
 
-function worker_spec(sources) {
+function worker_spec(generation) {
     return {
         name: "loki-ruleset-sync",
         instance: "sync",
-        command: [ constants.LOKI_BIN, "sync_rule_sets" ],
+        command: generation == null ? [ constants.LOKI_BIN, "sync_rule_sets" ] :
+            [ constants.LOKI_BIN, "sync_rule_sets", generation ],
         env: { LOKI_LIB: library.dir() },
         pid_file: "/var/run/loki/ruleset-sync.pid",
-        data: sources == null ? null : { subnet_sources: sources }
+        data: generation == null ? null : { generation }
     };
 }
 
-function worker() {
-    worker_process.announce(worker_spec());
-    let api = clash_api.controller();
+function same_identity(first, second) {
+    return first != null && second != null && first.pid == second.pid &&
+        first.start_ticks == second.start_ticks && sprintf("%J", first.command) == sprintf("%J", second.command);
+}
+
+function sets_present(entry) {
+    for (let _, name in entry.matchers.sets)
+        if (!exec.ok([ "nft", "-t", "list", "set", "inet", TABLE, name ])) return false;
+    return true;
+}
+
+function ready_context(snapshot) {
+    try {
+        if (!lock.unmarked(paths.planned_stop)) return null;
+        if (snapshot != null && !context.unchanged(snapshot)) return null;
+        let state = snapshot ?? context.read();
+        let active = state.model?.phase == "ready" ? state.model.active : null;
+        if (active == null || !health.sing_box_runtime_ports_ready()) return null;
+        let identity = runtime.identity(active.config_path);
+        if (identity == null || sprintf("%J", identity.command) != sprintf("%J", active.command) ||
+            runtime.file_digest(active.config_path) != active.config_digest) return null;
+        if (!same_identity(active, identity)) {
+            active = { ...active, ...identity };
+            if (!context.write({ schema: 1, phase: "ready", active, candidate: null })) return null;
+        }
+        return active;
+    }
+    catch (e) { return null; }
+}
+
+function worker(generation) {
+    if (type(generation) != "string" || length(generation) != 64 ||
+        !match(generation, /^[a-f0-9]{64}$/) || generation == sprintf("%064d", 0)) return 1;
+    let spec = worker_spec(generation);
+    if (!worker_process.announce(spec)) return 1;
     let delay = RETRY_MIN_SECONDS;
-    let revision = sync_once(api);
-    while (revision !== false) {
-        let change = revision == null ? null : next_change(api, revision, EVENT_WAIT_SECONDS);
-        if (change === false)
-            continue;
-        if (change == null) {
+    let pinned = null;
+    let revision = null;
+    while (true) {
+        if (pinned != null && !context.unchanged(pinned)) {
+            if (!context.close(pinned)) break;
+            pinned = null;
+            revision = null;
+            applied = {}; refused = {};
+        }
+        if (pinned == null) {
+            let loaded = context.open();
+            if (loaded.error == null) {
+                let owner = common.own_pid();
+                let acquired = false;
+                try {
+                    acquired = lock.acquire(paths.lock, owner);
+                    let active = acquired ? ready_context(loaded) : null;
+                    if (active?.generation == generation && context.unchanged(loaded)) pinned = loaded;
+                }
+                catch (e) {}
+                if (acquired) lock.release(paths.lock, owner);
+                if (pinned == null && !context.close(loaded)) break;
+            }
+        }
+        if (pinned == null || pinned.model?.phase != "ready" || pinned.model.active.generation != generation) {
             sleep(delay * 1000);
             delay = min(delay * 2, RETRY_MAX_SECONDS);
-            api = clash_api.controller();
+            continue;
         }
-        revision = sync_once(api);
+        let active = pinned.model.active;
+        if (length(active.sections) == 0) break;
+        let api = active.controller;
+        let change = revision == null ? true : next_change(api, revision, EVENT_WAIT_SECONDS);
+        if (change === false) continue;
+        if (change == null) {
+            context.close(pinned); pinned = null; revision = null;
+            sleep(delay * 1000); delay = min(delay * 2, RETRY_MAX_SECONDS);
+            continue;
+        }
+        revision = sync_once(api, active.sections, (entry) => context.unchanged(pinned) &&
+            lock.unmarked(paths.planned_stop) && same_identity(active, runtime.identity(active.config_path)) &&
+            health.sing_box_runtime_ports_ready() && sets_present(entry));
         if (revision != null)
             delay = RETRY_MIN_SECONDS;
+        else {
+            context.close(pinned); pinned = null;
+            sleep(delay * 1000); delay = min(delay * 2, RETRY_MAX_SECONDS);
+        }
     }
-    worker_process.retire(worker_spec());
+    if (pinned != null) context.close(pinned);
+    worker_process.retire(spec);
+    return 0;
 }
 
 function stop_worker() {
     return worker_process.stop(worker_spec());
 }
 
-function start_worker() {
-    let sources = subnet_sources(configured_sections());
-    if (length(sources) == 0)
+function start_worker(active) {
+    if (active == null) return false;
+    if (length(active.sections) == 0)
         return stop_worker();
-    return worker_process.start(worker_spec(sources));
+    return worker_process.start(worker_spec(active.generation));
 }
 
-function worker_current() {
-    let spec = worker_spec(subnet_sources(configured_sections()));
-    if (length(spec.data.subnet_sources) == 0)
+function worker_current(active) {
+    if (active == null) return false;
+    let spec = worker_spec(active.generation);
+    if (length(active.sections) == 0)
         return !worker_process.running(spec);
     return worker_process.current(spec);
 }
 
-return { sync, worker_spec, worker, start_worker, stop_worker, worker_current };
+return { paths, sync, worker_spec, worker, start_worker, stop_worker, worker_current, ready_context };

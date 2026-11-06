@@ -63,12 +63,15 @@ function ubus_connect() {
 }
 
 // procd's entry for the loki-core service: {} when it holds none, null when it did not answer.
-function sing_box_service_list() {
+function sing_box_service_list(verbose) {
     let connection = ubus_connect();
+    let parameters = { name: "loki-core" };
+    if (verbose) parameters.verbose = true;
     try {
         return connection == null
-            ? json(command_output_from_args([ "ubus", "call", "service", "list", "{\"name\":\"loki-core\"}" ]))
-            : connection.call("service", "list", { name: "loki-core" });
+            ? json(command_output_from_args([ "ubus", "call", "service", "list",
+                verbose ? sprintf("%J", parameters) : "{\"name\":\"loki-core\"}" ]))
+            : connection.call("service", "list", parameters);
     }
     catch (e) {
         return null;
@@ -242,6 +245,7 @@ return {
     paths,
     service_status_text,
     sing_box_service_pid_from_value,
+    sing_box_service_list,
     sing_box_service_pid_runtime,
     sing_box_service_registered,
     pid_is_sing_box,

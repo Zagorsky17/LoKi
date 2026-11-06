@@ -74,6 +74,18 @@ function consume_request(path) {
     return true;
 }
 
+// fs reports translated error text; establish ENOENT without trusting a failed marker stat.
+function unmarked(path) {
+    try {
+        fs.lstat("");
+        let missing = fs.error();
+        let node = fs.lstat(path);
+        let failure = fs.error();
+        return missing != null && node == null && failure == missing;
+    }
+    catch (e) { return false; }
+}
+
 // Detached, so the reload that finished does not wait for the one it queued.
 function run_pending_reload_if_requested(path, init_script) {
     if (!consume_request(path))
@@ -81,4 +93,4 @@ function run_pending_reload_if_requested(path, init_script) {
     exec.background([ init_script, "reload", "pending" ]);
 }
 
-return { held, acquire, acquire_wait, release, mark_request, consume_request, run_pending_reload_if_requested };
+return { held, acquire, acquire_wait, release, mark_request, consume_request, unmarked, run_pending_reload_if_requested };

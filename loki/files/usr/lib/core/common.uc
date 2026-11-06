@@ -72,11 +72,18 @@ function write_private_file(path, text) {
     let file = fs.open(path, "wxe", 0600);
     if (file == null)
         return false;
-    let written = file.write(text) == length(text);
-    file.close();
+    let written = false;
+    let closed = false;
+    try { written = file.write(text) == length(text); }
+    catch (e) {}
+    try { closed = file.close() === true; }
+    catch (e) {}
     // The pinned ucode flush() cannot report failure reliably; verify the closed file.
-    if (written && fs.readfile(path) == text)
-        return true;
+    try {
+        if (written && closed && fs.readfile(path) == text)
+            return true;
+    }
+    catch (e) {}
     fs.unlink(path);
     return false;
 }

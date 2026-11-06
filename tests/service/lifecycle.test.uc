@@ -9,6 +9,7 @@ let repo = require("repo");
 let validator = require("config.validator");
 let generator = require("singbox.generator");
 let runtime = require("singbox.runtime");
+let real_prepare_config = runtime.prepare_config;
 let nft = require("nft.apply");
 let nft_state = require("nft.state");
 let rulesets = require("nft.ruleset_sync");
@@ -19,6 +20,11 @@ let fixture = require("fixture");
 let lifecycle = require("service.lifecycle");
 let start_request = require("service.start_request");
 let lock = require("service.lock");
+let context = require("service.ruleset_context");
+let credential = require("service.gateway_secret");
+let generation = 100;
+let digest = sprintf("%064x", 90);
+credential.generate = () => sprintf("%064x", ++generation);
 
 let world = null;
 let real_sleep = global.sleep;
@@ -29,6 +35,16 @@ const NOTHING_TO_RUN = "[warn] LoKi has nothing to run: no section with connecti
 function event(name) {
     push(world.events, name);
 }
+
+function seed_ready() {
+    let active = { generation: sprintf("%064x", ++generation), sections: [],
+        config_path: world.dir + "/core-config.json", config_digest: digest, nft_digest: digest,
+        controller: { endpoint: "/tmp/loki/controller.sock", secret: digest } };
+    t.ok(context.write({ schema: 1, phase: "applying", active: null, candidate: active }));
+    t.ok(context.write({ schema: 1, phase: "ready", active: { ...active, pid: "" + world.pid,
+        start_ticks: "" + world.ticks, command: [ "/usr/bin/loki-core", "run", "-c", active.config_path ] }, candidate: null }));
+}
+
 
 function reset(options) {
     let dir = stub.tmpdir();
@@ -42,6 +58,9 @@ function reset(options) {
     lifecycle.paths.applied_nft = dir + "/runtime.nft";
     lifecycle.paths.rc_dir = dir + "/rc.d";
     lifecycle.paths.sing_box_init = dir + "/loki-core";
+    context.paths.base = dir + "/runtime";
+    rulesets.paths.lock = lifecycle.paths.lock;
+    rulesets.paths.planned_stop = lifecycle.paths.planned_stop;
     fs.writefile(lifecycle.paths.sing_box_init, "#!/bin/sh\n");
     fs.chmod(lifecycle.paths.sing_box_init, 0755);
     fs.writefile(lifecycle.paths.config, "config loki\n");
@@ -75,18 +94,32 @@ function reset(options) {
     validator.check_requirements = () => { if (world.requirements_fail) die("requirements"); };
     validator.validate = () => { if (world.invalid) die("Section 'x' is broken. Aborted."); };
     generator.runnable = () => !world.nothing_to_run;
-    runtime.configure_service = () => {};
-    runtime.write_config = (checked) => {
+    runtime.configure_service = () => { if (world.on_mutation != null) world.on_mutation("service"); };
+    runtime.prepare_config = (checked) => {
         event(checked ? "config checked" : "config written");
         if (world.config_fails)
             die("Failed to generate loki-core configuration: broken");
-        return world.config_changed;
+        return { path: dir + "/core-config.json", changed: world.config_changed,
+            text: sprintf("%J", { experimental: { clash_api: {
+                external_controller_unix: "/tmp/loki/controller.sock", secret: digest } } }) };
     };
-    nft.ensure_bridge_netfilter_disabled = () => !world.bridge_fails;
+    runtime.install_config = (prepared) => {
+        if (world.on_mutation != null) world.on_mutation("config");
+        return prepared.changed;
+    };
+    runtime.fingerprint = () => digest;
+    runtime.file_digest = () => world.digest_mismatch ? null : digest;
+    runtime.identity = (path) => world.pid > 0 && !world.forked ? {
+        pid: "" + world.pid, start_ticks: "" + world.ticks,
+        command: [ "/usr/bin/loki-core", "run", "-c", path ] } : null;
+    nft.ensure_bridge_netfilter_disabled = () => {
+        if (world.on_mutation != null) world.on_mutation("bridge");
+        return !world.bridge_fails;
+    };
     nft.build = () => {
         if (world.build_fails)
             die("duplicate nft section: x");
-        return { script: world.script, skipped: [] };
+        return { script: world.script, skipped: [], sections: [] };
     };
     nft.apply = (built) => {
         if (world.nft_fails)
@@ -96,7 +129,7 @@ function reset(options) {
         if (world.on_apply != null)
             world.on_apply();
     };
-    runtime.bound_devices = () => world.bound ?? [];
+    runtime.bound_devices = (path) => { world.bound_path = path; return world.bound ?? []; };
     nft.route_bound_devices = (devices) => {
         if (world.bound_rules_fail && length(devices) > 0)
             die("Failed to add the IPv4 routing rule of interface wwan0");
@@ -136,9 +169,16 @@ function reset(options) {
             world.on_watch_check();
         return world.watcher;
     };
-    rulesets.start_worker = () => { event("rule-set worker started"); return !world.ruleset_fails; };
+    rulesets.start_worker = (active) => {
+        event("rule-set worker started");
+        world.worker_generation = active?.generation;
+        if (world.on_mutation != null) world.on_mutation("worker");
+        return !world.ruleset_fails;
+    };
     rulesets.stop_worker = () => { event("rule-set worker stopped"); return true; };
     rulesets.worker_current = () => !world.worker_stale;
+
+    if (world.pid > 0) seed_ready();
 
     global.sleep = function(ms) {
         world.slept++;
@@ -216,6 +256,7 @@ function started() {
     return previous;
 }
 
+
 function running(options) {
     reset(options);
     world.watcher = !options?.watcher_missing;
@@ -224,6 +265,7 @@ function running(options) {
     world.ticks = 100;
     world.ports = true;
     world.network = true;
+    seed_ready();
     fs.writefile(lifecycle.paths.applied_nft, "table inet loki\n");
 }
 
@@ -239,6 +281,48 @@ function reloaded(options, reason) {
 
 // The Python harness kills this real interpreter at the first interception. Router effects
 // remain isolated fakes, but no exception handler or failed-start cleanup can run afterward.
+let context_snapshot = getenv("LOKI_TEST_CONTEXT_SNAPSHOT");
+let context_recover = getenv("LOKI_TEST_CONTEXT_RECOVER");
+if (context_recover != null) {
+    let interrupted = json(fs.readfile(context_recover));
+    reset({ invalid: true, config_fails: true, build_fails: true });
+    context.paths.base = interrupted.dir + "/runtime";
+    lifecycle.paths.lock = interrupted.dir + "/start.lock";
+    lifecycle.paths.planned_stop = interrupted.dir + "/planned-stop";
+    rulesets.paths.lock = lifecycle.paths.lock;
+    rulesets.paths.planned_stop = lifecycle.paths.planned_stop;
+    world.pid = 4242; world.ticks = 100; world.ports = true; world.network = true; world.watcher = true;
+    let status = stub.capture(() => lifecycle.start()).result;
+    let state = context.read().model;
+    print(sprintf("%J", { status, phase: state.phase, generation: state.active?.generation,
+        candidate: state.candidate?.generation, events: world.events, pid: world.pid }));
+    exit(0);
+}
+if (context_snapshot != null) {
+    running({ config_changed: true, script: CHANGED_TABLE });
+    let previous = context.read().model.active.generation;
+    let point = getenv("LOKI_TEST_CONTEXT_POINT");
+    let checkpoint = (step) => {
+        if (step != point) return;
+        let state = context.read().model;
+        if (!require("core.common").write_file_atomic(context_snapshot, sprintf("%J", {
+            dir: world.dir, previous, phase: state.phase, generation: state.active?.generation,
+            candidate: state.candidate?.generation, events: world.events }))) exit(3);
+        real_sleep(30000);
+    };
+    let write = context.write;
+    context.write = (value) => {
+        if (value.phase == "applying") checkpoint("before-applying");
+        let ok = write(value);
+        if (ok) checkpoint(value.phase);
+        return ok;
+    };
+    world.on_mutation = checkpoint;
+    world.on_apply = () => checkpoint("nft");
+    lifecycle.reload("manual");
+    exit(2);
+}
+
 let fatal_snapshot = getenv("LOKI_TEST_FATAL_SNAPSHOT");
 let recover_snapshot = getenv("LOKI_TEST_RECOVER_SNAPSHOT");
 if (recover_snapshot != null) {
@@ -260,6 +344,7 @@ if (fatal_snapshot != null) {
             watcher: world.watcher,
             planned_stop: fs.stat(lifecycle.paths.planned_stop) != null,
             network: world.network,
+            context_phase: context.read().model.phase,
             events: world.events
         }));
         real_sleep(30000);
@@ -291,8 +376,8 @@ t.test("unsafe cache paths stop start and reload before migration or runtime cha
 t.test("a start waits for loki-core and arms the crash watcher before turning the table on", () => {
     reset();
     let result = run(() => lifecycle.start());
-    t.eq(result.result, 0);
-    t.eq(world.events, [ "config checked", "loki-core started", "watcher started", "nft applied", "rule-set worker started" ]);
+    t.eq(result.result, 0, sprintf("%J", world.logs));
+    t.eq(world.events, [ "config checked", "rule-set worker started", "loki-core started", "watcher started", "nft applied" ]);
     t.eq(fs.readfile(lifecycle.paths.applied_nft), world.script, "the applied table is recorded");
     t.eq(world.logs, [ "[info] Starting LoKi", "[info] LoKi started" ]);
     t.eq(result.stdout, "", "a start prints nothing");
@@ -301,8 +386,7 @@ t.test("a start waits for loki-core and arms the crash watcher before turning th
 t.test("what the core sends bound to a device is routed from before it starts until it stops", () => {
     reset({ bound: [ "eth1", "wwan0" ] });
     t.eq(run(() => lifecycle.start()).result, 0);
-    t.eq(world.events, [ "config checked", "bound to eth1 wwan0", "loki-core started", "watcher started", "nft applied",
-        "rule-set worker started" ]);
+    t.eq(world.events, [ "config checked", "rule-set worker started", "bound to eth1 wwan0", "loki-core started", "watcher started", "nft applied" ]);
     run(() => lifecycle.stop());
     t.contains(world.events, "bound to nothing");
     t.eq(world.bound_rules, []);
@@ -478,9 +562,11 @@ t.test("a start with nothing to run warns once, runs nothing and succeeds", () =
     t.eq([ result.stdout, result.stderr ], [ "", "" ]);
 });
 
-t.test("a start with nothing to run takes down what an earlier run left", () => {
+t.test("an incomplete applied runtime requires explicit Apply before newly saved empty UCI tears it down", () => {
     running({ nothing_to_run: true, capture: false });
-    t.eq(run(() => lifecycle.start()).result, 0);
+    t.eq(stub.capture(() => lifecycle.start()).result, 1);
+    t.eq(world.events, []);
+    t.eq(run(() => lifecycle.reload("manual")).result, 0);
     t.contains(world.events, "nft table deleted");
     t.contains(world.events, "loki-core stopped");
     t.eq(filter(world.events, (e) => e == "loki-core started"), []);
@@ -553,17 +639,17 @@ t.test("each failed step of a start names itself in the log as an error", () => 
     }
 });
 
-t.test("a reload with nothing changed touches nothing", () => {
+t.test("an unchanged apply confirms a new generation without signalling the core", () => {
     let result = reloaded();
     t.eq(result.result, 0);
-    t.eq(world.events, [ "config written" ]);
-    t.contains(world.logs, "[info] Configuration already applied; nothing changed");
+    t.eq(world.events, [ "config written", "rule-set worker started" ]);
+    t.contains(world.logs, "[info] Configuration applied");
 });
 
-t.test("a changed loki-core configuration is reloaded with the capture paused until the core is ready again, and the worker kept", () => {
+t.test("a changed loki-core configuration is reloaded with the capture paused until the core is ready again, and a worker waits for the new generation", () => {
     let result = reloaded({ config_changed: true });
     t.eq(result.result, 0);
-    t.eq(world.events, [ "config written", "capture paused", "loki-core reloaded", "reloaded with the capture paused",
+    t.eq(world.events, [ "config written", "rule-set worker started", "capture paused", "loki-core reloaded", "reloaded with the capture paused",
         "capture resumed" ]);
     t.contains(world.logs, "[info] Configuration applied");
     t.ok(world.slept > 0, "the reload waited out its window");
@@ -576,22 +662,22 @@ t.test("a change to the providers a section reads alone starts the rule-set work
     t.contains(world.logs, "[info] Configuration applied");
 });
 
-t.test("a changed table is rebuilt with the rule-set worker stopped around it, and loki-core is left alone", () => {
+t.test("a changed table is rebuilt after registering its waiting rule-set worker, and loki-core is left alone", () => {
     let result = reloaded({ script: CHANGED_TABLE });
     t.eq(result.result, 0);
-    t.eq(world.events, [ "config written", "rule-set worker stopped", "nft applied", "rule-set worker started" ]);
+    t.eq(world.events, [ "config written", "rule-set worker started", "nft applied" ]);
     t.eq(world.logs, [ "[info] Applying configuration", "[info] Configuration applied" ]);
 });
 
 t.test("a reload routes the devices the new configuration binds before the core reads it", () => {
     let result = reloaded({ config_changed: true, bound: [ "eth1", "wwan0" ], bound_rules: [ "eth1", "gone0" ] });
     t.eq(result.result, 0);
-    t.eq(world.events, [ "config written", "bound to eth1 wwan0", "capture paused", "loki-core reloaded",
+    t.eq(world.events, [ "config written", "rule-set worker started", "bound to eth1 wwan0", "capture paused", "loki-core reloaded",
         "reloaded with the capture paused", "capture resumed" ]);
 
     result = reloaded({ bound: [ "wwan0" ], bound_rules: [ "wwan0" ] });
-    t.eq(world.events, [ "config written", "bound to wwan0" ], "an unchanged configuration has them checked");
-    t.contains(world.logs, "[info] Configuration already applied; nothing changed");
+    t.eq(world.events, [ "config written", "rule-set worker started", "bound to wwan0" ], "an unchanged configuration has them checked");
+    t.contains(world.logs, "[info] Configuration applied");
 
     result = reloaded({ config_changed: true, bound: [ "wwan0" ], bound_rules_fail: true });
     t.eq(result.result, 1);
@@ -617,15 +703,15 @@ t.test("a table that cannot be built is said in one line and touches nothing", (
     t.eq(failures_logged(), [ "[error] Failed to build the nftables rules: duplicate nft section: x" ]);
 });
 
-t.test("a reload asked for by hand reloads loki-core even when nothing changed, and keeps the worker", () => {
+t.test("a reload asked for by hand reloads loki-core even when nothing changed, and registers a worker for the new generation", () => {
     let result = reloaded({}, "");
     t.eq(result.result, 0);
-    t.eq(world.events, [ "config written", "capture paused", "loki-core reloaded", "reloaded with the capture paused", "capture resumed" ]);
+    t.eq(world.events, [ "config written", "rule-set worker started", "capture paused", "loki-core reloaded", "reloaded with the capture paused", "capture resumed" ]);
 });
 
 t.test("a queued reload applies what changed without forcing loki-core", () => {
     let result = reloaded({}, "pending");
-    t.eq(world.events, [ "config written" ]);
+    t.eq(world.events, [ "config written", "rule-set worker started" ]);
 });
 
 t.test("each failed step of a reload after the runtime was touched names itself once and takes the runtime down", () => {
@@ -634,7 +720,7 @@ t.test("each failed step of a reload after the runtime was touched names itself 
         [ { reload_fails: true, config_changed: true }, "[error] Failed to reload loki-core", true ],
         [ { resume_fails: true, config_changed: true }, "[error] Failed to resume the traffic capture after reloading loki-core", true ],
         [ { nft_fails: true, script: CHANGED_TABLE }, "[error] nft refused the ruleset: Error: broken", false ],
-        [ { ruleset_fails: true, worker_stale: true, config_changed: true }, "[error] Failed to start the rule-set sync worker", true ]
+        [ { ruleset_fails: true, worker_stale: true, config_changed: true }, "[error] Failed to start the rule-set sync worker", false ]
     ]) {
         let result = reloaded(failure[0]);
         t.eq(result.result, 1, failure[1]);
@@ -665,9 +751,10 @@ t.test("a reload of a runtime that is not complete restarts it", () => {
 
 t.test("a configuration changed while a reload ran queues another one", () => {
     running({ config_changed: true });
-    runtime.write_config = (checked) => {
+    let prepare = runtime.prepare_config;
+    runtime.prepare_config = (checked) => {
         fs.writefile(lifecycle.paths.config, "config loki changed\n");
-        return false;
+        return prepare(checked);
     };
     run(() => lifecycle.reload("on_config_change"));
     t.matches(fs.readfile(lifecycle.paths.pending_reload), /^reason=config_changed_during_reload\n/);
@@ -1194,6 +1281,124 @@ t.test("Stop and Disable expose failed cancellation instead of reporting success
             t.eq(world.pid, 0, "Stop still cleans up the current runtime");
         finish();
     }
+});
+
+t.test("applying is durable before worker registration, service, config, bridge and nft mutations", () => {
+    reset();
+    let observed = [];
+    world.on_mutation = (step) => {
+        let state = context.read().model;
+        t.eq(state.phase, "applying", step);
+        t.eq(state.active, null, step);
+        push(observed, step);
+    };
+    world.on_apply = () => t.eq(context.read().model.phase, "applying");
+    t.eq(run(() => lifecycle.start()).result, 0);
+    t.eq(observed, [ "worker", "bridge", "service", "config" ]);
+    let state = context.read().model;
+    t.eq(state.phase, "ready");
+    t.eq(state.active.generation, world.worker_generation);
+    t.eq([ state.active.pid, state.active.start_ticks ], [ "4242", "100" ]);
+});
+
+function interrupt_apply() {
+    let active = context.read().model.active;
+    let candidate = { ...active, generation: credential.generate() };
+    for (let key in [ "pid", "start_ticks", "command" ]) delete candidate[key];
+    t.ok(context.write({ schema: 1, phase: "applying", active, candidate }));
+    return candidate;
+}
+
+t.test("Start and automatic reload cannot finish an interrupted apply from saved UCI", () => {
+    for (let reason in [ null, "pending", "on_config_change", "interface_up:wan" ]) {
+        running({ invalid: true, config_fails: true, build_fails: true });
+        let candidate = interrupt_apply();
+        let result = run(() => reason == null ? lifecycle.start() : lifecycle.reload(reason));
+        t.eq(result.result, 1);
+        t.eq(world.events, []);
+        t.eq(world.migration_checks ?? 0, 0);
+        t.eq(context.read().model.candidate.generation, candidate.generation);
+        t.eq([ world.pid, world.network ], [ 4242, true ]);
+    }
+});
+
+t.test("explicit Apply or completed Stop then Start can replace an interrupted generation", () => {
+    for (let action in [ "apply", "stop-start" ]) {
+        running();
+        let interrupted = interrupt_apply();
+        if (action == "apply")
+            t.eq(stub.capture(() => lifecycle.reload("manual")).result, 0);
+        else {
+            t.eq(stub.capture(() => lifecycle.stop()).result, 0);
+            t.eq(context.read().model.phase, "stopped");
+            t.eq(stub.capture(() => lifecycle.start()).result, 0);
+        }
+        t.eq(context.read().model.phase, "ready");
+        t.ok(context.read().model.active.generation != interrupted.generation);
+        finish();
+    }
+});
+
+t.test("ready commit failure cleans runtime and never promotes its candidate", () => {
+    reset();
+    let write = context.write;
+    context.write = (value) => value.phase == "ready" ? false : write(value);
+    let result = stub.capture(() => lifecycle.start());
+    context.write = write;
+    finish();
+    t.eq(result.result, 1);
+    t.eq([ world.pid, world.network ], [ 0, false ]);
+    t.eq(context.read().model.phase, "stopped");
+    t.ok(fs.lstat(lifecycle.paths.planned_stop) != null);
+});
+
+t.test("a stop that cannot revoke worker permission changes no running component", () => {
+    running();
+    fs.mkdir(lifecycle.paths.planned_stop);
+    t.eq(run(() => lifecycle.stop()).result, 1);
+    t.eq(world.events, []);
+    t.eq([ world.pid, world.network ], [ 4242, true ]);
+    t.eq(context.read().model.phase, "ready");
+});
+
+t.test("repair rebinds a confirmed generation to the respawned core but refuses a changed config digest", () => {
+    running({ worker_stale: true, invalid: true, config_fails: true, build_fails: true });
+    let before = context.read().model.active;
+    world.pid = 5151; world.ticks = 777;
+    t.eq(stub.capture(() => lifecycle.start()).result, 0);
+    let rebound = context.read().model.active;
+    t.eq([ rebound.generation, rebound.sections, rebound.config_digest ],
+        [ before.generation, before.sections, before.config_digest ]);
+    t.eq([ rebound.pid, rebound.start_ticks ], [ "5151", "777" ]);
+    t.eq(world.events, [ "rule-set worker started" ]);
+    world.events = []; world.digest_mismatch = true;
+    t.eq(run(() => lifecycle.start()).result, 1);
+    t.eq(world.events, []);
+    t.eq(context.read().model.active, rebound);
+});
+
+t.test("WAN routing repair uses the confirmed config path without following saved UCI B", () => {
+    running({ routing_lost: true, bound: [ "applied0" ] });
+    let active = context.read().model.active;
+    fixture.seed({ settings: { config_path: world.dir + "/saved-B.json" } });
+    t.eq(run(() => lifecycle.restore_routing()).result, true);
+    t.eq(world.bound_path, active.config_path);
+    t.eq(context.read().model.active.generation, active.generation);
+});
+
+t.test("an unsafe prepared config directory leaves applied A and its generation unchanged", () => {
+    running();
+    let before = fs.readfile(context.paths.base + "/rulesets/context.json");
+    let shared = world.dir + "/shared";
+    fs.mkdir(shared, 0700); fs.chmod(shared, 0777);
+    fixture.seed({ settings: fixture.settings({ config_format: "loki", config_version: "2.0.0",
+        config_path: shared + "/new/config.json", cache_path: world.dir + "/private/cache.db" }) });
+    runtime.prepare_config = real_prepare_config;
+    t.eq(run(() => lifecycle.reload("manual")).result, 1);
+    t.eq(world.events, []);
+    t.eq([ world.pid, world.network ], [ 4242, true ]);
+    t.eq(fs.readfile(context.paths.base + "/rulesets/context.json"), before);
+    t.eq(fs.lstat(shared + "/new"), null);
 });
 
 t.done();

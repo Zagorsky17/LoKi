@@ -170,7 +170,7 @@ const COMMANDS = {
     initd_retry_token: { run: () => { print(initd().retry_token()); return 0; } },
     initd_retry_monitor: { args: 1, run: (args) => initd().retry_monitor(args[0]) },
     sing_box_watch: { run: () => require("service.singbox_watch").monitor() },
-    sync_rule_sets: { run: () => require("nft.ruleset_sync").worker() }
+    sync_rule_sets: { args: 1, run: (args) => require("nft.ruleset_sync").worker(args[0]) }
 };
 
 function help() {
