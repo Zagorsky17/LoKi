@@ -15,8 +15,13 @@ function own_uid() {
     let file = fs.open("/proc/self/status", "r");
     if (file == null)
         refuse("cannot establish the process owner");
-    let status = file.read(16384);
-    file.close();
+    let status, closed = false;
+    try { status = file.read(16384); }
+    catch (e) {}
+    try { closed = file.close() === true; }
+    catch (e) {}
+    if (!closed || type(status) != "string")
+        refuse("cannot establish the process owner");
     let found = match(status ?? "", /(^|\n)Uid:[ \t]+[0-9]+[ \t]+([0-9]+)/);
     if (found == null)
         refuse("cannot establish the process owner");

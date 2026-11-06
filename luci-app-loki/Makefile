@@ -20,6 +20,8 @@ PKG_PO_VERSION:=$(PKG_VERSION)
 
 LUCI_TITLE:=LuCI LoKi app
 LUCI_DEPENDS:=+luci-base +loki
+LUCI_EXTRA_DEPENDS:=loki (>=$(PKG_VERSION))
+LUCI_URL:=https://github.com/Zagorsky17/LoKi
 LUCI_PKGARCH:=all
 LUCI_LANG.ru:=Русский (Russian)
 LUCI_LANG.en:=English
@@ -43,6 +45,19 @@ define Build/Prepare/$(PKG_NAME)
 	sed -i -e 's/__COMPILED_VERSION_VARIABLE__/$(LOKI_COMPILED_VERSION)/g' $(PKG_BUILD_DIR)/htdocs/luci-static/resources/view/loki/main.js
 endef
 
+# The SDK's uci-defaults runner commits every pending UCI package.
+define Package/luci-app-loki/postinst
+#!/bin/sh
+[ -n "$${IPKG_INSTROOT}" ] && exit 0
+/usr/bin/loki luci_postinst >/dev/null 2>&1
+endef
+
+define Package/luci-app-loki/prerm
+#!/bin/sh
+[ -n "$${IPKG_INSTROOT}" ] && exit 0
+/usr/bin/loki luci_prerm >/dev/null 2>&1
+endef
+
 include $(TOPDIR)/feeds/luci/luci.mk
 
 # The locale belongs to LoKi; installing it must not edit shared LuCI settings.
@@ -52,6 +67,10 @@ define Package/luci-i18n-loki-ru
 	TITLE:=LoKi - Russian translation
 	HIDDEN:=1
 	DEPENDS:=luci-app-loki
+	EXTRA_DEPENDS:=luci-app-loki (>=$(PKG_PO_VERSION))
+	LICENSE:=GPL-2.0-or-later
+	URL:=https://github.com/Zagorsky17/LoKi
+	MAINTAINER:=Zagorsky17
 	VERSION:=$(PKG_PO_VERSION)
 	PKGARCH:=all
 endef

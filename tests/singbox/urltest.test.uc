@@ -28,7 +28,9 @@ t.test("what has no translation is refused, not matched another way", () => {
 });
 
 t.test("a refusal says what is wrong with the pattern", () => {
-    for (let pair in [ [ "[DE", "missing ]" ], [ "\\pL", "unsupported escape \\p" ], [ "(?=DE)", "unsupported group (?=D" ], [ "(", "Unmatched ( or \\(" ] ])
+    let native_error = t.throws(() => regexp("(")).message;
+    t.ok(type(native_error) == "string" && length(native_error) > 0);
+    for (let pair in [ [ "[DE", "missing ]" ], [ "\\pL", "unsupported escape \\p" ], [ "(?=DE)", "unsupported group (?=D" ], [ "(", native_error ] ])
         t.eq(t.throws(() => urltest.compile(pair[0])).message, pair[1], pair[0]);
 });
 

@@ -1,6 +1,7 @@
 # Modified for LoKi on 2026-11-04: include the unchanged project license.
 # Modified for LoKi on 2026-10-31: use the project release repository.
 include $(TOPDIR)/rules.mk
+include ../core/upstream.env
 
 PKG_NAME:=loki
 
@@ -24,7 +25,8 @@ include $(INCLUDE_DIR)/package.mk
 define Package/loki
 	SECTION:=net
 	CATEGORY:=Network
-	DEPENDS:=+ca-bundle +ucode +ucode-mod-fs +ucode-mod-resolv +ucode-mod-socket +ucode-mod-ubus +ucode-mod-uloop +ucode-mod-uci +uclient-fetch +kmod-nft-tproxy +nftables +kmod-nft-nat +ip-tiny +loki-core
+	DEPENDS:=+ca-bundle +ucode +ucode-mod-fs +ucode-mod-resolv +ucode-mod-socket +ucode-mod-ubus +ucode-mod-uloop +ucode-mod-uci +uclient-fetch +kmod-nft-tproxy +nftables +kmod-nft-nat +ip +loki-core
+	EXTRA_DEPENDS:=loki-core (>=$(CORE_VERSION))
 	TITLE:=LoKi backend service
 	URL:=https://github.com/Zagorsky17/LoKi
 	PKGARCH:=all
@@ -41,13 +43,22 @@ define Build/Compile
 endef
 
 define Package/loki/prerm
-#!/usr/bin/ucode
+#!/bin/sh
 
-if (getenv("IPKG_INSTROOT") == null || getenv("IPKG_INSTROOT") == "")
-	system("/usr/bin/loki package_prerm " + (ARGV[0] || "") + " >/dev/null 2>&1");
-
-exit(0);
+[ -n "$${IPKG_INSTROOT}" ] && exit 0
+# The SDK prepends the wrapper path to the package action arguments.
+/usr/bin/loki package_prerm "$${2:-remove}" >/dev/null 2>&1
 endef
+
+ifeq ($(CONFIG_USE_APK),y)
+define Package/loki/preinst
+#!/bin/sh
+
+[ -n "$${IPKG_INSTROOT}" ] && exit 0
+[ "$${PKG_UPGRADE}" = "1" ] || exit 0
+/usr/bin/loki package_prerm upgrade >/dev/null 2>&1
+endef
+endif
 
 define Package/loki/postinst
 #!/bin/sh

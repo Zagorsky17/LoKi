@@ -74,8 +74,16 @@ function without_libc(list) {
 t.test("the IPK and APK packages depend on what the feed package depends on", () => {
     t.ok(length(makefile_depends) > 0);
     t.eq(sorted(without_libc(words(build_sh_variable("BACKEND_DEPENDS_IPK")))), makefile_depends, "IPK");
-    t.eq(sorted(without_libc(words(build_sh_variable("BACKEND_DEPENDS_APK")))),
-        sorted(map(makefile_depends, (name) => name == "ip-tiny" ? "ip" : name)), "APK, where ip-tiny is the ip any iproute2 provides");
+    t.eq(sorted(without_libc(words(build_sh_variable("BACKEND_DEPENDS_APK")))), makefile_depends, "APK");
+});
+
+t.test("packages accept the installed ip provider without selecting a replacement variant", () => {
+    for (let dependencies in [ makefile_depends, words(build_sh_variable("BACKEND_DEPENDS_IPK")),
+        words(build_sh_variable("BACKEND_DEPENDS_APK")) ]) {
+        t.contains(dependencies, "ip");
+        t.excludes(dependencies, "ip-tiny");
+        t.excludes(dependencies, "ip-full");
+    }
 });
 
 t.test("every native ucode module the library loads is a dependency", () => {
@@ -93,7 +101,7 @@ t.test("every command a package hook or an init script runs is one the command l
     let sources = [
         MAKEFILE, BUILD_SH,
         fs.readfile(repo.path("loki/files/etc/init.d/loki")),
-        fs.readfile(repo.path("luci-app-loki/root/etc/uci-defaults/50_luci-loki"))
+        fs.readfile(repo.path("luci-app-loki/Makefile"))
     ];
     let names = [];
     for (let source in sources)
