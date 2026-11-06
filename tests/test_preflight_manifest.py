@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import resource
+import signal
 import shutil
 import subprocess
 import sys
@@ -523,6 +524,199 @@ raise SystemExit(builder.main())
         self.assertEqual(result.stderr, "candidate-manifest: artifact-size-limit\n")
         self.assertEqual(result.stdout, "")
         self.assertEqual(output.read_text(), "existing-catalog\n")
+
+
+class ComponentPolicy(ManifestHarness, unittest.TestCase):
+    def complete(self, kind="ipk", locale=True):
+        required = {
+            "backend": {"/usr/bin/loki": 0o755, "/etc/config/loki": 0o600,
+                        "/etc/init.d/loki": 0o755, "/etc/init.d/loki-state": 0o755,
+                        "/usr/share/loki/default-config": 0o644, "/usr/share/loki/install.sh": 0o644,
+                        "/lib/upgrade/keep.d/loki": 0o644, "/usr/libexec/loki-gateway": 0o755,
+                        "/usr/share/nftables.d/chain-pre/input/loki.nft": 0o644},
+            "luci": {"/www/luci-static/resources/view/loki/main.js": 0o644,
+                     "/www/luci-static/resources/view/loki/loki.js": 0o644,
+                     "/usr/share/rpcd/acl.d/luci-app-loki.json": 0o644,
+                     "/usr/share/luci/menu.d/luci-app-loki.json": 0o644,
+                     "/usr/share/loki/yacd/index.html": 0o644},
+            "core": {"/usr/bin/loki-core": 0o755, "/etc/config/loki-core": 0o600,
+                     "/etc/init.d/loki-core": 0o755, "/etc/loki-core/config.json": 0o600,
+                     "/lib/upgrade/keep.d/loki-core": 0o644,
+                     "/usr/share/loki-core/version": 0o644, "/usr/share/loki-core/variant": 0o644,
+                     "/usr/share/licenses/loki-core/build-info.json": 0o644,
+                     "/usr/share/licenses/loki-core/THIRD_PARTY_NOTICES": 0o644},
+            "locale": {"/usr/lib/lua/luci/i18n/loki.ru.lmo": 0o644},
+        }
+        result = {"schema": 1, "components": []}
+        for role, files in required.items():
+            if role == "locale" and not locale:
+                continue
+            name = {"backend": "loki", "luci": "luci-app-loki", "core": "loki-core",
+                    "locale": "luci-i18n-loki-ru"}[role]
+            files["/usr/share/licenses/" + name + "/LICENSE"] = 0o644
+            if kind == "apk":
+                files["/lib/apk/packages/" + name + ".list"] = 0o644
+            values = []
+            for path, mode in files.items():
+                item = entry(path); item["mode"] = mode; values.append(item)
+            component = dict(role=role, package=name, version="1.14.4-r8" if role == "core" else "2.0.0",
+                             architecture="x86_64" if role == "core" else "all" if kind == "ipk" else "noarch",
+                             format=kind, artifact=dict(name=name + "." + kind, size=1, sha256="b" * 64), files=values)
+            result["components"].append(component)
+        return result
+
+    def prepare(self, value):
+        value = copy.deepcopy(value)
+        for component in value["components"]:
+            files = component["files"]
+            parents = {str(parent) for item in files for parent in Path(item["path"]).parents}
+            present = {item["path"] for item in files}
+            files.extend(entry(path, True) for path in sorted(parents - present))
+        return value
+
+    def policy(self, value):
+        value = self.prepare(value)
+        result = self.invoke(canonical(value))
+        self.assertNotIn("error", result)
+        self.assertIn("component_policy", result)
+        return result["component_policy"], value
+
+    def test_complete_owned_sets_and_optional_locale_are_metadata_only(self):
+        for kind in ("ipk", "apk"):
+            for locale in (False, True):
+                policy, _ = self.policy(self.complete(kind, locale))
+                self.assertEqual(policy, {"kind": "candidate-manifest", "object": "component-set",
+                                          "state": "checked", "reason": "candidate-component-metadata-checked"})
+
+    def test_missing_required_roles_cannot_be_a_complete_set(self):
+        for role in ("backend", "luci", "core"):
+            value = self.complete()
+            value["components"] = [item for item in value["components"] if item["role"] != role]
+            policy, _ = self.policy(value)
+            self.assertEqual(policy["reason"], "candidate-component-required-missing")
+            self.assertEqual(policy["state"], "incomplete")
+
+    def test_version_mismatches_and_unreviewed_or_old_core_refuse(self):
+        for role, version in (("luci", "2.0.1"), ("locale", "2.0.1"), ("core", "1.14.4-r7"),
+                              ("core", "1.14.4"), ("core", "synthetic-secret"), ("core", "1.14.4-r8+evil")):
+            value = self.complete()
+            next(item for item in value["components"] if item["role"] == role)["version"] = version
+            policy, _ = self.policy(value)
+            self.assertEqual(policy["state"], "incomplete")
+            self.assertNotIn("synthetic-secret", json.dumps(policy))
+        value = self.complete()
+        next(item for item in value["components"] if item["role"] == "core")["version"] = "1.14.4-r9"
+        policy, _ = self.policy(value)
+        self.assertEqual(policy["state"], "checked")
+
+    def test_foreign_lookalike_and_cross_role_payloads_refuse(self):
+        for role, path in (("backend", "/etc/config/dhcp"), ("backend", "/usr/lib/loki-foreign/synthetic-secret"),
+                           ("backend", "/usr/share/loki/yacd/synthetic-secret"), ("luci", "/usr/bin/opkg"),
+                           ("core", "/usr/bin/sing-box"), ("locale", "/usr/lib/lua/luci/i18n/base.ru.lmo")):
+            value = self.complete()
+            next(item for item in value["components"] if item["role"] == role)["files"].append(entry(path))
+            policy, _ = self.policy(value)
+            self.assertEqual(policy["reason"], "candidate-component-path-unverified")
+            self.assertNotIn("synthetic-secret", json.dumps(policy))
+
+    def test_required_files_modes_and_unrelated_directories_refuse(self):
+        for role, path in (("backend", "/usr/bin/loki"), ("luci", "/usr/share/loki/yacd/index.html"),
+                           ("backend", "/etc/config/loki"),
+                           ("backend", "/usr/share/licenses/loki/LICENSE"), ("core", "/etc/config/loki-core"),
+                           ("core", "/usr/share/licenses/loki-core/THIRD_PARTY_NOTICES"),
+                           ("locale", "/usr/lib/lua/luci/i18n/loki.ru.lmo")):
+            for missing in (False, True):
+                value = self.complete()
+                component = next(item for item in value["components"] if item["role"] == role)
+                if missing:
+                    component["files"] = [item for item in component["files"] if item["path"] != path]
+                else:
+                    next(item for item in component["files"] if item["path"] == path)["mode"] = (
+                        0o644 if path in ("/etc/config/loki", "/etc/config/loki-core") else 0o640)
+                policy, _ = self.policy(value)
+                self.assertEqual(policy["state"], "incomplete")
+        value = self.complete()
+        value["components"][0]["files"].append(entry("/etc/synthetic-secret", True))
+        policy, _ = self.policy(value)
+        self.assertEqual(policy["reason"], "candidate-component-directory-unverified")
+        value = self.prepare(self.complete())
+        for component in value["components"]:
+            for item in component["files"]:
+                if item["path"] == "/":
+                    item["mode"] = 0o700
+        policy, _ = self.policy(value)
+        self.assertEqual(policy["reason"], "candidate-component-directory-unverified")
+
+    def test_apk_file_lists_are_required_and_cannot_claim_another_package(self):
+        for suffix in (".conffiles", ".conffiles_static"):
+            for name, mode, allowed in (("loki", 0o644, True), ("loki", 0o600, False),
+                                        ("loki-foreign", 0o644, False), ("base-files", 0o644, False)):
+                value = self.complete("apk")
+                item = entry("/lib/apk/packages/" + name + suffix); item["mode"] = mode
+                value["components"][0]["files"].append(item)
+                policy, _ = self.policy(value)
+                self.assertEqual(policy["state"] == "checked", allowed)
+            value = self.complete("ipk")
+            value["components"][0]["files"].append(entry("/lib/apk/packages/loki" + suffix))
+            policy, _ = self.policy(value)
+            self.assertEqual(policy["reason"], "candidate-component-path-unverified")
+        value = self.complete("apk")
+        component = value["components"][0]
+        component["files"] = [item for item in component["files"] if item["path"] != "/lib/apk/packages/loki.list"]
+        policy, _ = self.policy(value)
+        self.assertEqual(policy["state"], "incomplete")
+        component["files"].append(entry("/lib/apk/packages/base-files.list"))
+        policy, _ = self.policy(value)
+        self.assertEqual(policy["reason"], "candidate-component-path-unverified")
+
+    def test_collector_retains_other_required_gates_and_masks_policy_inputs(self):
+        policy, value = self.policy(self.complete())
+        result = self.invoke(canonical(value), collect=True)
+        self.assertIn(policy, result["observations"])
+        self.assertFalse(result["complete"])
+        self.assertFalse(result["install_allowed"])
+        self.assertIn("artifact-provenance-unverified", {item["reason"] for item in result["observations"]})
+        self.assertIn("artifact-content-unverified", {item["reason"] for item in result["observations"]})
+
+    def test_tokens_and_hashes_keep_exact_byte_boundaries(self):
+        for field in ("version", "architecture"):
+            for size in (128, 129):
+                value = candidate(); value["components"][0][field] = "a" * size
+                self.assertEqual("error" not in self.invoke(canonical(value)), size == 128)
+        for size in (128, 129):
+            value = candidate(); value["components"][0]["artifact"]["name"] = "a" * (size - 4) + ".ipk"
+            self.assertEqual("error" not in self.invoke(canonical(value)), size == 128)
+        for ending in ("", "a", "\n", "\0synthetic-secret"):
+            value = candidate(); value["components"][0]["artifact"]["sha256"] = "a" * 64 + ending
+            self.assertEqual("error" not in self.invoke(canonical(value)), ending == "")
+        for ending in ("\n", "\t", "\0synthetic-secret"):
+            value = candidate(); value["components"][0]["version"] += ending
+            self.assertIn("error", self.invoke(canonical(value)))
+
+    def test_complete_catalog_fits_the_preflight_resource_budget(self):
+        value = self.complete()
+        value["components"][0]["files"].extend(entry("/usr/lib/loki/module-" + str(i) + ".uc") for i in range(200))
+        data = canonical(self.prepare(value))
+        self.write(self.manifest, data)
+
+        def limits():
+            resource.setrlimit(resource.RLIMIT_AS, (64 * 1024 * 1024, 64 * 1024 * 1024))
+            resource.setrlimit(resource.RLIMIT_CPU, (1, 1))
+            resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+
+        expression = '''let fs=require("fs");let p=require("service.preflight_manifest");
+            let r=p.parse(fs.readfile(ARGV[0]));assert(r.error==null&&r.component_policy.state=="checked");print("budget-ok");'''
+        process = subprocess.Popen([self.binary, "-L", str(ROOT / "loki/files/usr/lib"), "-e", expression, str(self.manifest)],
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                                   preexec_fn=limits, start_new_session=True)
+        try:
+            stdout, stderr = process.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            os.killpg(process.pid, signal.SIGKILL); process.communicate(timeout=5)
+            self.fail("valid component catalog exceeded the five-second deadline")
+        self.assertEqual(process.returncode, 0, "catalog resource/check failure: " + stderr)
+        self.assertEqual((stdout, stderr), ("budget-ok", ""))
+        self.assertEqual(self.manifest.read_text(), data)
 
 
 if __name__ == "__main__":

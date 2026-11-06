@@ -262,7 +262,7 @@ function collect(root, manifest_path, config_path, scratch, source_root) {
             }
             push(observations, observation("candidate-manifest", "candidate-manifest", "incomplete", "artifact-provenance-unverified"));
             push(observations, observation("candidate-manifest", "candidate-manifest", "incomplete", "artifact-content-unverified"));
-            push(observations, observation("candidate-manifest", "candidate-manifest", "incomplete", "candidate-component-set-unverified"));
+            push(observations, manifest.component_policy);
         }
     }
     let opkg = root + "/usr/lib/opkg";

@@ -36,6 +36,8 @@ The application uses `loki`, `luci-app-loki`, `/etc/config/loki` and the separat
 
 ## Standalone preflight: initial implementation
 
+Candidate component metadata must include backend, LuCI and loki-core; the Russian translation package is optional. Backend, LuCI and translations must have matching versions, and the core must meet the required LoKi revision. Each role is restricted to its own file paths, required files and modes; shared directories must retain mode 0755. Incomplete or inconsistent catalogs cannot pass this check. Metadata consistency does not verify archive contents, provenance or runtime compatibility; installation remains disabled.
+
 Declared shared-package dependencies are checked recursively against the same reread installed database. An installed provider of virtual `ip`, including `ip-tiny` or `ip-full`, can satisfy the requirement. Missing dependencies, malformed metadata and unreviewed version constraints remain incomplete; packages are never fetched, installed or replaced by this check. File provenance, ABI, executable capabilities and kernel-module availability still require separate verification, and installation remains disabled.
 
 Before and after collection, preflight compares available mount, network, PID and user namespaces and root-directory identities with visible PID 1. Restricted procfs visibility, mounts hiding collector inputs, changed snapshots or failed reads remain incomplete. Unrelated mounts such as `binfmt_misc` are allowed. Mountinfo is limited to 256 KiB and 2048 rows; each namespace-directory scan allows 32 entries. Matching PID 1 does not establish the system's origin, reveal hidden containers or enable installation; those mandatory checks remain open.
