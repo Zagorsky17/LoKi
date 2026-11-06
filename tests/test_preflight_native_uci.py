@@ -13,9 +13,14 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 LIBRARY = ROOT / "loki/files/usr/lib"
 DEFAULT = (ROOT / "loki/files/etc/config/loki").read_text()
+PLATFORM = {
+    "dhcp": "config dnsmasq 'dns'\n option domain 'prepared.lan'\n",
+    "system": "config timeserver 'ntp'\n list server 'time.prepared.example'\n",
+}
 
 
 def limits():
+    resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
     resource.setrlimit(resource.RLIMIT_AS, (65536 * 1024, 65536 * 1024))
     resource.setrlimit(resource.RLIMIT_CPU, (10, 10))
 
@@ -31,14 +36,19 @@ class NativeUCI(unittest.TestCase):
         self.scratch.mkdir(mode=0o700)
         self.input = self.root / "input"
 
-    def check(self, data):
+    def check(self, data, platform=PLATFORM):
         self.input.write_bytes(data.encode())
         self.input.chmod(0o600)
+        platform_path = self.root / "platform"
+        platform_data = json.dumps(platform).encode()
+        platform_path.write_bytes(platform_data)
+        platform_path.chmod(0o600)
         expression = '''
             let fs = require("fs");
             global.system = () => die("unexpected external command");
             fs.popen = () => die("unexpected external command");
             let uci = require("uci");
+            require("service.gateway_secret").load = () => die("persistent controller state accessed");
             let original = uci.cursor;
             let calls = 0;
             uci.cursor = (config, delta, overlay) => {
@@ -51,15 +61,17 @@ class NativeUCI(unittest.TestCase):
                 calls++;
                 return original(config, delta, overlay);
             };
-            let result = require("service.preflight_config").check(fs.readfile(ARGV[0]), ARGV[1]);
+            let platform = json(fs.readfile(ARGV[2]));
+            let result = require("service.preflight_config").check(fs.readfile(ARGV[0]), ARGV[1], platform);
             print(sprintf("%J\\n", { result, calls }));
         '''
         process = subprocess.run([self.binary, "-L", str(LIBRARY), "-e", expression,
-                                  str(self.input), str(self.scratch)],
+                                  str(self.input), str(self.scratch), str(platform_path)],
                                  capture_output=True, text=True, timeout=15, preexec_fn=limits)
         self.assertEqual(process.returncode, 0, process.stderr)
         self.assertEqual(process.stderr, "", "native parser diagnostics must not disclose input")
         self.assertEqual(self.input.read_bytes(), data.encode())
+        self.assertEqual(platform_path.read_bytes(), platform_data)
         self.assertEqual(list(self.scratch.iterdir()), [], "staged secrets must be removed")
         report = json.loads(process.stdout)
         self.assertNotIn("synthetic-secret", process.stdout)
@@ -72,6 +84,7 @@ class NativeUCI(unittest.TestCase):
             self.assertEqual(result, {("checked", "uci-syntax-checked"),
                                       ("checked", "uci-schema-checked"),
                                       ("checked", "uci-values-checked"),
+                                      ("checked", "uci-generation-empty"),
                                       ("incomplete", "candidate-core-unverified")})
 
     def test_quoted_values_lists_and_comments_are_native_uci_data(self):
@@ -87,6 +100,7 @@ config section 'example'
         self.assertEqual(calls, 1)
         self.assertIn(("checked", "uci-schema-checked"), result)
         self.assertIn(("checked", "uci-values-checked"), result)
+        self.assertIn(("checked", "uci-generation-checked"), result)
         self.assertIn(("incomplete", "candidate-core-unverified"), result)
 
     def test_foreign_newer_missing_and_unsupported_schemas(self):
@@ -131,6 +145,22 @@ config section 'example'
             self.assertIn(("incomplete", "candidate-config-values-invalid"), result)
             self.assertNotIn(("checked", "uci-values-checked"), result)
             self.assertNotIn(("incomplete", "candidate-core-unverified"), result)
+
+    def test_missing_malformed_and_oversized_platform_data_cannot_generate(self):
+        data = DEFAULT + "\nconfig section 'example'\n option action 'bypass'\n option destinations 'prepared.example'\n"
+        for platform, reason in (
+            (None, "candidate-platform-config-unavailable"),
+            ({"dhcp": PLATFORM["dhcp"]}, "candidate-platform-config-unavailable"),
+            ({**PLATFORM, "system": "synthetic-secret invalid\n"}, "candidate-platform-parse-failed"),
+            ({**PLATFORM, "dhcp": "synthetic-secret\0"}, "candidate-platform-config-invalid"),
+            ({**PLATFORM, "dhcp": "x" * 1048577}, "candidate-platform-config-invalid"),
+        ):
+            result, calls = self.check(data, platform)
+            self.assertEqual(calls, 1)
+            self.assertIn(("checked", "uci-values-checked"), result)
+            self.assertIn(("incomplete", reason), result)
+            self.assertIn(("incomplete", "candidate-core-unverified"), result)
+            self.assertNotIn(("checked", "uci-generation-checked"), result)
 
 
 if __name__ == "__main__":

@@ -269,6 +269,56 @@ t.test("a supplied prepared config is read from its own root and remains nonauth
     t.excludes(sprintf("%J", unsafe), data);
 });
 
+t.test("platform UCI snapshots are bounded, read-only and rechecked after prepared generation", () => {
+    let root = fixture();
+    stub.real.system("mkdir -p '" + root + "/etc/config' '" + root + "/loki/files/etc/config'");
+    let path = root + "/loki/files/etc/config/loki";
+    let own_config = "config settings 'settings'\n# before\n";
+    write(path, own_config);
+    let dhcp = root + "/etc/config/dhcp";
+    let system = root + "/etc/config/system";
+    let data = "config dnsmasq 'dns'\n option domain 'before'\n";
+    write(dhcp, data);
+    write(system, "config timeserver 'ntp'\n");
+    uci.__reset();
+    uci.__seed("loki", [ { ".name": "settings", ".type": "settings",
+        config_format: "loki", config_version: "2.0.0",
+        dns_server: [ "1.1.1.1" ], bootstrap_dns_server: [ "1.1.1.1" ] } ]);
+    uci.__seed("dhcp", [ { ".name": "dns", ".type": "dnsmasq", domain: "before" } ]);
+    uci.__seed("system", [ { ".name": "ntp", ".type": "timeserver" } ]);
+    for (let changed in [ "none", "dhcp", "loki" ]) {
+        let temporary = stub.tmpdir();
+        fs.chmod(temporary, 0700);
+        let original = fs.open;
+        let reads = { dhcp: 0, loki: 0 };
+        fs.open = (name, ...args) => {
+            let file = original(name, ...args);
+            if ((name != dhcp && name != path) || file == null) return file;
+            let label = name == dhcp ? "dhcp" : "loki";
+            reads[label]++;
+            return { read: (bytes) => {
+                let value = file.read(bytes);
+                return changed == label && reads[label] == 2 ? replace(value, "before", "after_") : value;
+            }, fileno: () => file.fileno(), error: () => file.error(), close: () => file.close() };
+        };
+        readonly_probes({ stdout: "{}" });
+        let result = preflight.collect(root, null, path, temporary, root);
+        stub.restore();
+        fs.open = original;
+        t.eq(reads, { dhcp: 2, loki: 2 });
+        t.ok(has(result, "checked", "uci-generation-empty"));
+        t.eq(has(result, "incomplete", "platform-config-changed-on-recheck"), changed == "dhcp");
+        t.eq(has(result, "incomplete", "candidate-config-changed-on-recheck"), changed == "loki");
+        t.eq(result.install_allowed, false);
+        t.eq(fs.readfile(dhcp), data);
+        t.eq(fs.readfile(path), own_config);
+        t.eq(fs.readfile(system), "config timeserver 'ntp'\n");
+        t.excludes(sprintf("%J", result), "before");
+        t.excludes(sprintf("%J", result), "after_");
+        t.eq(fs.lstat(temporary + "/config"), null);
+    }
+});
+
 t.test("foreign installed owners block planned paths without reading their contents", () => {
     let root = fixture();
     write(root + "/usr/lib/opkg/status", stanza("other-core") + stanza("another-core"));

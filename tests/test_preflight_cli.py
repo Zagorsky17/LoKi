@@ -81,6 +81,19 @@ class PreflightCLI(unittest.TestCase):
             report = self.run_check(self.harness(directory, 'die("synthetic-secret");\n'))
             self.assertEqual(report["reason"], "reader-failed-or-timeout")
 
+    def test_wrapper_sets_zero_core_dump_size_limits(self):
+        busybox = shutil.which("busybox")
+        self.assertIsNotNone(busybox, "BusyBox ash is required for the OpenWrt shell check")
+        for shell in (["/bin/sh"], [busybox, "ash"]):
+            with tempfile.TemporaryDirectory() as directory:
+                entry = '''let limits = require("fs").readfile("/proc/self/limits");
+                    assert(match(limits, /Max core file size[ \\t]+0[ \\t]+0[ \\t]+bytes/) != null);
+                    print('{"schema":1,"result":"incomplete","complete":false,"install_allowed":false,"reason":"core-limits-zero"}\\n');
+                    exit(2);'''
+                command = self.harness(directory, entry)
+                report = self.run_check([*shell, command[1]])
+                self.assertEqual(report["reason"], "core-limits-zero")
+
     def test_wrapper_deadline(self):
         with tempfile.TemporaryDirectory() as directory:
             before = set(Path("/tmp").glob("loki-preflight.*"))

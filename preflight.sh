@@ -17,7 +17,7 @@ scratch=$(mktemp -d /tmp/loki-preflight.XXXXXX) || incomplete scratch-unavailabl
 trap 'rm -rf -- "$scratch"' EXIT
 trap 'exit 2' HUP INT TERM
 result=$(
-    ulimit -v 65536 && ulimit -t 10 || exit 3
+    ulimit -c 0 && ulimit -v 65536 && ulimit -t 10 || exit 3
     exec env -i PATH="$PATH" timeout -s KILL 15 ucode -L "$root/loki/files/usr/lib" "$root/preflight.uc" \
         "$root/candidate-manifest.json" "$root/loki/files/etc/config/loki" "$scratch" "$root"
 ) 2>/dev/null
