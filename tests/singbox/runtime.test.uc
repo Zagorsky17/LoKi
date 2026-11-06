@@ -427,4 +427,154 @@ t.test("an unsafe custom cache parent is refused without running the core or cha
     t.eq(fs.stat(dir + "/etc/loki-core/config.json"), null);
 });
 
+t.test("prepare checks a candidate without replacing the running file, and install keeps those exact bytes and path", () => {
+    let dir = stub.tmpdir();
+    let first = configuration(dir);
+    fixture.seed(first);
+    tools([ [ CHECK, {} ] ]);
+    runtime.write_config(true);
+    let previous = fs.readfile(first.settings.config_path);
+    fixture.seed(configuration(dir, { log_level: "debug" }));
+    let prepared = runtime.prepare_config(true);
+    t.ok(prepared.changed);
+    t.eq(fs.readfile(first.settings.config_path), previous);
+    let moved = dir + "/new-config.json";
+    fixture.seed(configuration(dir, { config_path: moved, log_level: "error" }));
+    t.ok(runtime.install_config(prepared));
+    t.eq(fs.readfile(first.settings.config_path), prepared.text);
+    t.eq(fs.lstat(moved), null);
+    t.eq(fs.stat(first.settings.config_path).mode & 07777, 0600);
+    stub.restore();
+});
+
+t.test("a file fingerprint reads only its pinned private descriptor and refuses changed or unverified files", () => {
+    let dir = stub.tmpdir();
+    let path = dir + "/config";
+    fs.writefile(path, "SYNTHETIC_CONFIG_SECRET\n");
+    fs.chmod(path, 0600);
+    let hash = sprintf("%064x", 123);
+    tools([ [ "/bin/busybox sha256sum", (argv) => {
+        t.eq(length(argv), 3);
+        t.matches(argv[2], /^\/proc\/[0-9]+\/fd\/[0-9]+$/);
+        t.eq(fs.readfile(argv[2]), "SYNTHETIC_CONFIG_SECRET\n");
+        return { stdout: hash + "  " + argv[2] + "\n" };
+    } ] ]);
+    t.eq(runtime.file_digest(path), hash);
+    stub.restore();
+    for (let refusal in [ "short", "status", "changed", "close" ]) {
+        let open = fs.open;
+        if (refusal == "close") fs.open = (name, mode) => {
+            let file = open(name, mode);
+            return { fileno: () => file.fileno(), close: () => { file.close(); return false; } };
+        };
+        tools([ [ "/bin/busybox sha256sum", (argv) => {
+            if (refusal == "changed") { fs.unlink(path); fs.writefile(path, "replacement\n"); fs.chmod(path, 0600); }
+            return { status: refusal == "status" ? 1 : 0,
+                stdout: (refusal == "short" ? "bad" : hash) + "  " + argv[2] + "\n" };
+        } ] ]);
+        t.eq(runtime.file_digest(path), null, refusal);
+        fs.open = open;
+        stub.restore();
+    }
+    for (let mode in [ 0644, 0666 ]) {
+        fs.chmod(path, mode);
+        tools();
+        t.eq(runtime.file_digest(path), null);
+        t.eq(stub.calls(), []);
+        stub.restore();
+    }
+    fs.chmod(path, 0600);
+    fs.symlink(path, dir + "/linked");
+    tools();
+    t.eq(runtime.file_digest(dir + "/linked"), null);
+    t.eq(stub.calls(), []);
+    stub.restore();
+});
+
+t.test("the native BusyBox checksum tool reads a pinned descriptor and matches a known digest", () => {
+    let dir = stub.tmpdir();
+    fs.chmod(dir, 0700);
+    let path = dir + "/config";
+    fs.writefile(path, "synthetic digest input\n");
+    fs.chmod(path, 0600);
+    t.eq(runtime.file_digest(path), "db9238c9f7cf1777cdd92b58bd9f7bc4506d16caa6c91c379eee37f9bb0977b3");
+});
+
+t.test("bound devices can be read from the applied config path despite a different saved UCI path", () => {
+    let dir = stub.tmpdir();
+    let applied = dir + "/applied.json", saved = dir + "/saved.json";
+    fs.writefile(applied, sprintf("%J", { route: { default_interface: "applied0" } }));
+    fs.writefile(saved, sprintf("%J", { route: { default_interface: "saved0" } }));
+    fixture.seed(configuration(dir, { config_path: saved }));
+    t.eq(runtime.bound_devices(applied), [ "applied0" ]);
+    t.eq(runtime.bound_devices(), [ "saved0" ]);
+    t.eq(runtime.bound_devices(dir + "/missing"), []);
+});
+
+t.test("a noncanonical config path is refused during preparation before cache creation or a core check", () => {
+    let dir = stub.tmpdir();
+    for (let path in [ "relative.json", dir + "/a//config", dir + "/a/../config", dir + "/a/./config",
+        dir + "/config\u0000suffix", dir + "/config\n", dir + "/" ]) {
+        fixture.seed(configuration(dir, { config_path: path }));
+        tools([ [ CHECK, {} ] ]);
+        let failure = null;
+        try { runtime.prepare_config(true); }
+        catch (e) { failure = e; }
+        let checks = checks_run();
+        stub.restore();
+        t.ok(failure != null, "a noncanonical path cannot become a candidate");
+        t.eq(checks, 0);
+        t.eq(fs.lstat(dir + "/tmp/loki-core"), null);
+    }
+});
+
+t.test("unsafe existing config parents are refused before preparation changes private cache or invokes the core", () => {
+    for (let kind in [ "writable", "symlink" ]) {
+        let dir = stub.tmpdir();
+        let parent = dir + "/parent";
+        if (kind == "writable") {
+            fs.mkdir(parent, 0700);
+            fs.chmod(parent, 0777);
+            t.eq(fs.stat(parent).mode & 0777, 0777);
+        }
+        else {
+            fs.mkdir(dir + "/target", 0700);
+            fs.symlink(dir + "/target", parent);
+        }
+        fixture.seed(configuration(dir, { config_path: parent + "/new/config.json" }));
+        tools([ [ CHECK, {} ] ]);
+        let failure = null;
+        try { runtime.prepare_config(true); }
+        catch (e) { failure = e; }
+        let checks = checks_run();
+        stub.restore();
+        t.ok(failure != null, kind);
+        t.eq(checks, 0, kind);
+        t.eq(fs.lstat(dir + "/tmp/loki-core"), null, kind);
+        t.eq(fs.lstat(parent + "/new"), null, kind);
+    }
+});
+
+t.test("install rechecks config parents even when the prepared bytes were unchanged", () => {
+    for (let changed in [ false, true ]) {
+        let dir = stub.tmpdir();
+        let config = configuration(dir);
+        fixture.seed(config);
+        tools([ [ CHECK, {} ] ]);
+        runtime.write_config(true);
+        let previous = fs.readfile(config.settings.config_path);
+        if (changed) fixture.seed(configuration(dir, { log_level: "debug" }));
+        let prepared = runtime.prepare_config(false);
+        let parent = require("core.common").parent_dir(config.settings.config_path);
+        fs.chmod(parent, 0777);
+        let failure = null;
+        try { runtime.install_config(prepared); }
+        catch (e) { failure = e; }
+        stub.restore();
+        t.ok(failure != null);
+        t.eq(fs.readfile(config.settings.config_path), previous);
+        t.eq(fs.stat(parent).mode & 0777, 0777, "foreign permissions are not repaired");
+    }
+});
+
 t.done();

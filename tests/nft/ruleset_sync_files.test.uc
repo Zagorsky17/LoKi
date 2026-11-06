@@ -7,6 +7,7 @@ let common = require("core.common");
 let exec = require("core.exec");
 let rulesets = require("singbox.rulesets");
 let sync = require("nft.ruleset_sync");
+let nft_sections = require("nft.sections");
 let serial = 0;
 
 function exercise(options) {
@@ -73,16 +74,17 @@ function exercise(options) {
         } ],
         stub.logger(logs)
     ]);
-    let result = sync.sync(snapshot, [ section ]);
+    let descriptors = nft_sections.with_priority_sets([ section ]).sections;
+    let result = sync.sync(snapshot, descriptors);
     let recovered = null;
     if (options?.recover) {
         failure = "";
         provider.ip_cidr.digest = "two";
         provider.ip_cidr.ipv4 = [ "198.51.100.1/32" ];
-        recovered = sync.sync(snapshot, [ section ]);
+        recovered = sync.sync(snapshot, descriptors);
     }
     else if (options?.repeat)
-        recovered = sync.sync(snapshot, [ section ]);
+        recovered = sync.sync(snapshot, descriptors);
     stub.restore();
     fs.open = open;
     fs.stat = stat;

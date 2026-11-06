@@ -11,6 +11,8 @@ let packages = require("core.packages");
 let generator = require("singbox.generator");
 let core_ip = require("core.ip");
 let gateway_secret = require("service.gateway_secret");
+let file_checks = require("service.preflight_files");
+let health = require("service.health");
 
 const CONFIG_NAME = "loki";
 
@@ -18,14 +20,42 @@ function settings() {
     return uci.get_all(CONFIG_NAME, "settings") ?? {};
 }
 
+function config_parts(path) {
+    if (type(path) != "string" || !match(path, /^\/[ -~]+$/) || index(path, "\u0000") >= 0) return null;
+    let parts = split(substr(path, 1), "/");
+    for (let part in parts) if (part == "" || part == "." || part == "..") return null;
+    return parts;
+}
+
+function protected_parents(path, allow_missing) {
+    let parts = config_parts(path);
+    if (parts == null) return null;
+    let parents = [];
+    let current = "";
+    let owner = fs.stat("/proc/self").uid;
+    fs.lstat("");
+    let missing = fs.error();
+    if (missing == null) return null;
+    for (let i = 0; i < length(parts) - 1; i++) {
+        current += "/" + parts[i];
+        let node = fs.lstat(current);
+        let failure = fs.error();
+        if (node == null && allow_missing && failure == missing) return parents;
+        if (node?.type != "directory" || (node.uid != owner && node.uid != 0) ||
+            ((node.mode & 0022) != 0 && !(node.uid == 0 && (node.mode & 01000) != 0))) return null;
+        push(parents, [ current, node ]);
+    }
+    return parents;
+}
+
 // Loki starts loki-core itself; the core's own autostart would start it without the rules
 // around it.
-function configure_service() {
+function configure_service(config_path) {
     if (!uci.exists("loki-core.main") && !uci.set_section("loki-core.main", "loki-core"))
         die("Failed to create the loki-core service section in /etc/config/loki-core");
 
     let changed = [];
-    for (let option in [ [ "enabled", "1" ], [ "user", "root" ], [ "conffile", common.option(settings(), "config_path", "") ] ]) {
+    for (let option in [ [ "enabled", "1" ], [ "user", "root" ], [ "conffile", config_path ?? common.option(settings(), "config_path", "") ] ]) {
         if (trim(uci.get("loki-core.main." + option[0])) == option[1])
             continue;
         if (!uci.set("loki-core.main." + option[0], option[1]))
@@ -139,11 +169,15 @@ function check(text) {
 
 // The file is written only once the core accepted it. Returns whether it changed; a start
 // checks it regardless, since the core may have been replaced.
-function write_config(checked) {
+function prepare_config(checked) {
     let values = settings();
     let path = common.option(values, "config_path", "");
     if (path == "")
         die("The loki-core configuration file path is not set in Settings");
+    if (config_parts(path) == null)
+        die("Use an absolute canonical loki-core configuration file path");
+    if (protected_parents(path, true) == null)
+        die("The loki-core configuration directory is unsafe or unavailable");
 
     // The private tmpfs directory is created only after the read-only path gate.
     cache_path.ensure(values);
@@ -167,16 +201,104 @@ function write_config(checked) {
     if (checked || !unchanged)
         check(text);
 
-    if (unchanged)
+    return { path, text, changed: !unchanged };
+}
+
+function install_config(prepared) {
+    if (protected_parents(prepared.path, true) == null ||
+        !common.ensure_dir(common.parent_dir(prepared.path)) || protected_parents(prepared.path) == null)
+        die("The loki-core configuration directory is unsafe or unavailable");
+    if (!prepared.changed)
         return false;
-    if (!common.write_file_atomic(path, text))
-        die("Failed to write the loki-core configuration to " + path);
+    if (!common.write_file_atomic(prepared.path, prepared.text))
+        die("Failed to write the loki-core configuration to " + prepared.path);
     return true;
 }
 
+function write_config(checked) {
+    return install_config(prepare_config(checked));
+}
+
+// Pin the private file while the trusted checksum tool reads its descriptor, not a changed pathname.
+function file_digest(path) {
+    let file;
+    let digest = null;
+    try {
+        let parents = protected_parents(path);
+        let before = fs.lstat(path);
+        if (parents == null || before?.type != "file" || before.uid != fs.stat("/proc/self").uid ||
+            (before.mode & 07777) != 0600 || before.nlink != 1) return null;
+        file = fs.open(path, "re");
+        if (file == null) return null;
+        let descriptor = "/proc/" + common.own_pid() + "/fd/" + file.fileno();
+        if (file_checks.same_node(before, fs.stat(descriptor))) {
+            let result = exec.capture([ "/bin/busybox", "sha256sum", descriptor ]);
+            let found = match(result.stdout, /^([a-f0-9]{64})  \/proc\/[0-9]+\/fd\/[0-9]+\n$/);
+            if (result.status == 0 && found != null && file_checks.same_node(before, fs.stat(descriptor)) &&
+                file_checks.same_node(before, fs.lstat(path))) {
+                digest = found[1];
+                for (let parent in parents) {
+                    let now = fs.lstat(parent[0]);
+                    if (now?.type != "directory" || now.inode != parent[1].inode ||
+                        now.dev.major != parent[1].dev.major || now.dev.minor != parent[1].dev.minor ||
+                        now.uid != parent[1].uid || now.mode != parent[1].mode) digest = null;
+                }
+            }
+        }
+    }
+    catch (e) {}
+    try { if (file == null || file.close() !== true) return null; }
+    catch (e) { return null; }
+    return digest;
+}
+
+function fingerprint(text) {
+    let path = "/tmp/loki-core-digest." + gateway_secret.generate() + ".tmp";
+    if (!common.write_private_file(path, text)) return null;
+    let digest = file_digest(path);
+    if (!fs.unlink(path)) return null;
+    return digest;
+}
+
+function identity(config_path) {
+    try {
+        let instances = health.sing_box_service_list(true)?.["loki-core"]?.instances;
+        if (type(instances) != "object") return null;
+        let result = null;
+        for (let _, instance in instances) {
+            if (instance.running !== true) continue;
+            if (result != null || type(instance.pid) != "int" || instance.pid <= 0 ||
+                type(instance.command) != "array" || length(instance.command) < 4 ||
+                instance.command[0] != "/usr/bin/loki-core" || instance.command[1] != "run" ||
+                instance.command[2] != "-c" || instance.command[3] != config_path) return null;
+            let pid = "" + instance.pid;
+            let ticks = health.start_ticks(pid);
+            if (ticks == null || fs.readlink("/proc/" + pid + "/exe") != "/usr/bin/loki-core") return null;
+            let file = fs.open("/proc/" + pid + "/cmdline", "re");
+            if (file == null) return null;
+            let command;
+            let valid = false;
+            try {
+                fs.error();
+                command = file.read(65537);
+                valid = file.error() == null && type(command) == "string" && length(command) <= 65536 &&
+                    command == join("\u0000", instance.command) + "\u0000" &&
+                    health.start_ticks(pid) == ticks;
+            }
+            catch (e) {}
+            try { if (file.close() !== true) return null; }
+            catch (e) { return null; }
+            if (!valid) return null;
+            result = { pid, start_ticks: "" + ticks, command: instance.command };
+        }
+        return result;
+    }
+    catch (e) { return null; }
+}
+
 // The devices the running configuration binds the core's own sockets to.
-function bound_devices() {
-    let config = common.read_json_file(common.option(settings(), "config_path", ""));
+function bound_devices(config_path) {
+    let config = common.read_json_file(config_path ?? common.option(settings(), "config_path", ""));
     let bound = map(config?.outbounds ?? [], (item) => item?.bind_interface);
     let devices = [];
     for (let name in [ config?.route?.default_interface, ...bound ])
@@ -196,6 +318,6 @@ function process_running() {
 }
 
 return {
-    configure_service, write_config, listen_address, device_ipv4_address,
+    configure_service, prepare_config, install_config, write_config, file_digest, fingerprint, identity, listen_address, device_ipv4_address,
     mwan3_active, bound_devices, version, process_running
 };

@@ -20,6 +20,8 @@ let health = require("service.health");
 let lock = require("service.lock");
 let watch = require("service.singbox_watch");
 let start_request = require("service.start_request");
+let ruleset_context = require("service.ruleset_context");
+let credential = require("service.gateway_secret");
 
 const CONFIG_NAME = "loki";
 const RT_TABLE = constants.RT_TABLE_NAME;
@@ -190,6 +192,37 @@ function apply_nft(built) {
         log("warn", "Failed to record the applied nftables rules; the next apply rebuilds them");
 }
 
+function saved_context() {
+    if (!ruleset_context.ensure()) return { error: "ruleset-context-unavailable" };
+    let state = ruleset_context.read();
+    return state.error == "ruleset-context-missing" ? { model: null } : state;
+}
+
+function prepare_context(prepared, built) {
+    let state = saved_context();
+    if (state.error != null) die("The applied rule-set context is unavailable; stop LoKi before applying again");
+    let config = json(prepared.text);
+    let candidate = { generation: credential.generate(), sections: built.sections,
+        config_path: prepared.path, config_digest: runtime.fingerprint(prepared.text),
+        nft_digest: runtime.fingerprint(built.script), controller: {
+            endpoint: config.experimental?.clash_api?.external_controller_unix,
+            secret: config.experimental?.clash_api?.secret
+        } };
+    if (!ruleset_context.write({ schema: 1, phase: "applying", active: state.model?.active ?? null, candidate }))
+        die("Failed to record the rule-set generation before applying configuration");
+    return candidate;
+}
+
+function commit_context(candidate) {
+    let identity = runtime.identity(candidate.config_path);
+    if (identity == null || runtime.file_digest(candidate.config_path) != candidate.config_digest ||
+        !ruleset_context.write({ schema: 1, phase: "ready", active: { ...candidate, ...identity }, candidate: null })) {
+        log("error", "Failed to confirm the applied rule-set generation");
+        return false;
+    }
+    return true;
+}
+
 // The routing lives outside nft and is removed with the binary that added it.
 function cleanup_network() {
     let ok = true;
@@ -228,10 +261,15 @@ function cleanup_network() {
 }
 
 function stop_runtime(keep_watcher) {
+    if (!common.write_file_atomic(paths.planned_stop, common.own_pid() + "\n")) {
+        log("error", "Failed to mark the stop as planned; runtime cleanup was not started");
+        return false;
+    }
     let ok = true;
-    if (!keep_watcher)
-        watch.stop_worker();
-    rulesets.stop_worker();
+    if (!keep_watcher && !watch.stop_worker())
+        ok = false;
+    if (!rulesets.stop_worker())
+        ok = false;
     if (!cleanup_network())
         ok = false;
     // The init script's stop has procd delete the service, and ubus complains of one it lacks.
@@ -242,6 +280,10 @@ function stop_runtime(keep_watcher) {
     }
     if (!wait_stopped()) {
         log("error", "loki-core is still running after it was stopped");
+        ok = false;
+    }
+    if (ok && !ruleset_context.write({ schema: 1, phase: "stopped", active: null, candidate: null })) {
+        log("error", "Failed to record the completed rule-set stop");
         ok = false;
     }
     return ok;
@@ -277,15 +319,9 @@ function start_runtime(guard) {
     if (guard != null && !guard())
         return false;
     start_fingerprint = config_fingerprint();
-    if (!nft.ensure_bridge_netfilter_disabled()) {
-        log("error", "Failed to disable bridge netfilter for transparent proxying");
-        return false;
-    }
-
+    let prepared;
     try {
-        runtime.configure_service();
-        runtime.write_config(true);
-        nft.route_bound_devices(runtime.bound_devices());
+        prepared = runtime.prepare_config(true);
     }
     catch (e) {
         log("error", e.message);
@@ -298,6 +334,19 @@ function start_runtime(guard) {
         return false;
     if (guard != null && !guard())
         return false;
+
+    let candidate;
+    try {
+        candidate = prepare_context(prepared, built);
+        if (!rulesets.start_worker(candidate))
+            die("Failed to start the rule-set sync worker");
+        if (!nft.ensure_bridge_netfilter_disabled())
+            die("Failed to disable bridge netfilter for transparent proxying");
+        runtime.configure_service(prepared.path);
+        runtime.install_config(prepared);
+        nft.route_bound_devices(runtime.bound_devices(prepared.path));
+    }
+    catch (e) { log("error", e.message); return false; }
 
     if (!exec.ok([ paths.sing_box_init, "start" ])) {
         log("error", "Failed to start loki-core");
@@ -317,7 +366,7 @@ function start_runtime(guard) {
         return false;
     }
     fs.unlink(paths.planned_stop);
-    if (fs.stat(paths.planned_stop) != null) {
+    if (!lock.unmarked(paths.planned_stop)) {
         log("error", "Failed to arm the loki-core crash watcher");
         return false;
     }
@@ -341,12 +390,7 @@ function start_runtime(guard) {
         log("error", NOT_CAPTURING);
         return false;
     }
-    if (!rulesets.start_worker()) {
-        log("error", "Failed to start the rule-set sync worker");
-        return false;
-    }
-
-    return guard == null || guard();
+    return (guard == null || guard()) && commit_context(candidate);
 }
 
 function locked(action) {
@@ -370,11 +414,21 @@ function start(guard) {
     return locked(function() {
         if (guard != null && !guard())
             return 0;
+        let state = saved_context();
+        if (state.error != null || state.model?.phase == "applying") {
+            log("error", "LoKi has an unconfirmed configuration apply; apply explicitly or stop and start it");
+            return 1;
+        }
         if (loki_running()) {
             // A partial Stop owns this state until it completes. Repair must neither clear
             // its marker nor regenerate configuration from UCI for the still-running core.
-            if (fs.stat(paths.planned_stop) != null) {
+            if (!lock.unmarked(paths.planned_stop)) {
                 log("error", "LoKi has an unfinished planned stop; stop it before starting again");
+                return 1;
+            }
+            let active = rulesets.ready_context();
+            if (active == null) {
+                log("error", "The running LoKi configuration cannot be confirmed; apply explicitly or stop and start it");
                 return 1;
             }
             if (!watch.worker_current()) {
@@ -391,8 +445,21 @@ function start(guard) {
                 log("error", "LoKi stopped running while its crash watcher was being restored");
                 return 1;
             }
+            if (!rulesets.worker_current(active) && !rulesets.start_worker(active)) {
+                log("error", "Failed to restore the applied rule-set sync worker");
+                return 1;
+            }
             log("info", "LoKi is already running");
             return 0;
+        }
+        if (state.model?.phase == "ready") {
+            log("error", "The applied LoKi runtime is incomplete; apply explicitly or stop and start it");
+            return 1;
+        }
+        let planned = fs.lstat(paths.planned_stop);
+        if (planned != null && (planned.type != "file" || planned.uid != fs.stat("/proc/self").uid || planned.nlink != 1)) {
+            log("error", "The planned-stop marker is unsafe; runtime startup was not started");
+            return 1;
         }
         log("info", "Starting LoKi");
         if (!validate_cache_path(false))
@@ -425,10 +492,7 @@ function stop() {
         let active = health.sing_box_service_running() || nft_state.table_present(NFT_TABLE);
         if (active)
             log("info", "Stopping LoKi");
-        if (!common.write_file_atomic(paths.planned_stop, common.own_pid() + "\n"))
-            log("warn", "Failed to mark the stop as planned");
-        watch.stop_worker();
-        if (!stop_runtime(true))
+        if (!stop_runtime())
             return 1;
         if (active)
             log("info", "LoKi stopped");
@@ -440,7 +504,7 @@ function stop() {
 // Called by the crash watcher once procd gave up on loki-core.
 function crash_cleanup(exit_code) {
     return locked(function() {
-        if (fs.stat(paths.planned_stop) != null || loki_running())
+        if (!lock.unmarked(paths.planned_stop) || loki_running())
             return 0;
         let suffix = match(common.as_string(exit_code), /^[0-9]+$/) ? " (exit code " + exit_code + ")" : "";
         log("error", "loki-core stopped after repeated crashes" + suffix + "; LoKi is stopped");
@@ -499,7 +563,7 @@ function crash_pause(pid) {
     let owner = common.own_pid();
     if (!lock.acquire(paths.lock, owner))
         return 0;
-    if (fs.stat(paths.planned_stop) == null && nft_state.table_present(NFT_TABLE) && !health.sing_box_service_running()) {
+    if (lock.unmarked(paths.planned_stop) && nft_state.table_present(NFT_TABLE) && !health.sing_box_service_running()) {
         if (capture(false))
             log("warn", crash_reason(int(pid)) + "; the capture is paused until procd restarts it");
         else
@@ -515,7 +579,7 @@ function crash_resume() {
     let owner = common.own_pid();
     if (!lock.acquire(paths.lock, owner))
         return 0;
-    if (fs.stat(paths.planned_stop) == null && nft_state.table_present(NFT_TABLE) && !loki_running()) {
+    if (lock.unmarked(paths.planned_stop) && nft_state.table_present(NFT_TABLE) && !loki_running() && rulesets.ready_context() != null) {
         if (capture(true))
             log("info", "loki-core restarted; traffic capture resumed");
         else
@@ -531,12 +595,13 @@ function restore_routing() {
     let owner = common.own_pid();
     if (!lock.acquire(paths.lock, owner))
         return false;
-    let lost = fs.stat(paths.planned_stop) == null && nft_state.table_present(NFT_TABLE) &&
+    let active = rulesets.ready_context();
+    let lost = lock.unmarked(paths.planned_stop) && active != null && nft_state.table_present(NFT_TABLE) &&
         health.sing_box_service_running() && !loki_running();
     if (lost) {
         try {
             nft.ensure_tproxy_routing();
-            nft.route_bound_devices(runtime.bound_devices());
+            nft.route_bound_devices(runtime.bound_devices(active.config_path));
             log("info", "The WAN came up without LoKi's routing; restored it");
         }
         catch (e) {
@@ -562,6 +627,10 @@ function reload_announcement(reason, forced) {
 function reload_runtime(reason) {
     let forced = reason != "on_config_change" && reason != "pending";
     log("info", reload_announcement(reason, forced));
+    let state = saved_context();
+    let automatic = reason == "on_config_change" || reason == "pending" || match(reason, /^interface_up:/) != null;
+    if (state.error != null || (automatic && state.model?.phase == "applying"))
+        return abort_reload("LoKi has an unconfirmed configuration apply; apply explicitly or stop and start it", false);
     if (!validate_cache_path(false) || !migrate_restored_config() || !validate())
         return reload_failed(false);
     let fingerprint = config_fingerprint();
@@ -580,17 +649,24 @@ function reload_runtime(reason) {
     if (built == null)
         return reload_failed(false);
 
-    // The running core reads the file only when it is reloaded below.
-    let config_changed;
+    let prepared;
     try {
-        runtime.configure_service();
-        config_changed = runtime.write_config(false);
+        prepared = runtime.prepare_config(false);
     }
     catch (e) {
         return abort_reload(e.message, false);
     }
+    let candidate;
     try {
-        nft.route_bound_devices(runtime.bound_devices());
+        candidate = prepare_context(prepared, built);
+    }
+    catch (e) { return abort_reload(e.message, false); }
+    try {
+        if (!rulesets.start_worker(candidate))
+            die("Failed to start the rule-set sync worker");
+        runtime.configure_service(prepared.path);
+        runtime.install_config(prepared);
+        nft.route_bound_devices(runtime.bound_devices(prepared.path));
     }
     catch (e) {
         return abort_reload(e.message, true);
@@ -598,7 +674,6 @@ function reload_runtime(reason) {
 
     let nft_changed = fs.readfile(paths.applied_nft) != built.script;
     if (nft_changed) {
-        rulesets.stop_worker();
         try {
             apply_nft(built);
         }
@@ -608,7 +683,7 @@ function reload_runtime(reason) {
     }
 
     // Paused while loki-core rebinds, so nothing reaches closed ports.
-    if (config_changed || forced) {
+    if (prepared.changed || forced) {
         if (!capture(false))
             return abort_reload("Failed to pause the traffic capture before reloading loki-core", true);
         log("info", "Reloading loki-core");
@@ -624,14 +699,10 @@ function reload_runtime(reason) {
 
     // A rebuilt table may change a section's own addresses and ports, so the worker restarts and
     // writes every section; otherwise it follows the core across its reload on its own.
-    let worker_changed = nft_changed || !rulesets.worker_current();
-    if (worker_changed && !rulesets.start_worker())
-        return abort_reload("Failed to start the rule-set sync worker", true);
+    if (!commit_context(candidate))
+        return abort_reload("Failed to confirm the applied rule-set generation", true);
 
-    if (nft_changed || config_changed || forced || worker_changed)
-        log("info", "Configuration applied");
-    else
-        log("info", "Configuration already applied; nothing changed");
+    log("info", "Configuration applied");
     queue_reload_if_changed(fingerprint, "reload");
     return 0;
 }

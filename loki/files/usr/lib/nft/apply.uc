@@ -349,7 +349,16 @@ function build() {
     for (let entry in planned.sections)
         fill_section_sets(entry.section, entry.matchers);
 
-    let result = { script: join("\n", lines) + "\n", skipped, kept };
+    let result = { script: join("\n", lines) + "\n", skipped, kept,
+        sections: map(filter(planned.sections, (entry) => length(entry.matchers.subnet_tags) > 0), (entry) => ({
+            section: { ".name": entry.section[".name"] }, matchers: {
+                subnets: entry.matchers.subnets, ports: entry.matchers.ports,
+                subnet_tags: entry.matchers.subnet_tags,
+                sets: { subnets: entry.matchers.sets.subnets, subnets6: entry.matchers.sets.subnets6,
+                    ip_ports: entry.matchers.sets.ip_ports, ip6_ports: entry.matchers.sets.ip6_ports,
+                    proto_ports: entry.matchers.sets.proto_ports, proto6_ports: entry.matchers.sets.proto6_ports }
+            }
+        })) };
     lines = null;
     skipped = null;
     return result;

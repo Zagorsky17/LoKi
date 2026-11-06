@@ -142,6 +142,7 @@ function with_priority_sets(sections) {
 
 return {
     enabled,
+    set_names,
     matchers,
     provider_sets,
     with_priority_sets

@@ -108,6 +108,10 @@ A shared SSH/LuCI update mechanism is under development. Its scope is a compatib
 
 With autostart enabled, a failed boot or manual start is retried after 30 seconds without waiting for a new WAN event. Retries stop after success, Stop or Disable; Disable leaves an already healthy runtime running. The core must become ready before traffic interception is applied. Recovery uses a temporary procd instance and does not require the LuCI state service. Physical power-loss recovery and flash persistence still require OpenWrt laboratory tests.
 
+The rule-set worker uses the last confirmed applied generation. Saving different settings does not change its providers, addresses, ports or controller credential during repair or respawn. A Start on a healthy runtime can restore its missing workers without applying the newly saved settings. The private context lives in tmpfs, is limited to 4 MiB and is not a configuration backup; its size limit does not bound total process memory.
+
+An interrupted Apply can leave an unconfirmed combination of core and nft state. Automatic Start, queued reload and interface-triggered reload refuse to finish that operation. Apply explicitly, or complete Stop and then Start; these actions use the saved configuration. Stop must record its intent before teardown. A normal reboot loses the tmpfs context and starts from the saved configuration. Recovery after a core respawn checks procd command, PID/start time and the protected configuration digest within LoKi's own lifecycle protocol; changes made by other root processes outside it are not supported for automatic recovery.
+
 ## Configuration backups
 
 LoKi configurations carry `option config_format 'loki'` alongside their schema version. A matching version number alone does not make a Forkop or Podkop configuration compatible. Installation, startup and backup restoration refuse foreign, unsupported or malformed schemas without moving or resetting the file. Intermediate development configurations without the LoKi marker are not converted automatically.
