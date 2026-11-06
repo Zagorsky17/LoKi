@@ -5,3 +5,6 @@ core/patches/*.patch -whitespace
 
 # Vite keeps whitespace-only lines inside CSS template strings in generated JavaScript.
 luci-app-loki/root/usr/share/loki/yacd/assets/*.js -whitespace
+
+# Validate bundled license bytes by hash; preserve original line endings and whitespace.
+yacd-loki/licenses/THIRD_PARTY_NOTICES.txt -text -whitespace

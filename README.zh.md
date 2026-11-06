@@ -189,4 +189,4 @@ LoKi 保留项目的 [GPL-2.0-or-later 许可证](LICENSE)。内核补丁和生�
 
 本中文 README 于 2026 年 11 月 6 日编写，依据同期的英语和俄语版本。
 
-二进制发布的许可证审计仍未结束。YACD 从 [MetaCubeX/Yacd-meta 提交 `24151c3`](https://github.com/MetaCubeX/Yacd-meta/tree/24151c331027ff176b45ed417180c6f1220474a3) 内置；其源码、锁文件和 MIT 许可文本保存在 `yacd-loki/`。LuCI 软件包包含 MIT 文本以及 Inter/Roboto Mono OFL 声明。发布前仍需单独核查其他 YACD 依赖、字体来源、链接的 Go 代码以及每种构建配置的对应源码。继承的主前端许可证仍是单独的审查项。
+二进制发布的许可证审计仍未结束。YACD 从 [MetaCubeX/Yacd-meta 提交 `24151c3`](https://github.com/MetaCubeX/Yacd-meta/tree/24151c331027ff176b45ed417180c6f1220474a3) 内置；其源码、锁文件和 MIT 许可文本保存在 `yacd-loki/`。LuCI 软件包包含 MIT 文本、Inter/Roboto Mono OFL 声明，以及构建时生成的依赖声明和哈希清单。两个未附许可证文件的 npm 归档保留原始声明，并明确标注补充文本；参见 [YACD 来源和重建检查](yacd-loki/README.md)。发布前仍需完成权利与源码审查，核查字体来源、链接的 Go 代码以及每种构建配置的对应源码。继承的主前端许可证仍是单独的审查项。

@@ -15,7 +15,7 @@
     "start": "vite",
     "build": "vite build",
     "serve": "vite preview",
-    "lint": "oxlint src",
+    "lint": "oxlint src tests third-party-notices.mjs vite.config.mts",
     "lint:fix": "oxlint src --fix",
     "format": "prettier --write \"src/**/*.{ts,tsx,scss}\"",
     "format:check": "prettier --check \"src/**/*.{ts,tsx,scss}\"",
