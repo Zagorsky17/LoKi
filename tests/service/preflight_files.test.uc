@@ -17,6 +17,35 @@ function inspect(root, target, expected) {
     return files.collect(root, targets)[0];
 }
 
+function failed_scan(thrown, read_failure) {
+    let root = fixture();
+    let opendir = fs.opendir;
+    let active;
+    let closed = 0;
+    let result;
+    let exception = null;
+    fs.opendir = (path) => {
+        active = opendir(path);
+        return { read: () => { if (read_failure) die("synthetic-private-read"); return active.read(); },
+            close: () => { closed++; active.close(); active = null;
+                if (thrown) die("synthetic-private-close"); return read_failure ? true : false; } };
+    };
+    try { result = inspect(root); }
+    catch (e) { exception = e.message; }
+    fs.opendir = opendir;
+    if (active != null) active.close();
+    t.eq(exception, null);
+    t.eq(closed, 1);
+    t.eq(result.state, "incomplete");
+    t.eq(result.reason, "candidate-directory-read-failed");
+    t.excludes(sprintf("%J", result), "synthetic-private");
+    t.eq(inspect(root).reason, "candidate-path-absent");
+}
+
+t.test("a directory close returning false cannot prove absence", () => failed_scan(false, false));
+t.test("a directory close exception is private and cannot prove absence", () => failed_scan(true, false));
+t.test("a directory read exception still closes the handle and refuses absence", () => failed_scan(false, true));
+
 t.test("existing shared directories and root are checked without opening file contents", () => {
     let root = fixture();
     let open = fs.open;
@@ -79,7 +108,7 @@ t.test("failed or incomplete directory reads cannot prove absence", () => {
     let closed = 0;
     fs.opendir = () => null;
     let unavailable = inspect(root);
-    fs.opendir = () => ({ read: () => null, close: () => { closed++; } });
+    fs.opendir = () => ({ read: () => null, close: () => { closed++; return true; } });
     fs.error = () => "synthetic-private-io-error";
     let failed = inspect(root);
     fs.opendir = opendir;
@@ -94,7 +123,7 @@ t.test("a listed but unstatable entry cannot become missing", () => {
     let root = fixture();
     let opendir = fs.opendir;
     let closed = 0;
-    fs.opendir = () => ({ read: () => "file", close: () => { closed++; } });
+    fs.opendir = () => ({ read: () => "file", close: () => { closed++; return true; } });
     let result = inspect(root);
     fs.opendir = opendir;
     t.eq(result.reason, "candidate-path-stat-unavailable");
@@ -106,7 +135,7 @@ t.test("the directory entry budget is aggregate and closes its handles", () => {
     let opendir = fs.opendir;
     let entries = 0;
     let closed = 0;
-    fs.opendir = () => ({ read: () => { entries++; return "unrelated-private-name"; }, close: () => { closed++; } });
+    fs.opendir = () => ({ read: () => { entries++; return "unrelated-private-name"; }, close: () => { closed++; return true; } });
     let result = files.collect(root, { "/parent/first": "file", "/parent/second": "file" });
     fs.opendir = opendir;
     t.eq(entries, 16384);
@@ -121,7 +150,7 @@ t.test("parent identity changes invalidate even a completed EOF scan", () => {
     let opendir = fs.opendir;
     let changed = false;
     let lstat = fs.lstat;
-    fs.opendir = () => ({ read: () => null, close: () => { changed = true; } });
+    fs.opendir = () => ({ read: () => null, close: () => { changed = true; return true; } });
     fs.lstat = (path) => {
         let info = lstat(path);
         if (changed && path == root + "/parent") info.inode++;

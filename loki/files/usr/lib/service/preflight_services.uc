@@ -130,7 +130,8 @@ function autostart(root) {
         }
     }
     catch (e) { error = "autostart-directory-read-failed"; }
-    handle.close();
+    try { if (handle.close() !== true) error = "autostart-directory-read-failed"; }
+    catch (e) { error = "autostart-directory-read-failed"; }
     if (!files.same_node(before, fs.lstat(directory)))
         error = "autostart-directory-changed";
     if (error != null)

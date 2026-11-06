@@ -16,25 +16,29 @@ function absence(parent, name, before, budget) {
     if (directory == null)
         return "candidate-directory-read-failed";
     let reason = "candidate-path-absent";
-    while (true) {
-        if (budget.entries >= DIRECTORY_ENTRY_LIMIT) {
-            reason = "candidate-directory-entry-limit";
-            break;
-        }
-        fs.error();
-        let entry = directory.read();
-        let error = fs.error();
-        if (entry == null) {
-            if (error != null) reason = "candidate-directory-read-failed";
-            break;
-        }
-        budget.entries++;
-        if (entry == name) {
-            reason = "candidate-path-stat-unavailable";
-            break;
+    try {
+        while (true) {
+            if (budget.entries >= DIRECTORY_ENTRY_LIMIT) {
+                reason = "candidate-directory-entry-limit";
+                break;
+            }
+            fs.error();
+            let entry = directory.read();
+            let error = fs.error();
+            if (entry == null) {
+                if (error != null) reason = "candidate-directory-read-failed";
+                break;
+            }
+            budget.entries++;
+            if (entry == name) {
+                reason = "candidate-path-stat-unavailable";
+                break;
+            }
         }
     }
-    directory.close();
+    catch (e) { reason = "candidate-directory-read-failed"; }
+    try { if (directory.close() !== true) reason = "candidate-directory-read-failed"; }
+    catch (e) { reason = "candidate-directory-read-failed"; }
     if (!same_node(before, fs.lstat(parent)))
         return "candidate-parent-changed";
     return reason;

@@ -96,7 +96,7 @@ function read_table(root, name) {
         }
     }
     catch (e) { result = { error: "listener-table-read-failed" }; }
-    try { file.close(); }
+    try { if (file.close() !== true) result = { error: "listener-table-read-failed" }; }
     catch (e) { result = { error: "listener-table-read-failed" }; }
     return result;
 }
