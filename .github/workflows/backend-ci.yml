@@ -95,6 +95,7 @@ jobs:
         run: |
           python3 -B tests/test_preflight_native_uci.py
           python3 -B tests/test_preflight_cli.py
+          python3 -B tests/test_preflight_dependency_budget.py
           tests/run.sh
 
   backend-checks:
@@ -149,6 +150,9 @@ jobs:
 
       - name: Check bounded resource snapshots
         run: python3 -B tests/test_preflight_resources.py
+
+      - name: Check exact dependency resource budget
+        run: python3 -B tests/test_preflight_dependency_budget.py
 
       - name: Check native preflight namespace scope
         run: sudo env PATH=/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin python3 -B tests/test_preflight_scope.py

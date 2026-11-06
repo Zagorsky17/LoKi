@@ -725,4 +725,64 @@ t.test("report truncation retains the final scope failure and mandatory origin g
     t.eq([ result.complete, result.install_allowed ], [ false, false ]);
 });
 
+t.test("dependency metadata shares the strict installed-status parser and preserves the name-only API", () => {
+    let data = "Package: ucode\nVersion: 1.0-r1\nStatus: install ok installed\n" +
+        "Depends: libc,\n lib-platform (= 2.0-r1)\nProvides: interpreter,\n script-engine\n\n" + stanza("removed", "config-files");
+    t.eq(preflight.package_records_from_status(data), [{ name: "ucode", version: "1.0-r1",
+        depends: "libc, lib-platform (= 2.0-r1)", provides: "interpreter, script-engine" }]);
+    t.eq(preflight.packages_from_status(data), [ "ucode" ]);
+    t.eq(preflight.package_records_from_status(replace(data, "install ok installed", "install ok unpacked")), null);
+    t.eq(preflight.package_records_from_status(replace(data, "Version: 1.0-r1\n", "Version: 1.0-r1\n private-tail\n"))[0].version,
+        "1.0-r1 private-tail");
+});
+
+t.test("dependency observations use only the same stable package database and no PM commands", () => {
+    let root = fixture();
+    let data = stanza("base-files") + "Package: ucode\nVersion: 1.0-r1\nStatus: install ok installed\nDepends: lib-platform (= 2.0-r1)\n\n" +
+        "Package: lib-platform\nVersion: 2.0-r1\nStatus: install ok installed\n\n";
+    write(root + "/usr/lib/opkg/status", data);
+    for (let name in [ "ucode", "lib-platform" ]) write(root + "/usr/lib/opkg/info/" + name + ".list", "/etc/banner\n");
+    readonly_probes({ stdout: "{}" });
+    let result = preflight.collect(root);
+    let commands = stub.command_lines();
+    stub.restore();
+    t.ok(length(filter(result.observations, (row) => row.kind == "dependencies" && row.object == "ucode" && row.state == "checked")) == 1);
+    t.ok(has(result, "incomplete", "required-system-package-missing"));
+    t.eq(commands, expected_probes());
+    t.eq(fs.readfile(root + "/usr/lib/opkg/status"), data);
+    t.eq([ result.complete, result.install_allowed ], [ false, false ]);
+    t.eq(length(filter(result.observations, (row) => row.kind == "dependencies" && row.reason == "not-implemented")), 0);
+
+    fs.unlink(root + "/usr/lib/opkg/status");
+    readonly_probes({ stdout: "{}" });
+    let unavailable = preflight.collect(root);
+    stub.restore();
+    t.eq(length(filter(unavailable.observations, (row) => row.kind == "dependencies" && row.state == "checked")), 0);
+});
+
+t.test("an unstable status recheck cannot grant dependency coverage from its first read", () => {
+    let root = fixture();
+    let path = root + "/usr/lib/opkg/status";
+    let data = "Package: ucode\nVersion: 1.0-r1\nStatus: install ok installed\n\n";
+    write(path, data); write(root + "/usr/lib/opkg/info/ucode.list", "/etc/banner\n");
+    let open = fs.open;
+    let reads = 0;
+    fs.open = (name, mode) => {
+        let file = open(name, mode);
+        if (name != path || file == null) return file;
+        return { fileno: () => file.fileno(), error: () => file.error(), close: () => file.close(),
+            read: (count) => { let text = file.read(count); return ++reads == 2 ? replace(text, "1.0-r1", "9.0-r1") : text; } };
+    };
+    let result;
+    let error;
+    try { readonly_probes({ stdout: "{}" }); result = preflight.collect(root); }
+    catch (e) { error = e; }
+    fs.open = open; stub.restore();
+    if (error != null) die(error);
+    t.eq(reads, 2);
+    t.ok(has(result, "incomplete", "status-changed-or-unavailable-on-recheck"));
+    t.eq(length(filter(result.observations, (row) => row.kind == "dependencies" && row.state == "checked")), 0);
+    t.eq(fs.readfile(path), data);
+});
+
 t.done();
