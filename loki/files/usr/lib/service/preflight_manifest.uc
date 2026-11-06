@@ -62,7 +62,7 @@ function parse(data) {
         if (exists(roles, component.role) || (format != null && format != component.format))
             return { error: "manifest-component-duplicate-or-format" };
         format = component.format;
-        roles[component.role] = true;
+        roles[component.role] = component.architecture;
         let artifact = component.artifact;
         if (!fields(artifact, "name,sha256,size") || !token(artifact.name) ||
             substr(artifact.name, -4) != "." + component.format || !hash(artifact.sha256) ||
@@ -107,7 +107,7 @@ function parse(data) {
     let canonical = '{"components":[' + join(",", map(manifest.components, encode_component)) + '],"schema":1}\n';
     if (data != canonical)
         return { error: "manifest-noncanonical" };
-    return { paths };
+    return { paths, architectures: roles, format };
 }
 
 return { parse };

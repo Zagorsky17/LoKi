@@ -160,8 +160,8 @@ function release_status(data) {
         return { state: "incomplete", reason: "openwrt-release-invalid" };
     let values = {};
     for (let line in split(substr(data, 0, length(data) - 1), "\n")) {
-        if (!match(line, /^DISTRIB_(ID|RELEASE)/)) continue;
-        let field = match(line, /^DISTRIB_(ID|RELEASE)='([^']*)'$/);
+        if (!match(line, /^DISTRIB_(ID|RELEASE|ARCH)/)) continue;
+        let field = match(line, /^DISTRIB_(ID|RELEASE|ARCH)='([^']*)'$/);
         if (field == null || exists(values, field[1]))
             return { state: "incomplete", reason: "openwrt-release-invalid" };
         values[field[1]] = field[2];
@@ -172,7 +172,11 @@ function release_status(data) {
         return { state: "conflict", reason: "unsupported-openwrt-id" };
     if (!match(values.RELEASE, /^(24\.10|25\.12)\.(0|[1-9][0-9]*)$/))
         return { state: "conflict", reason: "unsupported-openwrt-release" };
-    return { state: "checked", reason: "openwrt-release-supported" };
+    if (values.ARCH != null && !match(values.ARCH, /^[A-Za-z0-9][A-Za-z0-9_.+~-]{0,127}$/))
+        return { state: "incomplete", reason: "openwrt-release-invalid" };
+    let status = { state: "checked", reason: "openwrt-release-supported" };
+    if (values.ARCH != null) status.architecture = values.ARCH;
+    return status;
 }
 
 function collect(root, manifest_path, config_path, scratch, source_root) {
@@ -200,6 +204,18 @@ function collect(root, manifest_path, config_path, scratch, source_root) {
         if (manifest.error != null)
             push(observations, observation("candidate-manifest", "candidate-manifest", "incomplete", manifest.error));
         else {
+            if (platform.architecture == null)
+                push(observations, observation("candidate-manifest", "architecture", "incomplete", "openwrt-architecture-unverified"));
+            else {
+                let generic = manifest.format == "ipk" ? "all" : "noarch";
+                let mismatch = false;
+                for (let role in keys(manifest.architectures)) {
+                    let arch = manifest.architectures[role];
+                    if (arch != platform.architecture && (role == "core" || arch != generic)) mismatch = true;
+                }
+                push(observations, observation("candidate-manifest", "architecture", mismatch ? "conflict" : "incomplete",
+                    mismatch ? "candidate-architecture-mismatch" : "artifact-architecture-unverified"));
+            }
             let ordinal = 0;
             let directories = 0;
             for (let path in sort(keys(manifest.paths))) {
