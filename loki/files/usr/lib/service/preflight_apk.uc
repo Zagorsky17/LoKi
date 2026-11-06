@@ -106,7 +106,7 @@ function parse(data) {
         if (exists(names, fields.P))
             return { error: "apk-package-duplicate" };
         names[fields.P] = true;
-        push(packages, { name: fields.P, entries });
+        push(packages, { name: fields.P, version: fields.V, depends: fields.D ?? "", provides: fields.p ?? "", entries });
         if (length(packages) > PACKAGE_LIMIT)
             return { error: "apk-package-limit" };
     }

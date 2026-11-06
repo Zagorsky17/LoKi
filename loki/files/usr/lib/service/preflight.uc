@@ -10,6 +10,7 @@ let nft_reader = require("service.preflight_nft");
 let resources_reader = require("service.preflight_resources");
 let config_reader = require("service.preflight_config");
 let scope_reader = require("service.preflight_scope");
+let dependencies_reader = require("service.preflight_dependencies");
 
 // Critical current package targets, not yet a complete install manifest.
 const TARGETS = [
@@ -97,7 +98,7 @@ function read_metadata(path, limit, root) {
     return { data, bytes };
 }
 
-function packages_from_status(data) {
+function package_records_from_status(data) {
     if (type(data) != "string" || trim(data) == "" || length(data) > STATUS_LIMIT || index(data, "\u0000") >= 0)
         return null;
     let packages = [];
@@ -111,6 +112,8 @@ function packages_from_status(data) {
             if (match(line, /^[ \t]/)) {
                 if (previous == "" || previous == "Package" || previous == "Status")
                     return null;
+                if (previous == "Depends" || previous == "Provides" || previous == "Version")
+                    fields[previous] += " " + trim(line);
                 continue;
             }
             let field = match(line, /^([A-Za-z][A-Za-z0-9-]*):[ \t]*(.*)$/);
@@ -130,9 +133,14 @@ function packages_from_status(data) {
         if (state == null || length(keys(seen)) > PACKAGE_LIMIT)
             return null;
         if (state[2] == "installed")
-            push(packages, name);
+            push(packages, { name, version: fields.Version, depends: fields.Depends ?? "", provides: fields.Provides ?? "" });
     }
     return packages;
+}
+
+function packages_from_status(data) {
+    let packages = package_records_from_status(data);
+    return packages == null ? null : map(packages, (package) => package.name);
 }
 
 function target_paths(data, targets) {
@@ -192,6 +200,7 @@ function collect(root, manifest_path, config_path, scratch, source_root) {
     let scope = scope_reader.snapshot();
     let candidate_format = null;
     let database_format = null;
+    let installed_packages = null;
     let format_status = null;
     let release = read_metadata(root + "/etc/openwrt_release", 16384, root || "/");
     let platform = release.error == null ? release_status(release.data) :
@@ -294,6 +303,7 @@ function collect(root, manifest_path, config_path, scratch, source_root) {
                 push(observations, observation("ownership", "apk-installed", "incomplete", "apk-changed-or-unavailable-on-recheck"));
             else {
                 database_format = "apk";
+                installed_packages = parsed.packages;
                 push(observations, observation("ownership", "installed-apk-candidate-files", "checked", "metadata-read-complete"));
             }
         }
@@ -304,7 +314,8 @@ function collect(root, manifest_path, config_path, scratch, source_root) {
     else {
         let status_read = read_metadata(opkg + "/status", STATUS_LIMIT, root || "/");
         let data = status_read.data;
-        let packages = packages_from_status(data);
+        let records = package_records_from_status(data);
+        let packages = records == null ? null : map(records, (package) => package.name);
         let complete = packages != null;
         // Reserve the status recheck within the aggregate read budget.
         let total = 2 * (status_read.bytes || 0) + 1;
@@ -359,8 +370,10 @@ function collect(root, manifest_path, config_path, scratch, source_root) {
                 complete = false;
                 failures["status-changed-or-unavailable-on-recheck"] = "opkg-status";
             }
-            else if (packages != null)
+            else if (packages != null) {
                 database_format = "ipk";
+                installed_packages = records;
+            }
         }
         for (let reason in sort(keys(failures)))
             push(observations, observation("ownership", failures[reason], "incomplete", reason));
@@ -418,10 +431,12 @@ function collect(root, manifest_path, config_path, scratch, source_root) {
             }
         }
     }
+    for (let item in dependencies_reader.check(installed_packages, database_format))
+        push(observations, item);
     // Unimplemented domains are mandatory; a partial inventory never grants permission.
     for (let kind in [ "hooks",
         "dns-committed", "dns-pending", "dns-runtime", "nft-persisted",
-        "ipv4-routes-rules", "ipv6-routes-rules", "dependencies", "core-check" ])
+        "ipv4-routes-rules", "ipv6-routes-rules", "core-check" ])
         push(observations, observation(kind, kind, "incomplete", "not-implemented"));
     if (config_path == null)
         push(observations, observation("configuration", "configuration", "incomplete", "not-implemented"));
@@ -440,4 +455,4 @@ function collect(root, manifest_path, config_path, scratch, source_root) {
         install_allowed: false, observations };
 }
 
-return { collect, packages_from_status, target_paths, read_metadata, release_status };
+return { collect, packages_from_status, package_records_from_status, target_paths, read_metadata, release_status };

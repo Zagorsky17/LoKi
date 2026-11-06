@@ -23,11 +23,11 @@ function has(result, state, reason) {
 
 t.test("APK directory/file records retain ownership without executing metadata", () => {
     let data = record("base-files", "T:$(touch synthetic-secret)\nf:S\nF:\nM:0:0:755\nR:banner\na:0:0:644\nZ:Q1AAAAAAAAAAAAAAAAAAAAAAAAAAA=\nF:etc\nR:my file\n");
-    t.eq(apk.parse(data), { packages: [{ name: "base-files", entries: [
+    t.eq(apk.parse(data), { packages: [{ name: "base-files", version: "1.0-r1", depends: "", provides: "", entries: [
         { path: "/", type: "directory" }, { path: "/banner", type: "non-directory" },
         { path: "/etc", type: "directory" }, { path: "/etc/my file", type: "non-directory" }
     ] }] });
-    t.eq(apk.parse(record("empty")), { packages: [{ name: "empty", entries: [] }] });
+    t.eq(apk.parse(record("empty")), { packages: [{ name: "empty", version: "1.0-r1", depends: "", provides: "", entries: [] }] });
 });
 
 t.test("APK parser refuses truncation, control bytes and unsupported fields", () => {
@@ -138,6 +138,36 @@ t.test("APK changed, writable and symlink databases fail closed", () => {
     fs.rename(path, path + ".data");
     fs.symlink(path + ".data", path);
     t.ok(has(preflight.collect(root), "incomplete", "apk-installed-not-regular-file"));
+});
+
+t.test("APK dependencies retain the version and aliases from the same parsed record", () => {
+    let parsed = apk.parse(record("ip-full", "D:libc kernel=6.12.1-r1\np:ip ip-full-any\n"));
+    t.eq(parsed.packages[0], { name: "ip-full", version: "1.0-r1", depends: "libc kernel=6.12.1-r1",
+        provides: "ip ip-full-any", entries: [] });
+});
+
+t.test("a changed APK recheck cannot grant dependency coverage", () => {
+    let data = record("ucode");
+    let root = fixture(data);
+    let path = root + "/lib/apk/db/installed";
+    let open = fs.open;
+    let reads = 0;
+    fs.open = (name, mode) => {
+        let file = open(name, mode);
+        if (name != path || file == null) return file;
+        return { fileno: () => file.fileno(), error: () => file.error(), close: () => file.close(),
+            read: (count) => { let text = file.read(count); return ++reads == 2 ? replace(text, "1.0-r1", "9.0-r1") : text; } };
+    };
+    let result;
+    let error;
+    try { stub.commands([[ () => true, { stdout: "{}" } ]]); result = preflight.collect(root); }
+    catch (e) { error = e; }
+    fs.open = open; stub.restore();
+    if (error != null) die(error);
+    t.eq(reads, 2);
+    t.ok(has(result, "incomplete", "apk-changed-or-unavailable-on-recheck"));
+    t.eq(length(filter(result.observations, (row) => row.kind == "dependencies" && row.state == "checked")), 0);
+    t.eq(fs.readfile(path), data);
 });
 
 t.done();
