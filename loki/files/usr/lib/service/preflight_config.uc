@@ -53,9 +53,10 @@ function check(data, scratch) {
                     catch (e) { loaded = false; }
                     if (loaded) {
                         let decision = null;
+                        let model = null;
                         try {
                             let migration = require("config.migration");
-                            let model = migration.model_from_cursor(native, "loki");
+                            model = migration.model_from_cursor(native, "loki");
                             if (model != null) decision = migration.decide(model);
                         }
                         catch (e) { decision = null; }
@@ -64,8 +65,16 @@ function check(data, scratch) {
                             decision?.result == "reject" && index([ "foreign", "schema", "missing", "invalid", "newer", "below_min", "unknown" ], decision.reason) >= 0
                                 ? "candidate-schema-" + decision.reason : "candidate-schema-unavailable";
                         result = [ item("checked", "uci-syntax-checked") ];
-                        if (decision?.result == "current")
+                        if (decision?.result == "current") {
                             push(result, item("checked", "uci-schema-checked"));
+                            let valid = false;
+                            try { require("config.validator").validate_candidate(model); valid = true; }
+                            catch (e) { valid = false; }
+                            if (valid)
+                                push(result, item("checked", "uci-values-checked"));
+                            else
+                                reason = "candidate-config-values-invalid";
+                        }
                         push(result, item("incomplete", reason));
                     }
                     else

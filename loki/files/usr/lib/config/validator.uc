@@ -603,7 +603,7 @@ function validate_ruleset_reference_value(reference, section) {
         "' is neither an http(s) URL nor an absolute path, or is a YAML list");
 }
 
-function validate_common_rule_references(section) {
+function validate_common_rule_references(section, context) {
     for (let value in connections.community_lists(section))
         validate_service_value(value, section);
     for (let value in connections.rule_sets(section))
@@ -613,7 +613,7 @@ function validate_common_rule_references(section) {
     let label = replace(section_label(section), /[[:cntrl:]]/g, " ");
     for (let overlap in rulesets.overlaps(connections.community_lists(section),
         [ ...connections.rule_sets(section), ...connections.rule_sets_with_subnets(section) ]))
-        core_exec.log("warn", "Section '" + label + "': external list '" + overlap.external + "'" +
+        context.log("warn", "Section '" + label + "': external list '" + overlap.external + "'" +
             (overlap.relation == "same_source" ? " uses the same source as " : " may overlap ") +
             "built-in '" + overlap.builtin + "'; compare domains and subnets before removing a list");
 }
@@ -859,9 +859,9 @@ function validate_rule(section, sections, context) {
         validate_interface_domain_resolvers(section, sections, context);
     }
 
-    validate_common_rule_references(section);
+    validate_common_rule_references(section, context);
     if (connections.is_connections_action(action) && !connections.has_connection_sources(section))
-        core_exec.log("warn", "Section '" + section_label(section) + "' has no servers and is skipped");
+        context.log("warn", "Section '" + section_label(section) + "' has no servers and is skipped");
 }
 
 function validate_subscription_download_sections(sections, context) {
@@ -956,10 +956,10 @@ function validate_core_features(settings, sections, core_tags) {
 
 }
 
-function validate_runtime_config(context) {
-    let settings = settings_section();
+function validate_runtime_config(context, settings, sections) {
+    settings ??= settings_section();
     cache_path.validate(settings);
-    let sections = sections_by_type("section");
+    sections ??= sections_by_type("section");
 
     let display_names = {};
     validate_runtime_display_names(sections, "Section", display_names);
@@ -985,6 +985,7 @@ function validate_runtime_config(context) {
 
 function context_from_runtime(core_tags) {
     return {
+        log: core_exec.log,
         nft_fakeip_mark: as_string(constants.NFT_FAKEIP_MARK),
         nft_outbound_mark: as_string(constants.NFT_OUTBOUND_MARK),
         nft_router_mark: as_string(constants.NFT_ROUTER_MARK),
@@ -1054,4 +1055,16 @@ function validate(overrides) {
     validate_runtime_config({ ...context_from_runtime(overrides.core_tags), ...overrides });
 }
 
-return { validate, check_requirements, connection_sections_proxy_nothing };
+function validate_candidate(model) {
+    if (require("config.migration").decide(model).result != "current")
+        fail_validation("Unsupported prepared configuration schema");
+    let sections = model.sections;
+    let settings = filter(sections, (section) => section[".type"] == "settings")[0];
+    connections.with_sections(sections, () => {
+        // Core compatibility is a separate mandatory gate until its provenance is verified.
+        validate_runtime_config({ ...context_from_runtime([]), core_tags: null, log: () => {} },
+            settings, filter(sections, (section) => section[".type"] == "section"));
+    });
+}
+
+return { validate, validate_candidate, check_requirements, connection_sections_proxy_nothing };
