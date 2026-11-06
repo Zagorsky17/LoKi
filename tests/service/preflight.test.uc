@@ -44,6 +44,63 @@ function has(result, state, reason) {
     return length(filter(result.observations, (item) => item.state == state && item.reason == reason)) > 0;
 }
 
+t.test("only released OpenWrt 24.10 and 25.12 satisfy the platform version check", () => {
+    for (let version in [ "24.10.0", "24.10.8", "24.10.1000", "25.12.6" ])
+        t.eq(preflight.release_status("DISTRIB_ID='OpenWrt'\nDISTRIB_RELEASE='" + version + "'\n"),
+            { state: "checked", reason: "openwrt-release-supported" });
+    for (let version in [ "23.05.5", "26.01.0", "24.10-SNAPSHOT", "25.12.6-rc1" ])
+        t.eq(preflight.release_status("DISTRIB_ID='OpenWrt'\nDISTRIB_RELEASE='" + version + "'\n"),
+            { state: "conflict", reason: "unsupported-openwrt-release" });
+    t.eq(preflight.release_status("DISTRIB_ID='ImmortalWrt'\nDISTRIB_RELEASE='25.12.6'\n"),
+        { state: "conflict", reason: "unsupported-openwrt-id" });
+});
+
+t.test("release metadata is parsed as data and rejects duplicates, truncation and injected syntax", () => {
+    for (let data in [ null, "", "DISTRIB_ID='OpenWrt'\n", "DISTRIB_RELEASE='24.10.8'\n",
+        "DISTRIB_ID=''\nDISTRIB_RELEASE='24.10.8'\n", "DISTRIB_ID='OpenWrt'\nDISTRIB_RELEASE=''\n",
+        "DISTRIB_ID='OpenWrt'\nDISTRIB_RELEASE='24.10.8'", "DISTRIB_ID='OpenWrt'\nDISTRIB_ID='OpenWrt'\nDISTRIB_RELEASE='24.10.8'\n",
+        "DISTRIB_ID='OpenWrt'\nDISTRIB_RELEASE='24.10.8'\nDISTRIB_RELEASE='25.12.6'\n",
+        "DISTRIB_ID='OpenWrt'\nDISTRIB_RELEASE='24.10.8'; touch synthetic-secret\n",
+        "DISTRIB_ID='OpenWrt'\nDISTRIB_RELEASE='24.10.8'\u0000\n",
+        sprintf("%16385s", "x") ]) {
+        let status = preflight.release_status(data);
+        t.eq(status, { state: "incomplete", reason: "openwrt-release-invalid" });
+        t.excludes(sprintf("%J", status), "synthetic-secret");
+    }
+});
+
+t.test("platform file identity and unsupported release are reported without changing the host", () => {
+    let root = fixture();
+    fs.mkdir(root + "/etc", 0755);
+    let path = root + "/etc/openwrt_release";
+    let data = "DISTRIB_ID='OpenWrt'\nDISTRIB_RELEASE='24.10.8'\nDISTRIB_TARGET='x86/64'\n";
+    write(path, data);
+    readonly_probes({ stdout: "{}" });
+    let supported = preflight.collect(root);
+    stub.restore();
+    t.ok(has(supported, "checked", "openwrt-release-supported"));
+    t.ok(has(supported, "incomplete", "platform-requirements-unverified"));
+    t.eq(supported.install_allowed, false);
+    t.eq(fs.readfile(path), data);
+
+    write(path, replace(data, "24.10.8", "26.01.0"));
+    readonly_probes({ stdout: "{}" });
+    let unsupported = preflight.collect(root);
+    stub.restore();
+    t.ok(has(unsupported, "conflict", "unsupported-openwrt-release"));
+    t.eq(unsupported.install_allowed, false);
+
+    fs.rename(path, path + ".keep");
+    write(path + ".keep", "synthetic-secret\n");
+    fs.symlink(path + ".keep", path);
+    readonly_probes({ stdout: "{}" });
+    let linked = preflight.collect(root);
+    stub.restore();
+    t.ok(has(linked, "incomplete", "openwrt-release-not-regular-file"));
+    t.excludes(sprintf("%J", linked), "synthetic-secret");
+    t.eq(fs.readfile(path + ".keep"), "synthetic-secret\n");
+});
+
 t.test("status parser preserves installed packages and rejects ambiguous state", () => {
     t.eq(preflight.packages_from_status(stanza("base-files") + stanza("old", "config-files")), [ "base-files" ]);
     t.eq(preflight.packages_from_status(stanza("old", "not-installed")), []);

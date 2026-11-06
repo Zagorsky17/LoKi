@@ -154,10 +154,36 @@ function observation(kind, object, state, reason) {
     return { kind, object, state, reason };
 }
 
+function release_status(data) {
+    if (type(data) != "string" || data == "" || length(data) > 16384 ||
+        substr(data, -1) != "\n" || index(data, "\u0000") >= 0)
+        return { state: "incomplete", reason: "openwrt-release-invalid" };
+    let values = {};
+    for (let line in split(substr(data, 0, length(data) - 1), "\n")) {
+        if (!match(line, /^DISTRIB_(ID|RELEASE)/)) continue;
+        let field = match(line, /^DISTRIB_(ID|RELEASE)='([^']*)'$/);
+        if (field == null || exists(values, field[1]))
+            return { state: "incomplete", reason: "openwrt-release-invalid" };
+        values[field[1]] = field[2];
+    }
+    if (values.ID == null || values.ID == "" || values.RELEASE == null || values.RELEASE == "")
+        return { state: "incomplete", reason: "openwrt-release-invalid" };
+    if (values.ID != "OpenWrt")
+        return { state: "conflict", reason: "unsupported-openwrt-id" };
+    if (!match(values.RELEASE, /^(24\.10|25\.12)\.(0|[1-9][0-9]*)$/))
+        return { state: "conflict", reason: "unsupported-openwrt-release" };
+    return { state: "checked", reason: "openwrt-release-supported" };
+}
+
 function collect(root, manifest_path, config_path, scratch, source_root) {
     // The CLI always passes "/". A fixture root is only an in-process test seam.
     root = root == "/" ? "" : root;
     let observations = [];
+    let release = read_metadata(root + "/etc/openwrt_release", 16384, root || "/");
+    let platform = release.error == null ? release_status(release.data) :
+        { state: "incomplete", reason: "openwrt-release-" + release.error };
+    push(observations, observation("platform", "openwrt-release", platform.state, platform.reason));
+    push(observations, observation("platform", "requirements", "incomplete", "platform-requirements-unverified"));
     let targets = map(TARGETS, (path) => path);
     let labels = {};
     let file_targets = {};
@@ -353,4 +379,4 @@ function collect(root, manifest_path, config_path, scratch, source_root) {
         install_allowed: false, observations };
 }
 
-return { collect, packages_from_status, target_paths, read_metadata };
+return { collect, packages_from_status, target_paths, read_metadata, release_status };
