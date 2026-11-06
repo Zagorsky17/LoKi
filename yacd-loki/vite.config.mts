@@ -3,9 +3,10 @@ import * as path from 'path';
 import { defineConfig } from 'vite';
 
 import pkg from './package.json' with { type: 'json' };
+import { thirdPartyNotices } from './third-party-notices.mjs';
 
 // https://vitejs.dev/config/
-export default defineConfig(({ mode }) => ({
+export default defineConfig({
   define: {
     __VERSION__: JSON.stringify(pkg.version),
   },
@@ -27,5 +28,5 @@ export default defineConfig(({ mode }) => ({
     // but change this may break other people's tools
     outDir: 'public',
   },
-  plugins: [react()],
-}));
+  plugins: [react(), thirdPartyNotices(import.meta.dirname)],
+});

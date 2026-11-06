@@ -1,5 +1,6 @@
 """Exercise package-root recipes without an SDK, package manager or downloads."""
 # Modified for LoKi on 2026-11-04: preserve the root license in distributed payloads.
+# Modified for LoKi on 2026-11-06: verify bundled YACD notices in both package recipes.
 from pathlib import Path
 import json
 import os
@@ -67,6 +68,15 @@ build_i18n_root "$2/i18n" "$2/po2lmo"
                 yacd_license = work / 'app/usr/share/licenses/luci-app-loki/YACD-LICENSE'
                 self.assertEqual(yacd_license.read_bytes(), (ROOT / 'yacd-loki/LICENSE').read_bytes())
                 self.assertEqual(yacd_license.stat().st_mode & 0o777, 0o644)
+                for installed_name, asset_name in [
+                    ('YACD-THIRD-PARTY-NOTICES', 'THIRD_PARTY_NOTICES.txt'),
+                    ('YACD-THIRD-PARTY-INVENTORY', 'THIRD_PARTY_INVENTORY.json'),
+                ]:
+                    notice = yacd_license.parent / installed_name
+                    self.assertTrue(notice.is_file(), 'bundled dependency notices must reach the package license directory')
+                    source = ROOT / 'yacd-loki/licenses' / asset_name
+                    self.assertEqual(notice.read_bytes(), source.read_bytes())
+                    self.assertEqual(notice.stat().st_mode & 0o777, 0o644)
                 for package_name, source_name in [('INTER-OFL', 'inter-OFL.txt'), ('ROBOTO-MONO-OFL', 'roboto-mono-OFL.txt')]:
                     notice = yacd_license.parent / package_name
                     self.assertEqual(notice.read_bytes(), (ROOT / 'yacd-loki/licenses' / source_name).read_bytes())
@@ -150,7 +160,7 @@ build_i18n_root "$2/i18n" "$2/po2lmo"
         backend = (ROOT / 'loki/Makefile').read_text()
         luci = (ROOT / 'luci-app-loki/Makefile').read_text()
         self.assertIn('PKG_LICENSE:=GPL-2.0-or-later', backend)
-        self.assertIn('PKG_LICENSE:=GPL-2.0-or-later AND MIT AND OFL-1.1', luci)
+        self.assertIn('PKG_LICENSE:=GPL-2.0-or-later AND MIT AND Apache-2.0 AND 0BSD AND OFL-1.1', luci)
         self.assertIn('$(INSTALL_DATA) ../LICENSE $(1)/usr/share/licenses/loki/LICENSE', backend)
         hook = re.search(r'define Build/Prepare/\$\(PKG_NAME\)\n(.*?)\nendef', luci, re.S)[1]
         with tempfile.TemporaryDirectory() as work:
@@ -165,6 +175,9 @@ build_i18n_root "$2/i18n" "$2/po2lmo"
             self.assertEqual((work / 'root/usr/share/licenses/luci-app-loki/LICENSE').read_bytes(), (ROOT / 'LICENSE').read_bytes())
             self.assertEqual((work / 'root/usr/share/licenses/luci-app-loki/YACD-LICENSE').read_bytes(), (ROOT / 'yacd-loki/LICENSE').read_bytes())
             for package_name, source_name in [('INTER-OFL', 'inter-OFL.txt'), ('ROBOTO-MONO-OFL', 'roboto-mono-OFL.txt')]:
+                self.assertEqual((work / 'root/usr/share/licenses/luci-app-loki' / package_name).read_bytes(), (ROOT / 'yacd-loki/licenses' / source_name).read_bytes())
+            for package_name, source_name in [('YACD-THIRD-PARTY-NOTICES', 'THIRD_PARTY_NOTICES.txt'),
+                                              ('YACD-THIRD-PARTY-INVENTORY', 'THIRD_PARTY_INVENTORY.json')]:
                 self.assertEqual((work / 'root/usr/share/licenses/luci-app-loki' / package_name).read_bytes(), (ROOT / 'yacd-loki/licenses' / source_name).read_bytes())
 
 

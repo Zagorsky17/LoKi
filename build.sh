@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Modified for LoKi on 2026-11-03: verify and bound SDK downloads before extraction.
 # Modified for LoKi on 2026-11-04: ship the unchanged root license in each package.
+# Modified for LoKi on 2026-11-06: preserve bundled YACD dependency notices.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -287,6 +288,8 @@ build_app_root() {
   install -m 0644 "$ROOT_DIR/yacd-loki/LICENSE" "$output_root/usr/share/licenses/luci-app-loki/YACD-LICENSE"
   install -m 0644 "$ROOT_DIR/yacd-loki/licenses/inter-OFL.txt" "$output_root/usr/share/licenses/luci-app-loki/INTER-OFL"
   install -m 0644 "$ROOT_DIR/yacd-loki/licenses/roboto-mono-OFL.txt" "$output_root/usr/share/licenses/luci-app-loki/ROBOTO-MONO-OFL"
+  install -m 0644 "$ROOT_DIR/yacd-loki/licenses/THIRD_PARTY_NOTICES.txt" "$output_root/usr/share/licenses/luci-app-loki/YACD-THIRD-PARTY-NOTICES"
+  install -m 0644 "$ROOT_DIR/yacd-loki/licenses/THIRD_PARTY_INVENTORY.json" "$output_root/usr/share/licenses/luci-app-loki/YACD-THIRD-PARTY-INVENTORY"
 
   normalize_package_root_modes "$output_root"
   find "$output_root/etc/uci-defaults" -type f -exec chmod 0755 {} + 2>/dev/null || true
@@ -389,7 +392,7 @@ write_app_ipk_control() {
 Package: luci-app-loki
 Version: ${RELEASE_VERSION}
 Depends: ${APP_DEPENDS_IPK}
-License: GPL-2.0-or-later AND MIT AND OFL-1.1
+License: GPL-2.0-or-later AND MIT AND Apache-2.0 AND 0BSD AND OFL-1.1
 Section: luci
 URL: ${PROJECT_URL}
 Maintainer: ${MAINTAINER}
@@ -649,7 +652,7 @@ build_apk_package() {
   local maintainer="${10}"
   local package_license="GPL-2.0-or-later"
   if [[ "$package_name" == "luci-app-loki" ]]; then
-    package_license="GPL-2.0-or-later AND MIT AND OFL-1.1"
+    package_license="GPL-2.0-or-later AND MIT AND Apache-2.0 AND 0BSD AND OFL-1.1"
   fi
 
   rm -rf "$temp_root" "$temp_scripts"
