@@ -34,6 +34,69 @@ on:
       - '.github/workflows/backend-ci.yml'
 
 jobs:
+  native-uci:
+    name: Native UCI (${{ matrix.openwrt }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        openwrt: ['24.10', '25.12']
+    steps:
+      - uses: actions/checkout@v5.0.0
+      - name: Build isolated native UCI
+        shell: bash
+        env:
+          OPENWRT_BRANCH: ${{ matrix.openwrt }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake git libjson-c-dev pkg-config
+          case "$OPENWRT_BRANCH" in
+            24.10)
+              uci_revision=16ff0badbde7e17ec3bd1f827ffe45922956cf86
+              ubox_revision=49056d178f42da98048a5d4c23f83a6f6bc6dd80 ;;
+            25.12)
+              uci_revision=66127cd76c5d0bd46d5a90302cc6110f53a4e2f8
+              ubox_revision=7dd127841e82eb1cfb61185da37dde7b9bd9ba6d ;;
+            *) exit 1 ;;
+          esac
+          native_root="$RUNNER_TEMP/native-uci"
+          prefix="$native_root/prefix"
+          mkdir -p "$prefix"
+          for component in libubox uci ucode; do
+            repository="https://github.com/openwrt/$component.git"
+            case "$component" in
+              libubox) revision="$ubox_revision" ;;
+              uci) revision="$uci_revision" ;;
+              ucode)
+                revision=be92ebd706339fd4a848b88ee516b1ac4eb62ef8
+                repository=https://github.com/jow-/ucode.git ;;
+            esac
+            source_dir="$native_root/$component"
+            git init "$source_dir"
+            git -C "$source_dir" fetch --depth 1 "$repository" "$revision"
+            git -C "$source_dir" checkout --detach "$revision"
+            test "$(git -C "$source_dir" rev-parse HEAD)" = "$revision"
+            options=(-DCMAKE_INSTALL_PREFIX="$prefix" -DCMAKE_INSTALL_LIBDIR=lib
+              -DCMAKE_PREFIX_PATH="$prefix" -DCMAKE_INSTALL_RPATH="$prefix/lib")
+            if [ "$component" = ucode ]; then
+              options+=(-DUBUS_SUPPORT=OFF -DUCI_SUPPORT=ON -DULOOP_SUPPORT=OFF
+                -DRTNL_SUPPORT=OFF -DNL80211_SUPPORT=OFF -DDEBUG_SUPPORT=OFF
+                -DLIB_SEARCH_PATH="$prefix/lib/ucode/*.so")
+            else
+              options+=(-DBUILD_LUA=OFF -DBUILD_EXAMPLES=OFF)
+            fi
+            cmake -S "$source_dir" -B "$source_dir/build" "${options[@]}"
+            cmake --build "$source_dir/build" --parallel 2
+            cmake --install "$source_dir/build"
+          done
+          echo "$prefix/bin" >> "$GITHUB_PATH"
+      - name: Check real staged UCI and existing regressions
+        shell: bash
+        run: |
+          python3 -B tests/test_preflight_native_uci.py
+          python3 -B tests/test_preflight_cli.py
+          tests/run.sh
+
   backend-checks:
     name: Backend Runtime Checks
     runs-on: ubuntu-24.04
