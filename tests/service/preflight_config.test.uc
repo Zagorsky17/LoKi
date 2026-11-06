@@ -176,4 +176,88 @@ t.test("a preexisting config symlink cannot make cleanup delete another file", (
     t.ok(has(result, "incomplete", "scratch-write-failed"));
 });
 
+function platform() {
+    return { dhcp: "config dnsmasq 'dns'\n option domain 'prepared.lan'\n",
+        system: "config timeserver 'ntp'\n list server 'time.prepared.example'\n" };
+}
+
+function generation_seed() {
+    uci.__reset();
+    uci.__seed("loki", [ { ".name": "settings", ".type": "settings",
+        config_format: "loki", config_version: "2.0.0",
+        dns_server: [ "1.1.1.1" ], bootstrap_dns_server: [ "1.1.1.1" ] },
+        { ".name": "example", ".type": "section", action: "bypass", destinations: "prepared.example" } ]);
+    uci.__seed("dhcp", [ { ".name": "dns", ".type": "dnsmasq", domain: "prepared.lan" } ]);
+    uci.__seed("system", [ { ".name": "ntp", ".type": "timeserver", server: [ "time.prepared.example" ] } ]);
+}
+
+t.test("prepared generation uses three private staged files and removes all copies", () => {
+    generation_seed();
+    let root = scratch();
+    let result = reader.check("config settings 'settings'\n", root, platform());
+    t.ok(has(result, "checked", "uci-generation-checked"));
+    t.ok(has(result, "incomplete", "candidate-core-unverified"));
+    t.eq(fs.lstat(root + "/config"), null);
+    t.eq(fs.lstat(root + "/delta"), null);
+    t.eq(uci.__commits(), []);
+});
+
+t.test("missing, oversized or NUL platform data cannot authorize generation", () => {
+    for (let data in [ null, {}, { ...platform(), dhcp: "x\u0000synthetic-secret" },
+        { ...platform(), system: sprintf("%1048577s", "x") } ]) {
+        generation_seed();
+        let root = scratch();
+        let result = reader.check("config settings 'settings'\n", root, data);
+        t.ok(has(result, "incomplete", "candidate-platform-config-unavailable") ||
+            has(result, "incomplete", "candidate-platform-config-invalid"));
+        t.ok(!has(result, "checked", "uci-generation-checked"));
+        t.excludes(sprintf("%J", result), "synthetic-secret");
+        t.eq(fs.lstat(root + "/config"), null);
+        t.eq(fs.lstat(root + "/delta"), null);
+    }
+});
+
+t.test("a platform write failure or exception cannot pass as a complete empty file", () => {
+    let original = fs.open;
+    for (let failure in [ "null", "throw", "close" ]) {
+        generation_seed();
+        let root = scratch();
+        fs.open = (path, ...args) => {
+            let file = original(path, ...args);
+            if (file == null || path != root + "/config/dhcp") return file;
+            return { write: (data) => {
+                file.write(data);
+                if (failure == "throw") die("synthetic-secret");
+                return failure == "null" ? null : length(data);
+            }, close: () => { file.close(); return failure == "close" ? false : true; } };
+        };
+        let result = reader.check("config settings 'settings'\n", root, { ...platform(), dhcp: "" });
+        fs.open = original;
+        t.ok(has(result, "incomplete", "candidate-platform-stage-failed"));
+        t.excludes(sprintf("%J", result), "synthetic-secret");
+        t.eq(fs.lstat(root + "/config"), null);
+        t.eq(fs.lstat(root + "/delta"), null);
+    }
+});
+
+t.test("generation and ephemeral credential exceptions remain private and clean staged inputs", () => {
+    let generator = require("singbox.generator");
+    let secret = require("service.gateway_secret");
+    for (let failure in [ "generator", "credential" ]) {
+        generation_seed();
+        let root = scratch();
+        let original_build = generator.build_candidate;
+        let original_secret = secret.generate;
+        if (failure == "generator") generator.build_candidate = () => die("synthetic-secret");
+        else secret.generate = () => die("synthetic-secret");
+        let result = reader.check("config settings 'settings'\n", root, platform());
+        generator.build_candidate = original_build;
+        secret.generate = original_secret;
+        t.ok(has(result, "incomplete", failure == "generator" ? "candidate-generation-failed" : "candidate-credential-unavailable"));
+        t.excludes(sprintf("%J", result), "synthetic-secret");
+        t.eq(fs.lstat(root + "/config"), null);
+        t.eq(fs.lstat(root + "/delta"), null);
+    }
+});
+
 t.done();

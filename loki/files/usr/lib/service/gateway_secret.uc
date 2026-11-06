@@ -9,6 +9,11 @@ function refuse() {
     die("Private LoKi controller credential is unsafe or unavailable");
 }
 
+function close_ok(file) {
+    try { return file.close() === true; }
+    catch (e) { return false; }
+}
+
 function read(path) {
     let before = fs.lstat(path);
     if (before?.type != "file" || before.uid != fs.stat("/proc/self").uid || before.nlink != 1 ||
@@ -19,8 +24,8 @@ function read(path) {
         refuse();
     let value;
     try { value = file.read(65); }
-    catch (e) { file.close(); refuse(); }
-    file.close();
+    catch (e) { close_ok(file); refuse(); }
+    if (!close_ok(file)) refuse();
     let after = fs.lstat(path);
     if (after == null || after.inode != before.inode || after.dev?.major != before.dev?.major ||
         after.dev?.minor != before.dev?.minor || after.uid != before.uid ||
@@ -31,18 +36,14 @@ function read(path) {
     return value;
 }
 
-function load() {
-    let path = storage.ensure({ cache_path: SECRET_PATH });
-    if (fs.lstat(path) != null)
-        return read(path);
-
+function generate() {
     let file = fs.open("/dev/urandom", "re");
     if (file == null)
         refuse();
     let entropy;
     try { entropy = file.read(32); }
-    catch (e) { file.close(); refuse(); }
-    file.close();
+    catch (e) { close_ok(file); refuse(); }
+    if (!close_ok(file)) refuse();
     if (type(entropy) != "string" || length(entropy) != 32)
         refuse();
     let value = "";
@@ -50,6 +51,15 @@ function load() {
         value += sprintf("%02x", ord(entropy, i));
     if (value == sprintf("%064d", 0))
         refuse();
+    return value;
+}
+
+function load() {
+    let path = storage.ensure({ cache_path: SECRET_PATH });
+    if (fs.lstat(path) != null)
+        return read(path);
+
+    let value = generate();
     // Exclusive creation preserves a concurrent winner; a partial or uncertain file is refused.
     common.write_private_file(path, value);
     return read(path);
@@ -68,4 +78,4 @@ function redactor() {
     return (text) => type(text) != "string" ? "" : value == null ? text : join("SERVER_ONLY", split(text, value));
 }
 
-return { load, redactor };
+return { generate, load, redactor };

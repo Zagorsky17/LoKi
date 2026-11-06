@@ -391,9 +391,27 @@ function collect(root, manifest_path, config_path, scratch, source_root) {
             let read = read_metadata(config_path, 1048576, source_root);
             if (read.error != null)
                 push(observations, observation("configuration", "candidate-config", "incomplete", "candidate-config-" + read.error));
-            else
-                for (let item in config_reader.check(read.data, scratch, null))
+            else {
+                let platform = {};
+                for (let name in [ "dhcp", "system" ]) {
+                    let snapshot = read_metadata(root + "/etc/config/" + name, 1048576, root || "/");
+                    if (snapshot.error == null)
+                        platform[name] = snapshot.data;
+                    else
+                        push(observations, observation("configuration", "platform-" + name, "incomplete", "platform-config-" + snapshot.error));
+                }
+                for (let item in config_reader.check(read.data, scratch, platform))
                     push(observations, item);
+                let final_config = read_metadata(config_path, 1048576, source_root);
+                if (final_config.error != null || final_config.data != read.data)
+                    push(observations, observation("configuration", "candidate-config", "incomplete", "candidate-config-changed-on-recheck"));
+                for (let name in keys(platform)) {
+                    let recheck = read_metadata(root + "/etc/config/" + name, 1048576, root || "/");
+                    let stable = recheck.error == null && recheck.data == platform[name];
+                    push(observations, observation("configuration", "platform-" + name, stable ? "checked" : "incomplete",
+                        stable ? "platform-config-snapshot-checked" : "platform-config-changed-on-recheck"));
+                }
+            }
         }
     }
     // Unimplemented domains are mandatory; a partial inventory never grants permission.

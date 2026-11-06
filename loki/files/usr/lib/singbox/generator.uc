@@ -13,6 +13,7 @@ let plain_links = require("singbox.plain_links");
 let connections = require("config.connections");
 let runtime_settings_cache = null;
 let runtime_local_ptr_zone = null;
+let runtime_platform_cache = null;
 
 let as_string = common.as_string;
 let strip_internal_fields = common.strip_internal_fields;
@@ -41,13 +42,16 @@ function runtime_settings() {
 }
 
 function dhcp_dnsmasq_section() {
+    if (runtime_platform_cache != null)
+        return runtime_platform_cache.dhcp;
     return object_or_empty(uci_core.get_all("dhcp", "@dnsmasq[0]"));
 }
 
 // sysntpd's servers by name. Over DNS through TLS or HTTPS a clock behind the server's certificate
 // gets no answer, and then sysntpd never learns an address to set the clock from.
 function ntp_server_names() {
-    let ntp = object_or_empty(uci_core.get_all("system", "ntp"));
+    let ntp = runtime_platform_cache != null ? runtime_platform_cache.ntp :
+        object_or_empty(uci_core.get_all("system", "ntp"));
     if (option(ntp, "enabled", "1") == "0")
         return [];
     return filter(list_option(ntp, "server"), (name) => !core_ip.valid_ip(name));
@@ -1606,14 +1610,11 @@ function runnable() {
 // Throws with the reason when the configuration cannot be expressed.
 // The caller supplies its private controller credential; generation never creates state.
 // context: { controller_secret, local_prefixes }
-function build(context) {
+function generate(context, settings, sections) {
     context = object_or_empty(context);
-    connections.load();
-    runtime_settings_cache = null;
+    runtime_settings_cache = settings;
     runtime_local_ptr_zone = local_ptr_zone(context.local_prefixes);
-    let settings = runtime_settings();
-
-    let sections = runtime_sections(enabled_sections());
+    sections = runtime_sections(sections);
     if (length(sections) == 0)
         runtime_generate_unsupported("no usable sections");
 
@@ -1642,4 +1643,43 @@ function build(context) {
     return strip_internal_fields(config);
 }
 
-return { build, runnable };
+function build(context) {
+    connections.load();
+    runtime_platform_cache = null;
+    return generate(context, object_or_empty(uci_core.get_all(CONFIG_NAME, "settings")), enabled_sections());
+}
+
+function build_candidate(model, platform, context) {
+    if (require("config.migration").decide(model).result != "current")
+        runtime_generate_unsupported("Unsupported prepared configuration schema");
+    return connections.with_sections(model.sections, () => {
+        let sections = filter(model.sections, (section) => section[".type"] == "section" && section_enabled(section));
+        if (length(runtime_sections(sections)) == 0)
+            return null;
+        for (let name in [ "dhcp", "system" ]) {
+            if (type(platform?.[name]?.sections) != "array" ||
+                length(filter(platform[name].sections, (section) => type(section) != "object")) > 0)
+                runtime_generate_unsupported("Prepared platform configuration is unavailable");
+        }
+        let settings = filter(model.sections, (section) => section[".type"] == "settings")[0];
+        let saved = [ runtime_settings_cache, runtime_local_ptr_zone, runtime_platform_cache ];
+        runtime_platform_cache = {
+            dhcp: filter(platform.dhcp.sections, (section) => section[".type"] == "dnsmasq")[0] ?? {},
+            ntp: filter(platform.system.sections, (section) => section[".name"] == "ntp")[0] ?? {}
+        };
+        let result;
+        try { result = generate(context, settings, sections); }
+        catch (e) {
+            runtime_settings_cache = saved[0];
+            runtime_local_ptr_zone = saved[1];
+            runtime_platform_cache = saved[2];
+            die(e);
+        }
+        runtime_settings_cache = saved[0];
+        runtime_local_ptr_zone = saved[1];
+        runtime_platform_cache = saved[2];
+        return result;
+    });
+}
+
+return { build, build_candidate, runnable };

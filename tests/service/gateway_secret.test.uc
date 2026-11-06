@@ -191,4 +191,71 @@ t.test("uncertain private storage refuses log content without disclosing the ori
     });
 });
 
+t.test("ephemeral credentials read entropy without opening persistent controller state", () => {
+    let original = [ fs.open, storage.ensure, common.write_private_file ];
+    let requests = [];
+    storage.ensure = () => die("persistent storage accessed");
+    common.write_private_file = () => die("persistent storage written");
+    fs.open = (name, mode) => {
+        t.eq(name, "/dev/urandom");
+        t.eq(mode, "re");
+        return { read: (bytes) => { push(requests, bytes); return "0123456789abcdef0123456789abcdef"; }, close: () => true };
+    };
+    let value = secret.generate();
+    fs.open = original[0];
+    storage.ensure = original[1];
+    common.write_private_file = original[2];
+    t.eq(requests, [ 32 ]);
+    t.matches(value, /^[a-f0-9]{64}$/);
+    t.ok(value != sprintf("%064d", 0));
+});
+
+t.test("failed closure refuses both persisted and ephemeral credentials", () => {
+    for (let failure in [ "false", "throw" ])
+        isolated((path) => {
+            t.ok(common.write_private_file(path, VALUE));
+            let original = fs.open;
+            fs.open = (name, ...args) => {
+                let file = original(name, ...args);
+                if (file == null || (name != path && name != "/dev/urandom")) return file;
+                return { read: (bytes) => file.read(bytes), close: () => {
+                    file.close();
+                    if (failure == "throw") die("synthetic-secret");
+                    return false;
+                } };
+            };
+            let persisted = null;
+            let ephemeral = null;
+            try { secret.load(); }
+            catch (e) { persisted = e.message; }
+            try { secret.generate(); }
+            catch (e) { ephemeral = e.message; }
+            let redacted = secret.redactor()("synthetic-secret " + VALUE);
+            fs.open = original;
+            t.ok(persisted != null);
+            t.ok(ephemeral != null);
+            t.excludes(persisted, "synthetic-secret");
+            t.excludes(ephemeral, "synthetic-secret");
+            t.contains(redacted, "credential inspection failed");
+            t.excludes(redacted, "synthetic-secret");
+            t.excludes(redacted, VALUE);
+            t.eq(fs.readfile(path), VALUE);
+        });
+});
+
+t.test("ephemeral credentials refuse absent, short, zero and failed entropy reads", () => {
+    let original = fs.open;
+    for (let value in [ null, "short", b64dec("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="), "throw" ]) {
+        fs.open = (name, mode) => value == null ? null : {
+            read: () => { if (value == "throw") die("synthetic-secret"); return value; }, close: () => true
+        };
+        let failure = null;
+        try { secret.generate(); }
+        catch (e) { failure = e.message; }
+        fs.open = original;
+        t.ok(failure != null);
+        t.excludes(failure, "synthetic-secret");
+    }
+});
+
 t.done();

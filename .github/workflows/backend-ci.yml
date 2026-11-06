@@ -49,7 +49,7 @@ jobs:
           OPENWRT_BRANCH: ${{ matrix.openwrt }}
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential cmake git libjson-c-dev pkg-config
+          sudo apt-get install -y build-essential busybox cmake git libjson-c-dev pkg-config
           case "$OPENWRT_BRANCH" in
             24.10)
               uci_revision=16ff0badbde7e17ec3bd1f827ffe45922956cf86
