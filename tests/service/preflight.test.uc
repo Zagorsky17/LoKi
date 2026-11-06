@@ -157,6 +157,52 @@ t.test("inode substitution is rejected before reading data", () => {
     t.eq(value.error, "changed-during-read");
 });
 
+t.test("metadata close failures cannot turn a read into verified input", () => {
+    let root = fixture();
+    let path = root + "/data";
+    write(path, "synthetic-secret");
+    let open = fs.open;
+    for (let failure in [ "false", "throw" ]) {
+        fs.open = (name, mode) => {
+            let file = open(name, mode);
+            return { fileno: () => file.fileno(), read: (size) => file.read(size),
+                error: () => file.error(), close: () => {
+                    file.close();
+                    if (failure == "throw") die("synthetic-secret");
+                    return false;
+                } };
+        };
+        let result;
+        try { result = preflight.read_metadata(path, 32, root); }
+        catch (e) { result = { error: "unexpected-exception" }; }
+        fs.open = open;
+        t.eq(result.error, "read-failed");
+        t.excludes(sprintf("%J", result), "synthetic-secret");
+    }
+});
+
+t.test("a failed platform metadata close keeps the installation gate closed", () => {
+    let root = fixture();
+    fs.mkdir(root + "/etc", 0755);
+    let path = root + "/etc/openwrt_release";
+    write(path, "DISTRIB_ID='OpenWrt'\nDISTRIB_RELEASE='24.10.8'\n");
+    let open = fs.open;
+    fs.open = (name, mode) => {
+        let file = open(name, mode);
+        if (name != path) return file;
+        return { fileno: () => file.fileno(), read: (size) => file.read(size),
+            error: () => file.error(), close: () => { file.close(); return false; } };
+    };
+    readonly_probes({ stdout: "{}" });
+    let result;
+    try { result = preflight.collect(root); }
+    catch (e) { result = { observations: [] }; }
+    stub.restore();
+    fs.open = open;
+    t.ok(has(result, "incomplete", "openwrt-release-read-failed"));
+    t.eq(result.install_allowed, false);
+});
+
 t.test("untrusted file and ancestor permissions refuse before open", () => {
     let root = fixture();
     let path = root + "/usr/lib/opkg/status";

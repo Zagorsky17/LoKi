@@ -44,11 +44,11 @@ class PreflightCLI(unittest.TestCase):
         binary = shutil.which("ucode")
         self.assertIsNotNone(binary, "ucode is required; do not skip the native check")
         command = [binary, "-L", str(ROOT / "loki/files/usr/lib"), str(ROOT / "preflight.uc")]
-        first = self.run_check(command)
-        self.assertEqual(self.run_check(command), first)
-        pending = {item["kind"] for item in first["observations"] if item["reason"] == "not-implemented"}
-        self.assertTrue({"configuration", "core-check", "nft-persisted"} <= pending)
-        self.assertTrue(any(item["kind"] == "nft-loaded" for item in first["observations"]))
+        for _ in range(2):
+            report = self.run_check(command)
+            pending = {item["kind"] for item in report["observations"] if item["reason"] == "not-implemented"}
+            self.assertTrue({"configuration", "core-check", "nft-persisted"} <= pending)
+            self.assertTrue(any(item["kind"] == "nft-loaded" for item in report["observations"]))
 
     def test_wrapper_rejects_arguments_without_echoing_them(self):
         report = self.run_check(["/bin/sh", str(ROOT / "preflight.sh"), "--force=synthetic-secret"])

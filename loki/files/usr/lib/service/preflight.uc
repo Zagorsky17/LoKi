@@ -36,6 +36,11 @@ function same_file(a, b) {
         a.uid == b.uid && a.mode == b.mode && a.nlink == b.nlink;
 }
 
+function close_ok(file) {
+    try { return file.close() === true; }
+    catch (e) { return false; }
+}
+
 function read_metadata(path, limit, root) {
     root = root || "/";
     let base = fs.lstat(root);
@@ -71,16 +76,16 @@ function read_metadata(path, limit, root) {
     // Check the opened inode before reading: lstat alone cannot pin a pathname.
     let opened = fs.stat("/proc/self/fd/" + file.fileno());
     if (!same_file(before, opened)) {
-        file.close();
+        close_ok(file);
         return { error: "changed-during-read" };
     }
     fs.error();
     let data = file.read(limit + 1);
     let error = file.error();
     let after = fs.stat("/proc/self/fd/" + file.fileno());
-    file.close();
+    let closed = close_ok(file);
     let bytes = type(data) == "string" ? length(data) : limit + 1;
-    if (error != null || type(data) != "string")
+    if (error != null || type(data) != "string" || !closed)
         return { error: "read-failed", bytes };
     if (length(data) > limit)
         return { error: "size-limit", bytes };
