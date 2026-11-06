@@ -42,11 +42,29 @@ t.test("a fixed private UCI cursor parses a staged config without host overlays 
 t.test("without a verified core tag set the syntax may pass but validation stays incomplete", () => {
     uci.__reset();
     uci.__seed("loki", [ { ".name": "settings", ".type": "settings",
-        config_format: "loki", config_version: "2.0.0" } ]);
+        config_format: "loki", config_version: "2.0.0",
+        dns_server: [ "77.88.8.8" ], bootstrap_dns_server: [ "77.88.8.8" ] } ]);
     let result = reader.check("config settings 'settings'\n", scratch());
     t.ok(has(result, "checked", "uci-syntax-checked"));
     t.ok(has(result, "checked", "uci-schema-checked"));
+    t.ok(has(result, "checked", "uci-values-checked"));
     t.ok(has(result, "incomplete", "candidate-core-unverified"));
+});
+
+t.test("a current schema with invalid values cannot report checked candidate values", () => {
+    uci.__reset();
+    uci.__seed("loki", [ { ".name": "settings", ".type": "settings",
+        config_format: "loki", config_version: "2.0.0", dns_timeout: "synthetic-secret",
+        dns_server: [ "77.88.8.8" ], bootstrap_dns_server: [ "77.88.8.8" ] } ]);
+    let root = scratch();
+    let result = reader.check("config settings 'settings'\n", root);
+    t.ok(has(result, "checked", "uci-schema-checked"));
+    t.ok(!has(result, "checked", "uci-values-checked"));
+    t.ok(has(result, "incomplete", "candidate-config-values-invalid"));
+    t.excludes(sprintf("%J", result), "synthetic-secret");
+    t.eq(fs.lstat(root + "/config"), null);
+    t.eq(fs.lstat(root + "/delta"), null);
+    t.eq(uci.__commits(), []);
 });
 
 t.test("a foreign or unsupported candidate schema is refused without logging its values", () => {

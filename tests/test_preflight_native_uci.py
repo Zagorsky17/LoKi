@@ -3,6 +3,7 @@
 
 import json
 from pathlib import Path
+import resource
 import shutil
 import subprocess
 import sys
@@ -12,6 +13,11 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 LIBRARY = ROOT / "loki/files/usr/lib"
 DEFAULT = (ROOT / "loki/files/etc/config/loki").read_text()
+
+
+def limits():
+    resource.setrlimit(resource.RLIMIT_AS, (65536 * 1024, 65536 * 1024))
+    resource.setrlimit(resource.RLIMIT_CPU, (10, 10))
 
 
 class NativeUCI(unittest.TestCase):
@@ -30,6 +36,8 @@ class NativeUCI(unittest.TestCase):
         self.input.chmod(0o600)
         expression = '''
             let fs = require("fs");
+            global.system = () => die("unexpected external command");
+            fs.popen = () => die("unexpected external command");
             let uci = require("uci");
             let original = uci.cursor;
             let calls = 0;
@@ -48,7 +56,7 @@ class NativeUCI(unittest.TestCase):
         '''
         process = subprocess.run([self.binary, "-L", str(LIBRARY), "-e", expression,
                                   str(self.input), str(self.scratch)],
-                                 capture_output=True, text=True, timeout=20)
+                                 capture_output=True, text=True, timeout=15, preexec_fn=limits)
         self.assertEqual(process.returncode, 0, process.stderr)
         self.assertEqual(process.stderr, "", "native parser diagnostics must not disclose input")
         self.assertEqual(self.input.read_bytes(), data.encode())
@@ -63,12 +71,14 @@ class NativeUCI(unittest.TestCase):
             self.assertEqual(calls, 1)
             self.assertEqual(result, {("checked", "uci-syntax-checked"),
                                       ("checked", "uci-schema-checked"),
+                                      ("checked", "uci-values-checked"),
                                       ("incomplete", "candidate-core-unverified")})
 
     def test_quoted_values_lists_and_comments_are_native_uci_data(self):
         data = DEFAULT + '''
 # synthetic-secret comment
 config section 'example'
+    option action 'bypass'
     option label 'synthetic-secret label'
     list domains 'one.example'
     list domains 'two.example'
@@ -76,6 +86,7 @@ config section 'example'
         result, calls = self.check(data)
         self.assertEqual(calls, 1)
         self.assertIn(("checked", "uci-schema-checked"), result)
+        self.assertIn(("checked", "uci-values-checked"), result)
         self.assertIn(("incomplete", "candidate-core-unverified"), result)
 
     def test_foreign_newer_missing_and_unsupported_schemas(self):
@@ -107,6 +118,19 @@ config section 'example'
             result, calls = self.check(data)
             self.assertEqual(calls, 0)
             self.assertEqual(result, {("incomplete", reason)})
+
+    def test_bad_values_cannot_pass_a_valid_native_schema(self):
+        for data in (
+            DEFAULT.replace("dns_timeout '10s'", "dns_timeout 'synthetic-secret'"),
+            DEFAULT.replace("bootstrap_dns_server '77.88.8.8'", "bootstrap_dns_server 'https://synthetic-secret/dns-query'"),
+            DEFAULT + "\nconfig section 'example'\n option action 'synthetic-secret'\n",
+        ):
+            result, calls = self.check(data)
+            self.assertEqual(calls, 1)
+            self.assertIn(("checked", "uci-schema-checked"), result)
+            self.assertIn(("incomplete", "candidate-config-values-invalid"), result)
+            self.assertNotIn(("checked", "uci-values-checked"), result)
+            self.assertNotIn(("incomplete", "candidate-core-unverified"), result)
 
 
 if __name__ == "__main__":

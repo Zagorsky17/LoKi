@@ -124,6 +124,24 @@ function load() {
     item_sections = item_index_from_uci();
 }
 
+// Prepared validation must not replace the resident runtime index or load host UCI.
+function with_sections(sections, callback) {
+    let saved = item_sections;
+    item_sections = empty_item_sections();
+    let result;
+    try {
+        for (let section in sections)
+            add_item_section(item_sections, section[".type"], section);
+        result = callback();
+    }
+    catch (e) {
+        item_sections = saved;
+        die(e);
+    }
+    item_sections = saved;
+    return result;
+}
+
 function get_item_sections() {
     if (item_sections == null)
         item_sections = item_index_from_uci();
@@ -589,6 +607,7 @@ return {
     device_matchers,
     excluded_devices,
     load,
+    with_sections,
     is_connections_action,
     connection_link_items,
     subscription_items,
