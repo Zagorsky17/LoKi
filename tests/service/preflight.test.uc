@@ -3,6 +3,7 @@ let stub = require("stub");
 let fs = require("fs");
 let preflight = require("service.preflight");
 let uci = require("uci");
+let scope = require("service.preflight_scope");
 
 const RULE_QUERY4 = "exec /usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin LC_ALL=C timeout -s KILL 2 /sbin/ip -Numeric -j -4 rule list";
 const RULE_QUERY6 = replace(RULE_QUERY4, "-j -4", "-j -6");
@@ -664,6 +665,64 @@ t.test("route snapshots add only bounded hints and keep ownership and the instal
     t.eq(length(filter(commands, (command) => command == ROUTE_QUERY6)), 1);
     for (let value in [ "192.0.2", "private-device", "SYNTHETIC_ROUTE_CANARY" ])
         t.excludes(sprintf("%J", result), value);
+});
+
+t.test("the environment snapshot encloses every collector and cannot clear the global gate", () => {
+    for (let state in [ "checked", "incomplete" ]) {
+        let snapshot = scope.snapshot;
+        let check = scope.check;
+        let calls = [];
+        let token = {};
+        let result;
+        let error;
+        scope.snapshot = () => { push(calls, "before"); t.eq(stub.command_lines(), []); return token; };
+        scope.check = (first) => {
+            push(calls, "after");
+            t.eq(first, token);
+            t.eq(stub.command_lines(), expected_probes());
+            return { kind: "environment", object: "namespace-layout", state,
+                reason: state == "checked" ? "environment-pid1-relative-scope-checked" : "environment-scope-changed-during-read" };
+        };
+        try {
+            let root = fixture();
+            readonly_probes({ stdout: "{}" });
+            result = preflight.collect(root);
+        }
+        catch (e) { error = e; }
+        scope.snapshot = snapshot;
+        scope.check = check;
+        stub.restore();
+        if (error != null) die(error);
+        t.eq(calls, [ "before", "after" ]);
+        t.ok(has(result, state, state == "checked" ? "environment-pid1-relative-scope-checked" : "environment-scope-changed-during-read"));
+        t.ok(has(result, "incomplete", "initial-system-context-unverified"));
+        t.eq([ result.complete, result.install_allowed ], [ false, false ]);
+    }
+});
+
+t.test("report truncation retains the final scope failure and mandatory origin gap", () => {
+    let services = require("service.preflight_services");
+    let collect = services.collect;
+    let check = scope.check;
+    let result;
+    let error;
+    services.collect = () => {
+        let items = [];
+        for (let i = 0; i < 300; i++) push(items, { kind: "services", object: "fixture", state: "checked", reason: "fixture" });
+        return items;
+    };
+    scope.check = () => ({ kind: "environment", object: "namespace-layout", state: "incomplete",
+        reason: "environment-scope-changed-during-read" });
+    try { readonly_probes({ stdout: "{}" }); result = preflight.collect(fixture()); }
+    catch (e) { error = e; }
+    services.collect = collect;
+    scope.check = check;
+    stub.restore();
+    if (error != null) die(error);
+    t.eq(length(result.observations), 256);
+    for (let reason in [ "environment-scope-changed-during-read", "initial-system-context-unverified", "observation-count-limit" ])
+        t.ok(has(result, "incomplete", reason));
+    t.eq([ result.complete, result.install_allowed ], [ false, false ]);
 });
 
 t.done();

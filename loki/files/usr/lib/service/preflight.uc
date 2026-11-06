@@ -9,6 +9,7 @@ let rules_reader = require("service.preflight_rules");
 let nft_reader = require("service.preflight_nft");
 let resources_reader = require("service.preflight_resources");
 let config_reader = require("service.preflight_config");
+let scope_reader = require("service.preflight_scope");
 
 // Critical current package targets, not yet a complete install manifest.
 const TARGETS = [
@@ -188,6 +189,7 @@ function collect(root, manifest_path, config_path, scratch, source_root) {
     // The CLI always passes "/". A fixture root is only an in-process test seam.
     root = root == "/" ? "" : root;
     let observations = [];
+    let scope = scope_reader.snapshot();
     let candidate_format = null;
     let database_format = null;
     let format_status = null;
@@ -423,6 +425,8 @@ function collect(root, manifest_path, config_path, scratch, source_root) {
         push(observations, observation(kind, kind, "incomplete", "not-implemented"));
     if (config_path == null)
         push(observations, observation("configuration", "configuration", "incomplete", "not-implemented"));
+    push(observations, scope_reader.check(scope));
+    push(observations, observation("environment", "system-origin", "incomplete", "initial-system-context-unverified"));
     let conflict = false;
     for (let item in observations)
         if (item.state == "conflict")
