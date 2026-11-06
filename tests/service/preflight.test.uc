@@ -53,6 +53,8 @@ t.test("only released OpenWrt 24.10 and 25.12 satisfy the platform version check
             { state: "conflict", reason: "unsupported-openwrt-release" });
     t.eq(preflight.release_status("DISTRIB_ID='ImmortalWrt'\nDISTRIB_RELEASE='25.12.6'\n"),
         { state: "conflict", reason: "unsupported-openwrt-id" });
+    t.eq(preflight.release_status("DISTRIB_ID='OpenWrt'\nDISTRIB_RELEASE='25.12.6'\nDISTRIB_ARCH='aarch64_cortex-a53'\n"),
+        { state: "checked", reason: "openwrt-release-supported", architecture: "aarch64_cortex-a53" });
 });
 
 t.test("release metadata is parsed as data and rejects duplicates, truncation and injected syntax", () => {
@@ -60,6 +62,9 @@ t.test("release metadata is parsed as data and rejects duplicates, truncation an
         "DISTRIB_ID=''\nDISTRIB_RELEASE='24.10.8'\n", "DISTRIB_ID='OpenWrt'\nDISTRIB_RELEASE=''\n",
         "DISTRIB_ID='OpenWrt'\nDISTRIB_RELEASE='24.10.8'", "DISTRIB_ID='OpenWrt'\nDISTRIB_ID='OpenWrt'\nDISTRIB_RELEASE='24.10.8'\n",
         "DISTRIB_ID='OpenWrt'\nDISTRIB_RELEASE='24.10.8'\nDISTRIB_RELEASE='25.12.6'\n",
+        "DISTRIB_ID='OpenWrt'\nDISTRIB_RELEASE='24.10.8'\nDISTRIB_ARCH='x86_64'\nDISTRIB_ARCH='x86_64'\n",
+        "DISTRIB_ID='OpenWrt'\nDISTRIB_RELEASE='24.10.8'\nDISTRIB_ARCH=''\n",
+        "DISTRIB_ID='OpenWrt'\nDISTRIB_RELEASE='24.10.8'\nDISTRIB_ARCH='x86_64'; touch synthetic-secret\n",
         "DISTRIB_ID='OpenWrt'\nDISTRIB_RELEASE='24.10.8'; touch synthetic-secret\n",
         "DISTRIB_ID='OpenWrt'\nDISTRIB_RELEASE='24.10.8'\u0000\n",
         sprintf("%16385s", "x") ]) {

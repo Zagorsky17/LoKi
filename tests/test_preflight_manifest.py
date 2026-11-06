@@ -72,6 +72,47 @@ class ManifestHarness:
 
 
 class ManifestBoundary(ManifestHarness, unittest.TestCase):
+    def test_candidate_architecture_claims_refuse_mismatch_without_exposing_values(self):
+        self.write(self.root / "etc/openwrt_release",
+                   "DISTRIB_ID='OpenWrt'\nDISTRIB_RELEASE='25.12.6'\nDISTRIB_ARCH='x86_64'\n")
+        value = candidate()
+        core = copy.deepcopy(value["components"][0])
+        core.update(role="core", package="loki-core", architecture="x86_64")
+        core["artifact"]["name"] = "loki-core_1.0.0_x86_64.ipk"
+        core["files"][1]["path"] = "/synthetic-core"
+        value["components"].append(core)
+        matched = self.invoke(canonical(value), collect=True)
+        self.assertIn("artifact-architecture-unverified", [item["reason"] for item in matched["observations"]])
+        self.assertFalse(matched["install_allowed"])
+
+        value["components"][1]["architecture"] = "mips_24kc"
+        mismatch = self.invoke(canonical(value), collect=True)
+        self.assertEqual(mismatch["result"], "conflict")
+        self.assertIn("candidate-architecture-mismatch", [item["reason"] for item in mismatch["observations"]])
+        self.assertNotIn("mips_24kc", json.dumps(mismatch))
+        self.assertFalse(mismatch["install_allowed"])
+
+        value["components"][1]["architecture"] = "all"
+        self.assertIn("candidate-architecture-mismatch", [item["reason"] for item in
+                          self.invoke(canonical(value), collect=True)["observations"]])
+
+        self.write(self.root / "etc/openwrt_release",
+                   "DISTRIB_ID='OpenWrt'\nDISTRIB_RELEASE='25.12.6'\n")
+        self.assertIn("openwrt-architecture-unverified", [item["reason"] for item in
+                          self.invoke(canonical(value), collect=True)["observations"]])
+
+        self.write(self.root / "etc/openwrt_release",
+                   "DISTRIB_ID='OpenWrt'\nDISTRIB_RELEASE='25.12.6'\nDISTRIB_ARCH='x86_64'\n")
+        value["components"][0].update(architecture="noarch", format="apk")
+        value["components"][0]["artifact"]["name"] = "loki_1.0.0_noarch.apk"
+        value["components"][1].update(architecture="x86_64", format="apk")
+        value["components"][1]["artifact"]["name"] = "loki-core_1.0.0_x86_64.apk"
+        self.assertIn("artifact-architecture-unverified", [item["reason"] for item in
+                          self.invoke(canonical(value), collect=True)["observations"]])
+        value["components"][0]["architecture"] = "all"
+        self.assertIn("candidate-architecture-mismatch", [item["reason"] for item in
+                          self.invoke(canonical(value), collect=True)["observations"]])
+
     def test_canonical_ascii_and_integer_boundaries(self):
         value = candidate()
         component = value["components"][0]
