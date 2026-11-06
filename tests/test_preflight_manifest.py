@@ -72,6 +72,80 @@ class ManifestHarness:
 
 
 class ManifestBoundary(ManifestHarness, unittest.TestCase):
+    def test_candidate_format_must_match_the_safely_read_package_database(self):
+        for installed in ("ipk", "apk"):
+            opkg = self.root / "usr/lib/opkg/status"
+            apk = self.root / "lib/apk/db/installed"
+            opkg.unlink(missing_ok=True)
+            apk.unlink(missing_ok=True)
+            if installed == "ipk":
+                self.opkg(["/etc/banner"])
+            else:
+                self.write(apk, "P:base-files\nV:1.0-r1\nA:noarch\nS:1\nI:1\n\n")
+            for requested in ("ipk", "apk"):
+                value = candidate()
+                value["components"][0]["format"] = requested
+                value["components"][0]["artifact"]["name"] = "synthetic-secret." + requested
+                report = self.invoke(canonical(value), collect=True)
+                reason = "artifact-format-unverified" if installed == requested else "candidate-package-format-mismatch"
+                self.assertIn(reason, {item["reason"] for item in report["observations"]})
+                self.assertEqual(report["result"], "incomplete" if installed == requested else "conflict")
+                self.assertFalse(report["install_allowed"])
+                self.assertNotIn("synthetic-secret", json.dumps(report))
+
+    def test_unavailable_unsafe_or_ambiguous_database_cannot_establish_package_format(self):
+        value = candidate()
+        value["components"][0]["format"] = "apk"
+        value["components"][0]["artifact"]["name"] = "synthetic.apk"
+        status = self.root / "usr/lib/opkg/status"
+        for state in ("absent", "malformed", "writable", "symlink", "both"):
+            status.unlink(missing_ok=True)
+            if state == "malformed":
+                self.write(status, "synthetic-secret\n")
+            elif state in ("writable", "symlink", "both"):
+                self.opkg(["/etc/banner"])
+                if state == "writable":
+                    status.chmod(0o666)
+                elif state == "symlink":
+                    status.rename(status.with_suffix(".keep"))
+                    status.symlink_to(status.with_suffix(".keep"))
+                else:
+                    self.write(self.root / "lib/apk/db/installed", "P:base-files\nV:1\nA:noarch\n\n")
+            report = self.invoke(canonical(value), collect=True)
+            self.assertIn("package-format-unverified", {item["reason"] for item in report["observations"]}, state)
+            self.assertNotIn("candidate-package-format-mismatch", {item["reason"] for item in report["observations"]}, state)
+            self.assertFalse(report["install_allowed"])
+            self.assertNotIn("synthetic-secret", json.dumps(report))
+
+    def test_changed_database_cannot_establish_a_package_format_conflict(self):
+        expression = '''let fs=require("fs"); let p=require("service.preflight");
+let open=fs.open; let calls=0; let path=ARGV[2];
+fs.open=(name, mode)=>{ if(name==path && ++calls==2) fs.writefile(path,"synthetic-secret\\n"); return open(name,mode); };
+print(sprintf("%J",p.collect(ARGV[0],ARGV[1])));'''
+        for installed in ("ipk", "apk"):
+            opkg = self.root / "usr/lib/opkg/status"
+            apk = self.root / "lib/apk/db/installed"
+            opkg.unlink(missing_ok=True)
+            apk.unlink(missing_ok=True)
+            if installed == "ipk":
+                self.opkg(["/etc/banner"])
+            else:
+                self.write(apk, "P:base-files\nV:1\nA:noarch\n\n")
+            value = candidate()
+            requested = "apk" if installed == "ipk" else "ipk"
+            value["components"][0]["format"] = requested
+            value["components"][0]["artifact"]["name"] = "synthetic." + requested
+            self.write(self.manifest, canonical(value))
+            result = subprocess.run([self.binary, "-L", str(ROOT / "loki/files/usr/lib"), "-e", expression,
+                                     str(self.root), str(self.manifest), str(opkg if installed == "ipk" else apk)],
+                                    capture_output=True, text=True, timeout=20)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            report = json.loads(result.stdout)
+            self.assertIn("package-format-unverified", {item["reason"] for item in report["observations"]})
+            self.assertNotIn("candidate-package-format-mismatch", {item["reason"] for item in report["observations"]})
+            self.assertFalse(report["install_allowed"])
+            self.assertNotIn("synthetic-secret", json.dumps(report))
+
     def test_candidate_architecture_claims_refuse_mismatch_without_exposing_values(self):
         self.write(self.root / "etc/openwrt_release",
                    "DISTRIB_ID='OpenWrt'\nDISTRIB_RELEASE='25.12.6'\nDISTRIB_ARCH='x86_64'\n")
@@ -224,6 +298,8 @@ class ManifestBoundary(ManifestHarness, unittest.TestCase):
 
     def test_observation_count_is_bounded_without_losing_conflict_result(self):
         value = candidate()
+        value["components"][0]["format"] = "apk"
+        value["components"][0]["artifact"]["name"] = "synthetic.apk"
         paths = [f"/candidate-{i}" for i in range(300)]
         value["components"][0]["files"] = [entry("/", True)] + [entry(path) for path in paths]
         self.opkg(paths)
@@ -231,6 +307,7 @@ class ManifestBoundary(ManifestHarness, unittest.TestCase):
         self.assertEqual(result["result"], "conflict")
         self.assertEqual(len(result["observations"]), 256)
         self.assertEqual(result["observations"][-1]["reason"], "observation-count-limit")
+        self.assertIn("candidate-package-format-mismatch", {item["reason"] for item in result["observations"]})
         self.assertTrue(any(item["kind"] == "configuration" and item["state"] == "incomplete"
                             for item in result["observations"]))
         self.assertFalse(result["install_allowed"])

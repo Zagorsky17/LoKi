@@ -188,6 +188,9 @@ function collect(root, manifest_path, config_path, scratch, source_root) {
     // The CLI always passes "/". A fixture root is only an in-process test seam.
     root = root == "/" ? "" : root;
     let observations = [];
+    let candidate_format = null;
+    let database_format = null;
+    let format_status = null;
     let release = read_metadata(root + "/etc/openwrt_release", 16384, root || "/");
     let platform = release.error == null ? release_status(release.data) :
         { state: "incomplete", reason: "openwrt-release-" + release.error };
@@ -209,6 +212,10 @@ function collect(root, manifest_path, config_path, scratch, source_root) {
         if (manifest.error != null)
             push(observations, observation("candidate-manifest", "candidate-manifest", "incomplete", manifest.error));
         else {
+            candidate_format = manifest.format;
+            // Keep the compatibility reason ahead of file observations that may be truncated.
+            format_status = observation("candidate-manifest", "package-format", "incomplete", "package-format-unverified");
+            push(observations, format_status);
             if (platform.architecture == null)
                 push(observations, observation("candidate-manifest", "architecture", "incomplete", "openwrt-architecture-unverified"));
             else {
@@ -283,8 +290,10 @@ function collect(root, manifest_path, config_path, scratch, source_root) {
             let final_read = read_metadata(path, length(read.data), root || "/");
             if (final_read.error != null || read.data != final_read.data)
                 push(observations, observation("ownership", "apk-installed", "incomplete", "apk-changed-or-unavailable-on-recheck"));
-            else
+            else {
+                database_format = "apk";
                 push(observations, observation("ownership", "installed-apk-candidate-files", "checked", "metadata-read-complete"));
+            }
         }
     }
     else if (status == null) {
@@ -348,11 +357,18 @@ function collect(root, manifest_path, config_path, scratch, source_root) {
                 complete = false;
                 failures["status-changed-or-unavailable-on-recheck"] = "opkg-status";
             }
+            else if (packages != null)
+                database_format = "ipk";
         }
         for (let reason in sort(keys(failures)))
             push(observations, observation("ownership", failures[reason], "incomplete", reason));
         if (complete)
             push(observations, observation("ownership", "installed-opkg-candidate-files", "checked", "metadata-read-complete"));
+    }
+    if (format_status != null && database_format != null) {
+        let mismatch = candidate_format != database_format;
+        format_status.state = mismatch ? "conflict" : "incomplete";
+        format_status.reason = mismatch ? "candidate-package-format-mismatch" : "artifact-format-unverified";
     }
     for (let item in files_reader.collect(root || "/", file_targets))
         push(observations, observation("files", labels[item.path], item.state, item.reason));
