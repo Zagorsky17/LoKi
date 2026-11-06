@@ -22,4 +22,15 @@ t.test("a public address is one outside every reserved range", () => {
         t.ok(!ip.valid_public_ip(value), value);
 });
 
+t.test("embedded NUL never turns an address or prefix into its valid prefix", () => {
+    for (let value in [ "192.0.2.1\u0000private", "8.8.8.8\u0000", "2001:db8::1\u0000x",
+        "::ffff:192.0.2.1\u0000x", "192.0.2.0/24\u0000x", "2001:db8::/64\u0000x" ]) {
+        t.eq(ip.ip_family(value), 0);
+        t.eq(ip.valid_ip_or_cidr(value), false);
+        t.eq(ip.valid_public_ip(value), false);
+    }
+    t.eq(ip.prefix_contains("192.0.2.0/24\u0000x", "192.0.2.1"), false);
+    t.eq(ip.prefix_contains("192.0.2.0/24", "192.0.2.1\u0000x"), false);
+});
+
 t.done();

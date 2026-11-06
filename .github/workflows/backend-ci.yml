@@ -150,7 +150,7 @@ jobs:
       - name: Check bounded resource snapshots
         run: python3 -B tests/test_preflight_resources.py
 
-      - name: Check bounded policy rule discovery
+      - name: Check bounded policy rule and route discovery
         shell: bash
         run: |
           parent_ns=$(readlink /proc/self/ns/net)

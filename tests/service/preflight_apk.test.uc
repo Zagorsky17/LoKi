@@ -79,10 +79,13 @@ t.test("APK collector compares exact candidate paths and does not execute PM or 
     let before = fs.readfile(path);
     let query4 = "exec /usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin LC_ALL=C timeout -s KILL 2 /sbin/ip -Numeric -j -4 rule list";
     let query6 = replace(query4, "-j -4", "-j -6");
+    let route4 = replace(query4, "rule list", "route show table all");
+    let route6 = replace(route4, "-j -4", "-j -6");
     let resources = "exec /usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin LC_ALL=C timeout -s KILL 2 /bin/df -Pk / /tmp";
     let nft = "exec /usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin LC_ALL=C timeout -s KILL 1 /usr/sbin/nft -j list tables";
     stub.commands([[ resources, { stdout: "Filesystem 1024-blocks Used Available Capacity Mounted on\nrootfs 1000 400 500 45% /\ntmpfs 2000 100 1900 5% /tmp\n" } ],
         [ query4, { stdout: "[]" } ], [ query6, { stdout: "[]" } ],
+        [ route4, { stdout: "[]" } ], [ route6, { stdout: "[]" } ],
         [ nft, { stdout: '{"nftables":[{"metainfo":{"json_schema_version":1}}]}' } ],
         [ "exec timeout", { stdout: "{}" } ]]);
     let first = preflight.collect(root);
@@ -91,10 +94,13 @@ t.test("APK collector compares exact candidate paths and does not execute PM or 
     t.eq(first.result, "incomplete");
     t.eq(first.install_allowed, false);
     t.ok(has(first, "checked", "metadata-read-complete"));
+    t.eq(length(filter(first.observations, (item) => item.kind == "policy-routes" && item.state == "checked" &&
+        (item.object == "ipv4" || item.object == "ipv6"))), 2);
     t.eq(fs.readfile(path), before);
     t.eq(stub.command_lines(), [ "exec timeout -s KILL 5 ubus call service list {\"verbose\":true}",
-        query4, query4, query6, query6, nft, nft, resources,
-        "exec timeout -s KILL 5 ubus call service list {\"verbose\":true}", query4, query4, query6, query6, nft, nft, resources ]);
+        query4, query4, query6, query6, route4, route4, route6, route6, nft, nft, resources,
+        "exec timeout -s KILL 5 ubus call service list {\"verbose\":true}", query4, query4, query6, query6,
+        route4, route4, route6, route6, nft, nft, resources ]);
 });
 
 t.test("APK conflicting owners survive and names never establish own provenance", () => {

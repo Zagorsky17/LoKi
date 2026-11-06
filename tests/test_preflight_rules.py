@@ -1,4 +1,4 @@
-"""Read real policy rules in an anonymous test namespace, as an ordinary user."""
+"""Read real policy rules and routes in an anonymous namespace as an ordinary user."""
 import json
 import os
 from pathlib import Path
@@ -16,6 +16,8 @@ PARENT_NS = 'LOKI_RULE_TEST_PARENT_NS'
 QUERY4 = ('exec /usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin LC_ALL=C '
           'timeout -s KILL 2 /sbin/ip -Numeric -j -4 rule list 2>/dev/null')
 QUERY6 = QUERY4.replace('-j -4', '-j -6')
+ROUTE_QUERY4 = QUERY4.replace('rule list', 'route show table all')
+ROUTE_QUERY6 = ROUTE_QUERY4.replace('-j -4', '-j -6')
 
 
 def prepare_namespace(parent, user):
@@ -34,6 +36,17 @@ def prepare_namespace(parent, user):
     ]
     for family, *args in fixtures:
         subprocess.run(['/sbin/ip', family, 'rule', 'add', *args], check=True, timeout=5)
+    for args in [
+        ['link', 'set', 'lo', 'up'],
+        ['-4', 'address', 'add', '192.0.2.1/24', 'dev', 'lo'],
+        ['-6', 'address', 'add', '2001:db8::1/64', 'dev', 'lo', 'nodad'],
+        ['-4', 'route', 'replace', '192.0.2.0/24', 'dev', 'lo'],
+        ['-6', 'route', 'replace', '2001:db8::/64', 'dev', 'lo'],
+        ['-4', 'route', 'add', 'local', 'default', 'dev', 'lo', 'table', '105'],
+        ['-6', 'route', 'add', 'local', 'default', 'dev', 'lo', 'table', '105'],
+        ['-4', 'route', 'add', 'blackhole', '198.51.100.0/24', 'table', '200'],
+    ]:
+        subprocess.run(['/sbin/ip', *args], check=True, timeout=5)
     worker = ['/usr/sbin/runuser', '-u', user, '--', '/usr/bin/env',
               'PATH=/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin', PARENT_NS + '=' + parent,
               sys.executable, '-B', str(Path(__file__).resolve())]
@@ -66,7 +79,7 @@ class RuleHarness(unittest.TestCase):
     def reasons(result, family=None):
         return {x['reason'] for x in result if family is None or x['object'] == family}
 
-    def synthetic_pipe(self, mode):
+    def synthetic_pipe(self, mode, routes=False):
         writer = self.root / 'writer.py'
         writer.write_text('''import sys,time
 mode=sys.argv[1]
@@ -78,10 +91,11 @@ else:sys.stdout.write('[]'+' '*(262144-2+(mode=='extra')))
         writer.chmod(0o600)
         command = shlex.join(['/usr/bin/env', '-i', 'PATH=/usr/local/bin:/usr/bin:/bin',
                               'timeout', '-s', 'KILL', '2', sys.executable, '-B', str(writer), mode])
-        return self.run_ucode('''let open=fs.popen;let allowed=json(ARGV[0]);
+        program = '''let open=fs.popen;let allowed=json(ARGV[0]);
             fs.popen=(command,mode)=>{if(index(allowed,command)<0)die("unexpected query");
-                return open("exec "+ARGV[1],mode);};print(sprintf("%J",p.collect()));''',
-                              json.dumps([QUERY4, QUERY6]), command)
+                return open("exec "+ARGV[1],mode);};print(sprintf("%J",p.METHOD()));'''
+        return self.run_ucode(program.replace('METHOD', 'collect_routes' if routes else 'collect'),
+                              json.dumps([ROUTE_QUERY4, ROUTE_QUERY6] if routes else [QUERY4, QUERY6]), command)
 
 class RuleProbe(RuleHarness):
     def test_real_two_family_snapshots_keep_hints_and_mandatory_gaps(self):
@@ -129,6 +143,60 @@ class RuleProbe(RuleHarness):
         self.assertIn('policy-rule-query-failed', self.reasons(result, 'ipv6'))
 
 
+class RouteProbe(RuleHarness):
+    def test_real_route_snapshots_preserve_tables_and_do_not_mutate_the_namespace(self):
+        commands = [['/sbin/ip', '-Numeric', '-j', family, 'route', 'show', 'table', 'all'] for family in ['-4', '-6']]
+        before = [subprocess.check_output(command, text=True, timeout=5) for command in commands]
+        result = self.run_ucode('print(sprintf("%J",p.collect_routes()));')
+        self.assertEqual(sum(row['reason'] == 'policy-route-snapshot-read-complete' for row in result), 2)
+        for name in ['ipv4-candidate-table', 'ipv6-candidate-table']:
+            self.assertTrue(any(row['object'] == name and row['reason'] == 'policy-route-candidate-table-unverified' for row in result))
+        self.assertIn('policy-routes-ownership-configuration-unverified', self.reasons(result))
+        self.assertFalse(any(row['state'] == 'conflict' for row in result))
+        try:
+            init_namespace = os.readlink('/proc/1/ns/net')
+        except OSError:
+            expected = 'policy-route-namespace-unavailable'
+        else:
+            expected = ('policy-route-network-namespace-checked' if init_namespace == os.readlink('/proc/self/ns/net')
+                        else 'policy-route-noninitial-network-namespace')
+        self.assertTrue(any(row['object'] == 'network-namespace' and row['reason'] == expected for row in result))
+        self.assertNotIn('net:[', json.dumps(result))
+        self.assertNotIn('192.0.2', json.dumps(result))
+        self.assertNotIn('2001:db8', json.dumps(result))
+        self.assertEqual([subprocess.check_output(command, text=True, timeout=5) for command in commands], before)
+
+    def test_native_numeric_types_and_implicit_main_table_survive_parsing(self):
+        for family, number in [('-4', 4), ('-6', 6)]:
+            native = subprocess.check_output(['/sbin/ip', '-Numeric', '-j', family, 'route', 'show', 'table', 'all'], text=True, timeout=5)
+            parsed = self.run_ucode('let r=p.parse_routes(ARGV[0],int(ARGV[1]));if(r.error)die(r.error);print(sprintf("%J",r.routes));', native, number)
+            self.assertTrue(any(row['table'] == 105 and row['type'] == 2 for row in parsed))
+            self.assertTrue(any(row['table'] == 254 and row['type'] == 1 for row in parsed))
+            if number == 4:
+                self.assertTrue(any(row['table'] == 200 and row['type'] == 6 for row in parsed))
+
+    def test_real_route_pipe_checks_the_exact_byte_boundary(self):
+        result = self.synthetic_pipe('edge', routes=True)
+        self.assertEqual(sum(row['reason'] == 'policy-route-snapshot-read-complete' for row in result), 2)
+        result = self.synthetic_pipe('extra', routes=True)
+        self.assertIn('policy-route-response-size-limit', self.reasons(result))
+        self.assertNotIn('policy-route-snapshot-read-complete', self.reasons(result))
+
+    def test_real_bad_route_data_and_nonzero_close_are_private_failures(self):
+        for mode, reason in [('error', 'policy-route-query-failed'), ('private', 'policy-route-json-invalid')]:
+            result = self.synthetic_pipe(mode, routes=True)
+            self.assertIn(reason, self.reasons(result))
+            self.assertNotIn('policy-route-snapshot-read-complete', self.reasons(result))
+            self.assertNotIn('SYNTHETIC_PRIVATE_CANARY', json.dumps(result))
+
+    def test_actual_route_probe_timeout_is_bounded(self):
+        started = time.monotonic()
+        result = self.synthetic_pipe('slow', routes=True)
+        self.assertLess(time.monotonic() - started, 12)
+        self.assertIn('policy-route-query-failed', self.reasons(result, 'ipv4'))
+        self.assertIn('policy-route-query-failed', self.reasons(result, 'ipv6'))
+
+
 class UnsupportedProbe(RuleHarness):
     def test_real_source_specific_rule_stays_incomplete(self):
         result = self.run_ucode('print(sprintf("%J",p.collect()));')
@@ -143,4 +211,4 @@ if __name__ == '__main__':
         raise SystemExit('Run on Linux inside the controlled test namespace')
     if len(sys.argv) == 4 and sys.argv[1] == '--prepare':
         raise SystemExit(prepare_namespace(sys.argv[2], sys.argv[3]))
-    unittest.main(defaultTest='RuleProbe')
+    unittest.main(defaultTest=['RuleProbe', 'RouteProbe'])

@@ -380,6 +380,8 @@ function collect(root, manifest_path, config_path, scratch, source_root) {
         push(observations, item);
     for (let item in rules_reader.collect())
         push(observations, item);
+    for (let item in rules_reader.collect_routes())
+        push(observations, item);
     for (let item in nft_reader.collect())
         push(observations, item);
     for (let item in resources_reader.collect(root || "/"))

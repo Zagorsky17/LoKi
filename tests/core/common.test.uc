@@ -12,7 +12,7 @@ t.test("as_string keeps strings and turns null into an empty string", () => {
 t.test("durations follow Go syntax, as loki-core reads them", () => {
     let cases = [
         [ "3m", 180 ], [ "30m", 1800 ], [ "1h30m", 5400 ], [ "1d", 86400 ], [ "1.5s", 2 ],
-        [ "90", null ], [ "bogus", null ], [ "", null ], [ "0s", null ]
+        [ "90", null ], [ "bogus", null ], [ "", null ], [ "0s", null ], [ "1h\u0000private", null ]
     ];
     for (let entry in cases)
         t.eq(common.duration_to_seconds(entry[0]), entry[1], entry[0]);
@@ -23,6 +23,13 @@ t.test("parse_number reads hex marks and decimals only", () => {
     t.eq(common.parse_number("105"), 105);
     t.eq(common.parse_number("0x"), null);
     t.eq(common.parse_number("12a"), null);
+});
+
+t.test("numeric parsing rejects embedded NUL before native string operations", () => {
+    for (let value in [ "105\u0000", "105\u0000private", "\u0000105", "0x1\u0000", "0x1\u0000f", " 1\u0000x " ])
+        t.eq(common.parse_number(value), null);
+    t.eq(common.parse_number(" \t0x000a\n"), 10);
+    t.eq(common.parse_number(105), 105);
 });
 
 t.test("option joins lists and falls back for a missing key", () => {
@@ -44,6 +51,7 @@ t.test("bool_option accepts the UCI spellings of true", () => {
     for (let value in [ "1", "true", "yes", "on" ])
         t.ok(common.bool_option({ b: value }, "b"), value);
     t.ok(!common.bool_option({ b: "0" }, "b", true));
+    t.ok(!common.bool_option({ b: "1\u0000private" }, "b", false));
     t.ok(common.bool_option({}, "b", true), "missing key takes the fallback");
     t.ok(common.bool_option({ b: "" }, "b", true), "an empty value is one nobody set, as in UCI");
     t.ok(!common.bool_option({ b: "" }, "b", false));
@@ -53,6 +61,13 @@ t.test("int_option takes digits only and falls back otherwise", () => {
     t.eq(common.int_option({ n: "12" }, "n", 5), 12);
     t.eq(common.int_option({ n: "12abc" }, "n", 5), 5);
     t.eq(common.int_option({}, "n", 7), 7);
+    for (let value in [ "12\u0000", "12\u0000private", "\u000012" ]) {
+        t.eq(common.int_option({ n: value }, "n", 5), 5);
+        t.eq(common.int_option({}, "n", value), 0);
+    }
+    t.eq(common.int_option({ n: "012" }, "n", 5), 12);
+    t.eq(common.int_option({ n: " 12" }, "n", "7"), 7);
+    t.eq(common.int_option({ n: "0x12" }, "n", 5), 5);
 });
 
 t.test("signal_from_status decodes both ways a killed command is reported", () => {
@@ -86,6 +101,9 @@ t.test("own_pid names this process and pid_alive knows it is running", () => {
     t.ok(common.pid_alive(pid));
     t.ok(!common.pid_alive("0"));
     t.ok(!common.pid_alive("abc"));
+    t.ok(!common.pid_alive(pid + "\u0000"));
+    t.ok(!common.pid_alive(pid + "\u0000private"));
+    t.ok(!common.pid_alive("\u0000" + pid));
 });
 
 t.done();
