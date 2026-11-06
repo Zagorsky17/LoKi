@@ -81,4 +81,36 @@ t.test("metadata and creation errors fail closed without changing existing paren
     t.eq(fs.lstat(dir + "/new"), null);
 });
 
+t.test("process owner inspection closes on read failure and refuses uncertain close", () => {
+    let dir = stub.tmpdir();
+    let original = fs.open;
+    for (let mode in [ "read-throw", "close-false", "close-throw" ]) {
+        let closes = 0;
+        fs.open = (name, flags) => {
+            let file = original(name, flags);
+            if (name != "/proc/self/status" || file == null) return file;
+            return {
+                read: (size) => { if (mode == "read-throw") die("synthetic-private-value"); return file.read(size); },
+                close: () => {
+                    closes++;
+                    let result = file.close();
+                    if (mode == "close-false") return false;
+                    if (mode == "close-throw") die("synthetic-private-value");
+                    return result;
+                }
+            };
+        };
+        let failure;
+        try {
+            let refusal = t.throws(() => cache.ensure(path_settings(dir + "/new/cache.db")));
+            t.eq(closes, 1, mode);
+            t.eq(index(refusal.message, "synthetic-private-value"), -1);
+            t.eq(fs.lstat(dir + "/new"), null);
+        }
+        catch (e) { failure = e; }
+        fs.open = original;
+        if (failure != null) die(failure.message);
+    }
+});
+
 t.done();

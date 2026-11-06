@@ -92,6 +92,8 @@ build_i18n_root "$2/i18n" "$2/po2lmo"
                 for forbidden in (b'/rules/disable', b'/upgrade/', b'/backend', b'?token=', b'serviceWorker', b'127.0.0.1:9090'):
                     self.assertNotIn(forbidden, scripts)
                 self.assertFalse((work / 'app/www/cgi-bin/luci/loki-gateway').exists())
+                self.assertEqual(list((work / 'app/etc/uci-defaults').glob('*')), [],
+                                 'the SDK uci-defaults runner commits unrelated pending settings')
                 self.assertTrue((work / 'i18n/usr/lib/lua/luci/i18n/loki.ru.lmo').is_file())
                 self.assertFalse((work / 'i18n/etc/uci-defaults').exists(),
                                  'installing the LoKi locale must not write global LuCI settings')

@@ -63,11 +63,11 @@ if [[ ! "$SB_REQUIRED_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+-r[0-9]+$ ]] ||
   exit 1
 fi
 # The generated configuration requires the supported core and its LoKi fixes.
-# APK says ip: apk refuses ip-tiny beside ip-full, yet takes it for ip; opkg takes ip-full for ip
-BACKEND_DEPENDS_IPK="libc, ca-bundle, ucode, ucode-mod-fs, ucode-mod-resolv, ucode-mod-socket, ucode-mod-ubus, ucode-mod-uloop, ucode-mod-uci, uclient-fetch, kmod-nft-tproxy, nftables, kmod-nft-nat, ip-tiny, loki-core (>= ${SB_REQUIRED_VERSION})"
+# Both iproute2 variants provide ip; do not force replacement of the installed variant.
+BACKEND_DEPENDS_IPK="libc, ca-bundle, ucode, ucode-mod-fs, ucode-mod-resolv, ucode-mod-socket, ucode-mod-ubus, ucode-mod-uloop, ucode-mod-uci, uclient-fetch, kmod-nft-tproxy, nftables, kmod-nft-nat, ip, loki-core (>= ${SB_REQUIRED_VERSION})"
 BACKEND_DEPENDS_APK="ca-bundle ip kmod-nft-nat kmod-nft-tproxy libc nftables uclient-fetch ucode ucode-mod-fs ucode-mod-resolv ucode-mod-socket ucode-mod-ubus ucode-mod-uci ucode-mod-uloop loki-core>=${SB_REQUIRED_VERSION}"
 # The app calls the backend's ubus object, so it needs a backend at least as new;
-# the feed Makefile's DEPENDS cannot express a version.
+# the feed Makefile uses EXTRA_DEPENDS for the same version constraints.
 APP_DEPENDS_IPK="libc, luci-base, loki (>= ${RELEASE_VERSION})"
 APP_DEPENDS_APK="libc luci-base loki>=${RELEASE_VERSION}"
 
@@ -292,7 +292,6 @@ build_app_root() {
   install -m 0644 "$ROOT_DIR/yacd-loki/licenses/THIRD_PARTY_INVENTORY.json" "$output_root/usr/share/licenses/luci-app-loki/YACD-THIRD-PARTY-INVENTORY"
 
   normalize_package_root_modes "$output_root"
-  find "$output_root/etc/uci-defaults" -type f -exec chmod 0755 {} + 2>/dev/null || true
 }
 
 build_i18n_root() {
@@ -370,12 +369,9 @@ LOKI_BYTECODE_VALIDATION_TTL=0 /usr/bin/loki package_postinst
 EOF
 
   cat > "$control_dir/prerm" <<'EOF'
-#!/usr/bin/ucode
-
-if (getenv("IPKG_INSTROOT") == null || getenv("IPKG_INSTROOT") == "")
-	system("/usr/bin/loki package_prerm " + (ARGV[0] || "") + " >/dev/null 2>&1");
-
-exit(0);
+#!/bin/sh
+[ -n "${IPKG_INSTROOT}" ] && exit 0
+/usr/bin/loki package_prerm "${1:-remove}" >/dev/null 2>&1
 EOF
 
   chmod 0755 "$control_dir/postinst" "$control_dir/prerm"
@@ -404,17 +400,14 @@ EOF
   cat > "$control_dir/postinst" <<'EOF'
 #!/bin/sh
 [ "${IPKG_NO_SCRIPT}" = "1" ] && exit 0
-[ -s ${IPKG_INSTROOT}/lib/functions.sh ] || exit 0
-. ${IPKG_INSTROOT}/lib/functions.sh
-default_postinst $0 $@
+[ -n "${IPKG_INSTROOT}" ] && exit 0
+/usr/bin/loki luci_postinst >/dev/null 2>&1
 EOF
 
   cat > "$control_dir/prerm" <<'EOF'
 #!/bin/sh
-[ -s ${IPKG_INSTROOT}/lib/functions.sh ] || exit 0
-. ${IPKG_INSTROOT}/lib/functions.sh
-[ -n "${IPKG_INSTROOT}" ] || /usr/bin/loki luci_prerm >/dev/null 2>&1 || true
-default_prerm $0 $@
+[ -n "${IPKG_INSTROOT}" ] && exit 0
+/usr/bin/loki luci_prerm >/dev/null 2>&1
 EOF
 
   chmod 0755 "$control_dir/postinst" "$control_dir/prerm"
@@ -510,19 +503,15 @@ exit(0);
 EOF
 
   cat > "$scripts_dir/backend-pre-deinstall.sh" <<'EOF'
-#!/usr/bin/ucode
-
-if (getenv("IPKG_INSTROOT") == null || getenv("IPKG_INSTROOT") == "")
-	system("/usr/bin/loki package_prerm remove >/dev/null 2>&1");
-
-exit(0);
+#!/bin/sh
+[ -n "${IPKG_INSTROOT}" ] && exit 0
+/usr/bin/loki package_prerm remove >/dev/null 2>&1
 EOF
 
   cat > "$scripts_dir/backend-pre-upgrade.sh" <<'EOF'
-#!/usr/bin/ucode
-if (getenv("IPKG_INSTROOT") == null || getenv("IPKG_INSTROOT") == "")
-    exit(system("/usr/bin/loki package_prerm upgrade >/dev/null 2>&1"));
-exit(0);
+#!/bin/sh
+[ -n "${IPKG_INSTROOT}" ] && exit 0
+/usr/bin/loki package_prerm upgrade >/dev/null 2>&1
 EOF
 
   cat > "$scripts_dir/backend-post-upgrade.sh" <<'EOF'
@@ -548,23 +537,14 @@ EOF
   cat > "$scripts_dir/app-post-install.sh" <<'EOF'
 #!/bin/sh
 [ "${IPKG_NO_SCRIPT}" = "1" ] && exit 0
-[ -s ${IPKG_INSTROOT}/lib/functions.sh ] || exit 0
-. ${IPKG_INSTROOT}/lib/functions.sh
-export root="${IPKG_INSTROOT}"
-export pkgname="luci-app-loki"
-add_group_and_user
-default_postinst
+[ -n "${IPKG_INSTROOT}" ] && exit 0
+/usr/bin/loki luci_postinst >/dev/null 2>&1
 EOF
 
   cat > "$scripts_dir/app-pre-deinstall.sh" <<'EOF'
 #!/bin/sh
-[ -s ${IPKG_INSTROOT}/lib/functions.sh ] || exit 0
-. ${IPKG_INSTROOT}/lib/functions.sh
-export root="${IPKG_INSTROOT}"
-export pkgname="luci-app-loki"
-[ -n "${IPKG_INSTROOT}" ] || /usr/bin/loki luci_prerm >/dev/null 2>&1 || true
-default_prerm
-exit 0
+[ -n "${IPKG_INSTROOT}" ] && exit 0
+/usr/bin/loki luci_prerm >/dev/null 2>&1
 EOF
 
   cat > "$scripts_dir/app-pre-upgrade.sh" <<'EOF'
@@ -574,14 +554,9 @@ EOF
 
   cat > "$scripts_dir/app-post-upgrade.sh" <<'EOF'
 #!/bin/sh
-export PKG_UPGRADE=1
 [ "${IPKG_NO_SCRIPT}" = "1" ] && exit 0
-[ -s ${IPKG_INSTROOT}/lib/functions.sh ] || exit 0
-. ${IPKG_INSTROOT}/lib/functions.sh
-export root="${IPKG_INSTROOT}"
-export pkgname="luci-app-loki"
-add_group_and_user
-default_postinst
+[ -n "${IPKG_INSTROOT}" ] && exit 0
+/usr/bin/loki luci_postinst >/dev/null 2>&1
 EOF
 
   chmod 0755 "$scripts_dir"/app-*.sh

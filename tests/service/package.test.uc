@@ -7,6 +7,7 @@ let nft = require("nft.apply");
 let constants = require("core.constants");
 
 let dir = stub.tmpdir();
+fs.chmod(dir, 0700);
 let init = dir + "/loki-init";
 let state_init = dir + "/loki-state";
 let firewall_init = dir + "/firewall";
@@ -37,12 +38,21 @@ function runtime_left() {
     return map(pkg.paths.runtime, (path) => fs.stat(path) != null);
 }
 
+function with_cleanup(fn, cleanup) {
+    let result, failure;
+    try { result = fn(); }
+    catch (e) { failure = e; }
+    cleanup();
+    if (failure != null) die(failure.message);
+    return result;
+}
+
 function run(fn, handlers) {
     stub.commands([ ...(handlers ?? []), [ () => true, {} ] ]);
-    let status = fn();
-    let commands = stub.command_lines();
-    stub.restore();
-    return { status, commands };
+    return with_cleanup(() => {
+        let status = fn();
+        return { status, commands: stub.command_lines() };
+    }, () => stub.restore());
 }
 
 t.test("a removal takes autostart away, stops the service, then drops the routing table name and what it kept in RAM", () => {
@@ -65,6 +75,7 @@ t.test("an upgrade keeps autostart, the table name and the runtime files and rem
     let result = run(() => pkg.prerm("upgrade"), [ [ init + " status", { status: 0 } ] ]);
     t.eq(result.commands, [ init + " status", init + " stop" ]);
     t.eq(fs.readfile(pkg.paths.was_running), "1\n");
+    t.eq(fs.stat(pkg.paths.was_running).mode & 0777, 0600);
     t.eq(fs.readfile(nft.paths.rt_tables), RT_TABLES);
     t.eq(runtime_left(), [ true, true ]);
 
@@ -74,6 +85,7 @@ t.test("an upgrade keeps autostart, the table name and the runtime files and rem
 
 t.test("postinst starts again only what the upgrade stopped", () => {
     fs.writefile(pkg.paths.was_running, "1\n");
+    fs.chmod(pkg.paths.was_running, 0600);
     let result = run(() => pkg.postinst(), [ [ "nft list chain", { status: 1 } ] ]);
     t.eq(result.status, 0);
     t.eq(result.commands, [ "logger -t loki -p user.info [info] Installed LoKi " + constants.LOKI_VERSION, state_init + " enable", state_init + " restart",
@@ -84,6 +96,7 @@ t.test("postinst starts again only what the upgrade stopped", () => {
         [ "logger -t loki -p user.info [info] Installed LoKi " + constants.LOKI_VERSION, state_init + " enable", state_init + " restart", "nft list chain inet fw4 input" ]);
 
     fs.writefile(pkg.paths.was_running, "1\n");
+    fs.chmod(pkg.paths.was_running, 0600);
     t.eq(run(() => pkg.postinst(), [ [ "nft list chain", { status: 1 } ], [ init + " start", { status: 1 } ] ]).status, 1);
     t.ok(fs.stat(pkg.paths.was_running) != null, "a failed start leaves the mark for the next attempt");
     fs.unlink(pkg.paths.was_running);
@@ -122,6 +135,112 @@ t.test("the command line runs the hooks and returns their status", () => {
     fs.writefile(nft.paths.rt_tables, RT_TABLES);
     let result = run(() => require("service.cli").main([ "package_prerm", "upgrade" ], "/lib"), [ [ init + " status", { status: 3 } ] ]);
     t.eq([ result.status, result.commands ], [ 0, [ init + " status", init + " stop" ] ]);
+});
+
+t.test("a failed stop prevents removal of routing names and runtime state", () => {
+    for (let action in [ "remove", "upgrade" ]) {
+        fs.writefile(nft.paths.rt_tables, RT_TABLES);
+        leave_runtime();
+        let result = run(() => pkg.prerm(action), [ [ init + " stop", { status: 1 } ] ]);
+        t.eq(result.status, 1, action);
+        t.eq(fs.readfile(nft.paths.rt_tables), RT_TABLES);
+        t.eq(runtime_left(), [ true, true ]);
+    }
+});
+
+t.test("failed state and rpcd commands reach the package manager", () => {
+    for (let command in [ state_init + " enable", state_init + " restart", pkg.paths.rpcd_init + " reload" ]) {
+        let result = run(() => pkg.luci_postinst(), [ [ command, { status: 1 } ] ]);
+        t.eq(result.status, 1, command);
+        t.eq(result.commands[length(result.commands) - 1], command, "no later step follows the failed command");
+    }
+    t.eq(run(() => pkg.luci_prerm(), [ [ state_init + " stop", { status: 1 } ] ]).status, 1);
+    t.eq(run(() => pkg.postinst(), [ [ state_init + " restart", { status: 1 } ] ]).status, 1);
+});
+
+t.test("failed removal preparation preserves runtime data and routing names", () => {
+    for (let command in [ init + " disable", state_init + " disable", state_init + " stop" ]) {
+        fs.writefile(nft.paths.rt_tables, RT_TABLES);
+        leave_runtime();
+        let result = run(() => pkg.prerm("remove"), [ [ command, { status: 1 } ] ]);
+        t.eq(result.status, 1, command);
+        t.eq(result.commands[length(result.commands) - 1], command);
+        t.eq(fs.readfile(nft.paths.rt_tables), RT_TABLES);
+        t.eq(runtime_left(), [ true, true ]);
+    }
+});
+
+t.test("a failed firewall include reload preserves the resume mark", () => {
+    fs.writefile(pkg.paths.was_running, "1\n");
+    fs.chmod(pkg.paths.was_running, 0600);
+    let result = run(() => pkg.postinst(), [ [ "nft list chain", { stdout: "chain input {}\n" } ],
+        [ firewall_init + " reload", { status: 1 } ] ]);
+    t.eq(result.status, 1);
+    t.excludes(result.commands, init + " start");
+    t.eq(fs.readfile(pkg.paths.was_running), "1\n");
+    fs.unlink(pkg.paths.was_running);
+});
+
+t.test("unsafe upgrade marks are preserved before any service operation", () => {
+    let parent = dir + "/package-private";
+    fs.mkdir(parent, 0700);
+    let original = pkg.paths.was_running;
+    pkg.paths.was_running = parent + "/running";
+    let keep = dir + "/foreign-marker-target";
+    fs.writefile(keep, "foreign synthetic data");
+    with_cleanup(() => {
+        for (let kind in [ "link", "mode", "body", "parent" ]) {
+            if (kind == "link") fs.symlink(keep, pkg.paths.was_running);
+            else {
+                fs.writefile(pkg.paths.was_running, kind == "body" ? "unknown owned data" : "1\n");
+                fs.chmod(pkg.paths.was_running, kind == "mode" ? 0644 : 0600);
+            }
+            if (kind == "parent") fs.chmod(parent, 0777);
+            with_cleanup(() => {
+                for (let action in [ "upgrade", "remove", "postinst" ]) {
+                    stub.commands([ [ () => true, {} ] ]);
+                    with_cleanup(() => {
+                        t.throws(() => action == "postinst" ? pkg.postinst() : pkg.prerm(action));
+                        t.eq(stub.command_lines(), [], kind + ": refuse before services or logs");
+                        t.ok(fs.lstat(pkg.paths.was_running) != null);
+                        t.eq(fs.readfile(keep), "foreign synthetic data");
+                    }, () => stub.restore());
+                }
+            }, () => { fs.chmod(parent, 0700); fs.unlink(pkg.paths.was_running); });
+        }
+    }, () => { pkg.paths.was_running = original; });
+});
+
+t.test("a failed exclusive upgrade marker write does not stop the running service", () => {
+    let common = require("core.common");
+    let write = common.write_private_file;
+    common.write_private_file = () => false;
+    with_cleanup(() => {
+        let result = run(() => pkg.prerm("upgrade"));
+        t.eq(result.status, 1);
+        t.eq(result.commands, [ init + " status" ]);
+    }, () => { common.write_private_file = write; });
+});
+
+t.test("failed marker deletion preserves evidence and masks filesystem errors", () => {
+    let original = fs.unlink;
+    fs.writefile(pkg.paths.was_running, "1\n");
+    fs.chmod(pkg.paths.was_running, 0600);
+    for (let mode in [ "false", "throw" ]) {
+        fs.unlink = (path) => {
+            if (path != pkg.paths.was_running) return original(path);
+            if (mode == "throw") die("synthetic-private-marker-value");
+            return false;
+        };
+        stub.commands([ [ () => true, {} ] ]);
+        with_cleanup(() => {
+            let failure = t.throws(() => pkg.prerm("remove"));
+            t.eq(index(failure.message, "synthetic-private-marker-value"), -1);
+            t.eq(stub.command_lines(), []);
+            t.eq(fs.readfile(pkg.paths.was_running), "1\n");
+        }, () => { fs.unlink = original; stub.restore(); });
+    }
+    fs.unlink(pkg.paths.was_running);
 });
 
 t.done();
