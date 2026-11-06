@@ -125,7 +125,7 @@ function own_pid() {
 
 function pid_alive(pid) {
     pid = as_string(pid);
-    return match(pid, /^[1-9][0-9]*$/) != null && fs.stat("/proc/" + pid) != null;
+    return index(pid, "\u0000") < 0 && match(pid, /^[1-9][0-9]*$/) != null && fs.stat("/proc/" + pid) != null;
 }
 
 function now_seconds() {
@@ -187,7 +187,11 @@ function duration_to_seconds(value) {
 }
 
 function parse_number(value) {
-    value = lc(trim(as_string(value)));
+    value = as_string(value);
+    // Native lowercasing can discard the suffix after NUL before the numeric check.
+    if (index(value, "\u0000") >= 0)
+        return null;
+    value = lc(trim(value));
     if (value == "")
         return null;
 
@@ -253,9 +257,9 @@ function bool_option(section, key, fallback) {
 
 function int_option(section, key, fallback) {
     let value = option(section, key, "");
-    if (match(value, /^[0-9]+$/) == null)
+    if (index(value, "\u0000") >= 0 || match(value, /^[0-9]+$/) == null)
         value = as_string(fallback);
-    return match(value, /^[0-9]+$/) == null ? 0 : int(value, 10);
+    return index(value, "\u0000") >= 0 || match(value, /^[0-9]+$/) == null ? 0 : int(value, 10);
 }
 
 return {

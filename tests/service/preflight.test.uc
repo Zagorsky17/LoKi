@@ -6,20 +6,24 @@ let uci = require("uci");
 
 const RULE_QUERY4 = "exec /usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin LC_ALL=C timeout -s KILL 2 /sbin/ip -Numeric -j -4 rule list";
 const RULE_QUERY6 = replace(RULE_QUERY4, "-j -4", "-j -6");
+const ROUTE_QUERY4 = replace(RULE_QUERY4, "rule list", "route show table all");
+const ROUTE_QUERY6 = replace(ROUTE_QUERY4, "-j -4", "-j -6");
 const RESOURCE_QUERY = "exec /usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin LC_ALL=C timeout -s KILL 2 /bin/df -Pk / /tmp";
 const NFT_QUERY = "exec /usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin LC_ALL=C timeout -s KILL 1 /usr/sbin/nft -j list tables";
 const NFT_JSON = '{"nftables":[{"metainfo":{"json_schema_version":1}}]}';
 const RESOURCE_DF = "Filesystem 1024-blocks Used Available Capacity Mounted on\nprivate-device 1000 400 500 45% /\ntmpfs 2000 100 1900 5% /tmp\n";
 
-function readonly_probes(service_reply) {
+function readonly_probes(service_reply, route4, route6) {
     return stub.commands([[ RESOURCE_QUERY, { stdout: RESOURCE_DF } ], [ RULE_QUERY4, { stdout: "[]" } ], [ RULE_QUERY6, { stdout: "[]" } ],
+        [ ROUTE_QUERY4, { stdout: route4 ?? "[]" } ], [ ROUTE_QUERY6, { stdout: route6 ?? "[]" } ],
         [ NFT_QUERY, { stdout: NFT_JSON } ],
         [ "exec timeout", service_reply ]]);
 }
 
 function expected_probes() {
     return [ 'exec timeout -s KILL 5 ubus call service list {"verbose":true}',
-        RULE_QUERY4, RULE_QUERY4, RULE_QUERY6, RULE_QUERY6, NFT_QUERY, NFT_QUERY, RESOURCE_QUERY ];
+        RULE_QUERY4, RULE_QUERY4, RULE_QUERY6, RULE_QUERY6,
+        ROUTE_QUERY4, ROUTE_QUERY4, ROUTE_QUERY6, ROUTE_QUERY6, NFT_QUERY, NFT_QUERY, RESOURCE_QUERY ];
 }
 
 function write(path, data) {
@@ -641,6 +645,25 @@ t.test("resource observations distinguish readable snapshots from unverified tra
     t.eq([ result.result, result.complete, result.install_allowed ], [ "incomplete", false, false ]);
     t.excludes(sprintf("%J", result), "private-device");
     t.eq(stub.command_lines(), expected_probes());
+});
+
+t.test("route snapshots add only bounded hints and keep ownership and the installation gate incomplete", () => {
+    let root = fixture();
+    readonly_probes({ stdout: "{}" },
+        '[{"type":"2","dst":"192.0.2.1","dev":"private-device","table":"105","flags":[]}]',
+        '[{"dst":"default","encap":"SYNTHETIC_ROUTE_CANARY"}]');
+    let result = preflight.collect(root);
+    let commands = stub.command_lines();
+    stub.restore();
+    t.ok(has(result, "checked", "policy-route-snapshot-read-complete"));
+    t.ok(has(result, "incomplete", "policy-route-candidate-table-unverified"));
+    t.ok(has(result, "incomplete", "policy-route-selector-or-action-unverified"));
+    t.ok(has(result, "incomplete", "policy-routes-ownership-configuration-unverified"));
+    t.eq([ result.result, result.complete, result.install_allowed ], [ "incomplete", false, false ]);
+    t.eq(length(filter(commands, (command) => command == ROUTE_QUERY4)), 2);
+    t.eq(length(filter(commands, (command) => command == ROUTE_QUERY6)), 1);
+    for (let value in [ "192.0.2", "private-device", "SYNTHETIC_ROUTE_CANARY" ])
+        t.excludes(sprintf("%J", result), value);
 });
 
 t.done();

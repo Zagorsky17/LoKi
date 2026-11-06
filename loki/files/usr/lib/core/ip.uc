@@ -2,6 +2,9 @@
 // (010.0.0.1 is 8.0.0.1), so such a number is not part of an address here either.
 
 function as_string(value) {
+    // Native string operations can accept only the prefix before an embedded NUL.
+    if (type(value) == "string")
+        return index(value, "\u0000") >= 0 ? "" : value;
     return value == null ? "" : "" + value;
 }
 

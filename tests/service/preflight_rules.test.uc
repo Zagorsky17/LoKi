@@ -89,7 +89,7 @@ t.test("interfaces remain data, with fixed limits and no values copied into comm
     let output = collect(data);
     t.ok(has(output, "policy-rule-snapshot-read-complete"));
     t.excludes(sprintf("%J", output), "evil");
-    for (let bad in [ null, 42, [ "lo" ], "", "a b", "../private", "a:b", sprintf("%16s", "x") ]) {
+    for (let bad in [ null, 42, [ "lo" ], "", "a b", "../private", "a:b", "lo\u0000x", sprintf("%16s", "x") ]) {
         value.iif = bad;
         t.eq(rules.parse(sprintf("%J", [ value ])).error, "policy-rule-shape-invalid");
     }
