@@ -143,6 +143,33 @@ t.test("opened inode substitution refuses before reading and still closes its de
     t.eq(closed, true);
 });
 
+function failed_table_close(thrown) {
+    let root = fixture();
+    let path = root + "/proc/self/net/tcp";
+    let open = fs.open;
+    let closed = 0;
+    fs.open = (name, mode) => {
+        let file = open(name, mode);
+        if (name != path) return file;
+        return { fileno: () => file.fileno(), read: (limit) => file.read(limit), error: () => file.error(),
+            close: () => { closed++; file.close(); if (thrown) die("synthetic-private-close"); return false; } };
+    };
+    let result;
+    let exception = null;
+    try { result = listeners.collect(root); }
+    catch (e) { exception = e.message; }
+    fs.open = open;
+    t.eq(exception, null);
+    t.eq(closed, 1);
+    t.ok(has(result, "listener-table-read-failed", "ipv4-tcp"));
+    t.eq(has(result, "listener-table-read-complete", "ipv4-tcp"), false);
+    t.excludes(sprintf("%J", result), "synthetic-private");
+    t.ok(has(listeners.collect(root), "listener-table-read-complete", "ipv4-tcp"));
+}
+
+t.test("a false table close refuses listener coverage", () => failed_table_close(false));
+t.test("a throwing table close refuses listener coverage privately", () => failed_table_close(true));
+
 t.test("read errors and exceptions close handles and keep raw details private", () => {
     for (let thrown in [ false, true ]) {
         let root = fixture();

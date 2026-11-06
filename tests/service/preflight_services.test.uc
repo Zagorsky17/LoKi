@@ -18,6 +18,36 @@ function has(result, state, reason) {
     return length(filter(result, (item) => item.state == state && item.reason == reason)) > 0;
 }
 
+function failed_directory_close(thrown) {
+    let root = fixture();
+    let opendir = fs.opendir;
+    let closed = 0;
+    let result;
+    let exception = null;
+    fs.opendir = (path) => {
+        let directory = opendir(path);
+        return { read: () => directory.read(), close: () => { closed++; directory.close();
+            if (thrown) die("synthetic-private-close"); return false; } };
+    };
+    query("{}");
+    try { result = services.collect(root); }
+    catch (e) { exception = e.message; }
+    fs.opendir = opendir;
+    stub.restore();
+    t.eq(exception, null);
+    t.eq(closed, 1);
+    t.ok(has(result, "incomplete", "autostart-directory-read-failed"));
+    t.eq(has(result, "checked", "autostart-directory-read-complete"), false);
+    t.excludes(sprintf("%J", result), "synthetic-private");
+    query("{}");
+    let repeated = services.collect(root);
+    stub.restore();
+    t.ok(has(repeated, "checked", "autostart-directory-read-complete"));
+}
+
+t.test("a false directory close refuses autostart coverage", () => failed_directory_close(false));
+t.test("a throwing directory close is private and refuses autostart coverage", () => failed_directory_close(true));
+
 t.test("pinned procd shapes support missing instances, stopped processes and private metadata", () => {
     let result = services.parse(sprintf("%J", { empty: {}, stopped: { autostart: false, instances: {
         main: { running: false, exit_code: 0, command: [ "synthetic-private-command" ], env: { TOKEN: "synthetic-secret" } }
@@ -167,19 +197,19 @@ t.test("directory entry budget, read errors and node changes close handles and r
     let lstat = fs.lstat;
     let closed = 0;
     let entries = 0;
-    fs.opendir = () => ({ read: () => { entries++; return "S90private-unknown"; }, close: () => { closed++; } });
+    fs.opendir = () => ({ read: () => { entries++; return "S90private-unknown"; }, close: () => { closed++; return true; } });
     query("{}");
     let limit = services.collect(root);
     stub.restore();
     let first_entries = entries;
     let first_closed = closed;
-    fs.opendir = () => ({ read: () => die("synthetic-private-read-error"), close: () => { closed++; } });
+    fs.opendir = () => ({ read: () => die("synthetic-private-read-error"), close: () => { closed++; return true; } });
     query("{}");
     let error = services.collect(root);
     stub.restore();
     let second_closed = closed;
     let changed = false;
-    fs.opendir = () => ({ read: () => null, close: () => { closed++; changed = true; } });
+    fs.opendir = () => ({ read: () => null, close: () => { closed++; changed = true; return true; } });
     fs.lstat = (path) => {
         let info = lstat(path);
         if (changed && path == root + "/etc/rc.d") info.inode++;
