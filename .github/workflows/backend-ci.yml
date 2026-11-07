@@ -7,6 +7,7 @@ on:
       - 'loki/Makefile'
       - 'build.sh'
       - 'build_candidate_manifest.py'
+      - 'prepare_candidate.py'
       - 'tests/**'
       - 'core/**'
       - 'install.sh'
@@ -24,6 +25,7 @@ on:
       - 'loki/Makefile'
       - 'build.sh'
       - 'build_candidate_manifest.py'
+      - 'prepare_candidate.py'
       - 'tests/**'
       - 'core/**'
       - 'install.sh'
@@ -165,6 +167,9 @@ jobs:
 
       - name: Check candidate manifest boundaries
         run: python3 -B tests/test_preflight_manifest.py
+
+      - name: Check offline candidate preparation
+        run: python3 -B tests/test_prepare_candidate.py
 
       - name: Check SDK download integrity
         run: python3 -m unittest discover -s tests/packaging -p 'test_*.py'
