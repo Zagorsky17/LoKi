@@ -15,6 +15,7 @@ on:
       - 'preflight.uc'
       # The packaging checks read the LuCI app's package scripts and bundle.
       - 'luci-app-loki/**'
+      - 'fe-app-loki/licenses/**'
       - '.github/workflows/build.yml'
       - '.github/workflows/backend-ci.yml'
   push:
@@ -32,6 +33,7 @@ on:
       - 'preflight.sh'
       - 'preflight.uc'
       - 'luci-app-loki/**'
+      - 'fe-app-loki/licenses/**'
       - '.github/workflows/build.yml'
       - '.github/workflows/backend-ci.yml'
 

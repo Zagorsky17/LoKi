@@ -193,6 +193,8 @@ DNS 验证错误指出受影响的设置和原因，不打印原始 DNS URI。�
 
 内核声明包包含固定 Public Suffix List 源码的完整 MPL 2.0 文本和署名。内置旗帜字体保留其[作品署名](luci-app-loki/htdocs/luci-static/resources/view/loki/fonts/LICENSE.md)、[未修改的 npm 许可证](luci-app-loki/htdocs/luci-static/resources/view/loki/fonts/UPSTREAM_LICENSE.md)和[制品来源](luci-app-loki/htdocs/luci-static/resources/view/loki/fonts/PROVENANCE.md)。WOFF2 与 npm 版本 0.1.8 一致；尚未验证能否由上游 TTF 重现。
 
+内嵌 Lucide SVG 及 Feather 衍生图标的声明安装到 `/usr/share/licenses/luci-app-loki/LUCIDE-LICENSE`，补充声明的来源记录在旁边的 `LUCIDE-PROVENANCE`。[固定版本的许可文本](fe-app-loki/licenses/lucide-LICENSE.txt) 不修改图形或界面代码；项目未记录最初复制 SVG 时的上游修订。
+
 Forkop 由 [ushan0v 及贡献者](https://github.com/ushan0v/forkop/graphs/contributors)开发。LoKi 由 [Zagorsky17/LoKi](https://github.com/Zagorsky17/LoKi) 独立维护，并非 Forkop 上游发布版本。
 
 LoKi 保留项目的 [GPL-2.0-or-later 许可证](LICENSE)。内核补丁和生成的 loki-core 二进制另按 [GPL-3.0-or-later](core/COPYING) 分发；构建会生成带本地 `third_party` 替换内容的补丁后源码归档 `core-source-VERSION.tar.gz`，以及上文所述的 `core-module-sources-*` 归档。分发二进制文件还需要相应的构建材料、依赖源码和声明；仅有这些归档尚不能算完成对应源码审计。必须保留现有版权、许可及署名声明。第三方组件继续保留自己的声明，包括[内置字体资源](luci-app-loki/htdocs/luci-static/resources/view/loki/fonts/LICENSE.md)。

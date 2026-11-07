@@ -2,6 +2,7 @@
 # Modified for LoKi on 2026-11-04: preserve the root license in distributed payloads.
 # Modified for LoKi on 2026-11-06: verify bundled YACD notices in both package recipes.
 from pathlib import Path
+import hashlib
 import json
 import os
 import re
@@ -81,6 +82,10 @@ build_i18n_root "$2/i18n" "$2/po2lmo"
                     notice = yacd_license.parent / package_name
                     self.assertEqual(notice.read_bytes(), (ROOT / 'yacd-loki/licenses' / source_name).read_bytes())
                     self.assertEqual(notice.stat().st_mode & 0o777, 0o644)
+                for name, source_name in [('LUCIDE-LICENSE', 'lucide-LICENSE.txt'), ('LUCIDE-PROVENANCE', 'lucide-provenance.json')]:
+                    notice = yacd_license.parent / name
+                    self.assertEqual(notice.read_bytes(), (ROOT / 'fe-app-loki/licenses' / source_name).read_bytes())
+                    self.assertEqual(notice.stat().st_mode & 0o777, 0o644)
                 source_assets = ROOT / 'luci-app-loki/root/usr/share/loki/yacd'
                 packaged_assets = work / 'app/usr/share/loki/yacd'
                 source_files = {str(p.relative_to(source_assets)): p.read_bytes() for p in source_assets.rglob('*') if p.is_file()}
@@ -158,11 +163,11 @@ build_i18n_root "$2/i18n" "$2/po2lmo"
                     self.assertNotEqual(result.returncode, 0)
                     self.assertIn('LICENSE', result.stderr)
 
-    def test_feed_recipes_copy_the_same_license_without_changing_metadata(self):
+    def test_feed_recipes_copy_the_same_project_and_component_notices(self):
         backend = (ROOT / 'loki/Makefile').read_text()
         luci = (ROOT / 'luci-app-loki/Makefile').read_text()
         self.assertIn('PKG_LICENSE:=GPL-2.0-or-later', backend)
-        self.assertIn('PKG_LICENSE:=GPL-2.0-or-later AND MIT AND Apache-2.0 AND 0BSD AND OFL-1.1', luci)
+        self.assertIn('PKG_LICENSE:=GPL-2.0-or-later AND MIT AND Apache-2.0 AND 0BSD AND OFL-1.1 AND ISC', luci)
         self.assertIn('$(INSTALL_DATA) ../LICENSE $(1)/usr/share/licenses/loki/LICENSE', backend)
         hook = re.search(r'define Build/Prepare/\$\(PKG_NAME\)\n(.*?)\nendef', luci, re.S)[1]
         with tempfile.TemporaryDirectory() as work:
@@ -181,6 +186,47 @@ build_i18n_root "$2/i18n" "$2/po2lmo"
             for package_name, source_name in [('YACD-THIRD-PARTY-NOTICES', 'THIRD_PARTY_NOTICES.txt'),
                                               ('YACD-THIRD-PARTY-INVENTORY', 'THIRD_PARTY_INVENTORY.json')]:
                 self.assertEqual((work / 'root/usr/share/licenses/luci-app-loki' / package_name).read_bytes(), (ROOT / 'yacd-loki/licenses' / source_name).read_bytes())
+            for name, source_name in [('LUCIDE-LICENSE', 'lucide-LICENSE.txt'), ('LUCIDE-PROVENANCE', 'lucide-provenance.json')]:
+                notice = work / 'root/usr/share/licenses/luci-app-loki' / name
+                self.assertEqual(notice.read_bytes(), (ROOT / 'fe-app-loki/licenses' / source_name).read_bytes())
+                self.assertEqual(notice.stat().st_mode & 0o777, 0o644)
+
+    def test_lucide_notice_preserves_pinned_permission_text_and_scope(self):
+        path = ROOT / 'fe-app-loki/licenses/lucide-LICENSE.txt'
+        checksum = hashlib.sha256(path.read_bytes()).hexdigest()
+        self.assertEqual(checksum, 'b495047bd93a9b06913511076f504daba17d5bbeb3e0650f3bb53a4220329c57')
+        provenance = json.loads((ROOT / 'fe-app-loki/licenses/lucide-provenance.json').read_text())
+        self.assertEqual(provenance['license_sha256'], checksum)
+        self.assertEqual(provenance['source_revision'], '53fab88ff9d1b48f4704b5b5b560d6b4d560bf4c')
+        self.assertIn('/' + provenance['source_revision'] + '/LICENSE', provenance['source_url'])
+        self.assertIn('original icon-copy revisions were not recorded', provenance['scope'])
+        self.assertEqual(json.loads((ROOT / 'fe-app-loki/package.json').read_text())['license'], 'MIT')
+
+    def test_missing_lucide_notice_or_provenance_refuses_both_root_recipes(self):
+        names = ('lucide-LICENSE.txt', 'lucide-provenance.json')
+        recipes = BUILD[BUILD.index('\nmake_dir() {'):BUILD.index('\ngenerate_apk_metadata_files() {')]
+        hook = re.search(r'define Build/Prepare/\$\(PKG_NAME\)\n(.*?)\nendef',
+                         (ROOT / 'luci-app-loki/Makefile').read_text(), re.S)[1]
+        with tempfile.TemporaryDirectory() as directory:
+            work = Path(directory); source = work / 'source'; source.mkdir()
+            for name in ('loki', 'luci-app-loki', 'yacd-loki', 'install.sh', 'LICENSE'):
+                (source / name).symlink_to(ROOT / name)
+            notices = source / 'fe-app-loki/licenses'; notices.mkdir(parents=True)
+            for missing in names:
+                for name in names:
+                    path = notices / name; path.unlink(missing_ok=True)
+                    if name != missing: shutil.copyfile(ROOT / 'fe-app-loki/licenses' / name, path)
+                script = 'set -euo pipefail\n' + recipes + '\nROOT_DIR=$1 RELEASE_VERSION=2.0.0\nbuild_app_root "$2/app"\n'
+                result = subprocess.run(['bash', '-c', script, 'notice-test', str(source), str(work)], capture_output=True, text=True)
+                with self.subTest(recipe='standalone', missing=missing): self.assertNotEqual(result.returncode, 0)
+                native = work / 'native'; native.mkdir(exist_ok=True)
+                bundle = native / 'htdocs/luci-static/resources/view/loki/main.js'
+                bundle.parent.mkdir(parents=True, exist_ok=True); bundle.write_text('__COMPILED_VERSION_VARIABLE__')
+                script = hook.replace('$(PKG_BUILD_DIR)', str(native)).replace('$(LOKI_COMPILED_VERSION)', '2.0.0')
+                script = script.replace('$(INSTALL_DIR)', 'install -d -m0755').replace('$(INSTALL_DATA)', 'install -m0644')
+                script = script.replace('../fe-app-loki/licenses', str(notices))
+                result = subprocess.run(['bash', '-e', '-c', script], cwd=ROOT / 'luci-app-loki', capture_output=True, text=True)
+                with self.subTest(recipe='native', missing=missing): self.assertNotEqual(result.returncode, 0)
 
 
 if __name__ == '__main__':

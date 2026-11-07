@@ -290,6 +290,8 @@ build_app_root() {
   install -m 0644 "$ROOT_DIR/yacd-loki/licenses/roboto-mono-OFL.txt" "$output_root/usr/share/licenses/luci-app-loki/ROBOTO-MONO-OFL"
   install -m 0644 "$ROOT_DIR/yacd-loki/licenses/THIRD_PARTY_NOTICES.txt" "$output_root/usr/share/licenses/luci-app-loki/YACD-THIRD-PARTY-NOTICES"
   install -m 0644 "$ROOT_DIR/yacd-loki/licenses/THIRD_PARTY_INVENTORY.json" "$output_root/usr/share/licenses/luci-app-loki/YACD-THIRD-PARTY-INVENTORY"
+  install -m 0644 "$ROOT_DIR/fe-app-loki/licenses/lucide-LICENSE.txt" "$output_root/usr/share/licenses/luci-app-loki/LUCIDE-LICENSE"
+  install -m 0644 "$ROOT_DIR/fe-app-loki/licenses/lucide-provenance.json" "$output_root/usr/share/licenses/luci-app-loki/LUCIDE-PROVENANCE"
 
   normalize_package_root_modes "$output_root"
 }
@@ -388,7 +390,7 @@ write_app_ipk_control() {
 Package: luci-app-loki
 Version: ${RELEASE_VERSION}
 Depends: ${APP_DEPENDS_IPK}
-License: GPL-2.0-or-later AND MIT AND Apache-2.0 AND 0BSD AND OFL-1.1
+License: GPL-2.0-or-later AND MIT AND Apache-2.0 AND 0BSD AND OFL-1.1 AND ISC
 Section: luci
 URL: ${PROJECT_URL}
 Maintainer: ${MAINTAINER}
@@ -627,7 +629,7 @@ build_apk_package() {
   local maintainer="${10}"
   local package_license="GPL-2.0-or-later"
   if [[ "$package_name" == "luci-app-loki" ]]; then
-    package_license="GPL-2.0-or-later AND MIT AND Apache-2.0 AND 0BSD AND OFL-1.1"
+    package_license="GPL-2.0-or-later AND MIT AND Apache-2.0 AND 0BSD AND OFL-1.1 AND ISC"
   fi
 
   rm -rf "$temp_root" "$temp_scripts"
