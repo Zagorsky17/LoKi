@@ -355,7 +355,7 @@ class ArtifactCatalog(ManifestHarness, unittest.TestCase):
         return subprocess.run(command, capture_output=True, text=True, cwd=self.root,
                               timeout=20, preexec_fn=self.outer_limits)
 
-    def package(self, members=None, package="loki", name="synthetic.ipk", outer_extra=None):
+    def package(self, members=None, package="loki", name="synthetic.ipk", outer_extra=None, control_extra=""):
         def archive(items):
             stream = io.BytesIO()
             with tarfile.open(fileobj=stream, mode="w:gz", format=tarfile.GNU_FORMAT) as target:
@@ -368,7 +368,7 @@ class ArtifactCatalog(ManifestHarness, unittest.TestCase):
                     info.linkname = "/synthetic-link-target" if kind == tarfile.SYMTYPE else ""
                     target.addfile(info, io.BytesIO(data) if kind == tarfile.REGTYPE else None)
             return stream.getvalue()
-        control = archive([("./control", f"Package: {package}\nVersion: 1.0.0\nArchitecture: all\n".encode(), tarfile.REGTYPE),
+        control = archive([("./control", (f"Package: {package}\nVersion: 1.0.0\nArchitecture: all\n" + control_extra).encode(), tarfile.REGTYPE),
                            ("./postinst", b"#!/bin/sh\ntouch synthetic-hook-marker\n", tarfile.REGTYPE)])
         payload = archive(members if members is not None else [("./", b"", tarfile.DIRTYPE),
                           ("./synthetic-candidate", b"payload", tarfile.REGTYPE)])
@@ -379,6 +379,115 @@ class ArtifactCatalog(ManifestHarness, unittest.TestCase):
         path = self.root / name
         path.write_bytes(archive(items))
         return path
+
+    def apk_fixture(self, **fields):
+        acl = {"mode": 493, "user": "root", "group": "root"}
+        return {"info": dict(name="loki", version="1.0.0", arch="noarch", **fields),
+                "paths": [{"acl": acl}, {"name": "etc", "acl": acl, "files": [
+                    {"name": "synthetic", "acl": dict(acl, mode=420), "size": 1, "hash": "a" * 64}]}]}
+
+    def test_ipk_replacement_metadata_and_folded_values_refuse(self):
+        for name in ("Provides", "Conflicts", "Replaces"):
+            for field in (name, name.lower(), name.upper()):
+                for value in (" synthetic-secret\n", "\n synthetic-secret\n"):
+                    with self.subTest(field=field, folded=value.startswith("\n")):
+                        package = self.package(control_extra=field + ":" + value)
+                        before = package.read_bytes()
+                        with self.assertRaisesRegex(BUILDER.InvalidCatalog, "artifact-replacement-metadata"):
+                            BUILDER.build({"backend": package})
+                        self.assertEqual(package.read_bytes(), before)
+                        self.assertFalse((self.root / "synthetic-hook-marker").exists())
+
+    def test_ipk_ambiguous_control_fields_and_control_bytes_refuse(self):
+        for data in ("package: base-files\n", "aRchitecture: foreign\n", "Bad key: synthetic-secret\n",
+                     "Provides\0: synthetic-secret\n", "Description: synthetic-secret\x01\n",
+                     "X-Field: first\nx-field: second\n"):
+            with self.subTest(control=data):
+                with self.assertRaises(BUILDER.InvalidCatalog):
+                    BUILDER.build({"backend": self.package(control_extra=data)})
+
+    def test_ipk_empty_replacement_fields_and_multiline_description_are_data(self):
+        package = self.package(control_extra="Provides: \n \t\nConflicts:\nReplaces:\n"
+                                            "Alternatives:\nPre-Depends:\nRecommends:\nSuggests:\n"
+                                            "Depends: libc,\n ca-bundle\nDescription: sample\n Replaces: ordinary text\n")
+        data = BUILDER.build({"backend": package})
+        self.assertEqual(json.loads(data)["components"][0]["package"], "loki")
+        self.assertFalse((self.root / "synthetic-hook-marker").exists())
+
+    def test_ipk_alternatives_and_extra_dependency_requests_refuse(self):
+        for field in ("Alternatives", "Pre-Depends", "Recommends", "Suggests"):
+            body = "100:/usr/bin/synthetic-foreign:/usr/bin/loki" if field == "Alternatives" else "synthetic-secret"
+            for value in (" " + body + "\n", "\n " + body + "\n"):
+                with self.subTest(field=field, folded=value.startswith("\n")):
+                    with self.assertRaises(BUILDER.InvalidCatalog):
+                        BUILDER.build({"backend": self.package(control_extra=field + ":" + value)})
+
+    def test_ipk_sensitive_field_prefix_lookalikes_refuse_even_when_empty(self):
+        for field in ("Package", "Version", "Architecture", "Depends", "Provides", "Conflicts", "Replaces",
+                      "Alternatives", "Pre-Depends", "Recommends", "Suggests"):
+            for value in ("", " synthetic-secret"):
+                with self.subTest(field=field, empty=not value):
+                    with self.assertRaises(BUILDER.InvalidCatalog):
+                        BUILDER.build({"backend": self.package(control_extra=field + "Extra:" + value + "\n")})
+
+    def test_apk_replacement_priority_and_negative_dependencies_refuse(self):
+        for fields in ({"provides": ["sing-box=1"]}, {"replaces": ["synthetic-secret"]},
+                       {"provider-priority": 1}, {"provider-priority": -1},
+                       {"depends": ["!dnsmasq"]}, {"depends": [" !dnsmasq"]},
+                       {"depends": ["libc !synthetic-secret"]}):
+            with self.subTest(fields=fields):
+                with self.assertRaises(BUILDER.InvalidCatalog):
+                    BUILDER.apk_entries(self.apk_fixture(**fields))
+
+    def test_apk_control_types_and_dependency_bounds_refuse(self):
+        cases = [{key: value} for key in ("provides", "replaces") for value in (False, 0, "", "synthetic-secret", {})]
+        cases += [{"provider-priority": value} for value in (False, "0", [], {})]
+        cases += [{"depends": value} for value in (None, "libc", {}, [None], [False], [""],
+                  ["libc\0synthetic-secret"], ["libc\n"], ["库"], ["库" * 8192], ["x" * 8193], ["libc"] * 129)]
+        for fields in cases:
+            with self.subTest(fields=fields):
+                with self.assertRaises(BUILDER.InvalidCatalog):
+                    BUILDER.apk_entries(self.apk_fixture(**fields))
+
+    def test_apk_empty_nonreplacing_controls_keep_existing_identity_and_payload(self):
+        expected = BUILDER.apk_entries(self.apk_fixture())
+        for fields in ({"provides": [], "replaces": [], "provider-priority": 0},
+                       {"provides": None, "replaces": None, "depends": []},
+                       {"depends": ["libc", "loki-core>=1.14.4-r8", "so:libc.so"]}):
+            self.assertEqual(BUILDER.apk_entries(self.apk_fixture(**fields)), expected)
+
+    def test_apk_own_generic_sdk_alias_is_exact_and_does_not_bypass_other_guards(self):
+        for name in ("loki", "luci-app-loki", "luci-i18n-loki-ru"):
+            data = self.apk_fixture()
+            data["info"].update(name=name, provides=[name + "-any"])
+            identity, entries = BUILDER.apk_entries(data)
+            self.assertEqual(identity, {"package": name, "version": "1.0.0", "architecture": "noarch"})
+            self.assertEqual(entries, BUILDER.apk_entries(self.apk_fixture())[1])
+        for name, arch, provides in (("loki", "noarch", ["loki-any", "sing-box"]),
+                                     ("loki", "noarch", ["loki-any", "loki-any"]),
+                                     ("loki", "noarch", ["loki-any=1.0.0"]),
+                                     ("loki", "noarch", ["luci-app-loki-any"]),
+                                     ("loki", "noarch", ["loki-any-extra"]),
+                                     ("loki", "x86_64", ["loki-any"]),
+                                     ("loki-core", "noarch", ["loki-core-any"]),
+                                     ("synthetic-secret", "noarch", ["synthetic-secret-any"])):
+            data = self.apk_fixture(); data["info"].update(name=name, arch=arch, provides=provides)
+            with self.subTest(name=name, arch=arch, provides=provides), self.assertRaises(BUILDER.InvalidCatalog):
+                BUILDER.apk_entries(data)
+        for fields in ({"provider-priority": 1}, {"replaces": ["dnsmasq"]}, {"depends": ["!dnsmasq"]}):
+            with self.subTest(fields=fields), self.assertRaises(BUILDER.InvalidCatalog):
+                BUILDER.apk_entries(self.apk_fixture(provides=["loki-any"], **fields))
+
+    def test_cli_replacement_refusal_preserves_output_and_masks_input(self):
+        package = self.package(control_extra="Conflicts:\n synthetic-secret\n")
+        output = self.root / "candidate-manifest.json"; output.write_text("existing-catalog\n")
+        done = self.bounded_child([sys.executable, "-B", str(ROOT / "build_candidate_manifest.py"),
+                                   "--backend", str(package), "--output", str(output)])
+        self.assertEqual(done.returncode, 2, done.stderr)
+        self.assertEqual(done.stderr, "candidate-manifest: artifact-replacement-metadata\n")
+        self.assertEqual(done.stdout, "")
+        self.assertEqual(output.read_text(), "existing-catalog\n")
+        self.assertFalse((self.root / "synthetic-hook-marker").exists())
 
     def test_ipk_artifact_to_runtime_roundtrip_hashes_and_no_hook_execution(self):
         package = self.package()

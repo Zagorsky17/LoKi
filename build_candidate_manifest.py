@@ -81,6 +81,7 @@ def zero_tail(archive):
 
 def control_identity(stream):
     fields, previous, seen, total = {}, None, set(), 0
+    field_names = set()
     with gzip.GzipFile(fileobj=stream) as compressed, tarfile.open(fileobj=compressed, mode="r|") as archive:
         for member in archive:
             need((member.isfile() or member.isdir()) and not member.pax_headers and not member.sparse,
@@ -94,18 +95,30 @@ def control_identity(stream):
                 continue
             need(member.isfile(), "control-not-file")
             content = archive.extractfile(member).read().decode("utf-8")
+            need(not re.search(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", content), "control-bytes-invalid")
             for line in content.splitlines():
                 if line.startswith((" ", "\t")):
                     need(previous and previous not in ("Package", "Version", "Architecture"), "control-identity-folded")
+                    fields[previous] += " " + line.strip()
                     continue
                 if not line:
                     continue
                 key, separator, value = line.partition(":")
-                need(separator and key not in fields, "control-field-invalid")
+                need(separator and re.fullmatch(r"[A-Za-z][A-Za-z0-9-]*", key), "control-field-invalid")
+                normalized = key.lower()
+                # opkg recognizes sensitive field prefixes, including unexpected suffixes.
+                need(normalized not in field_names and not any(normalized.startswith(field) and normalized != field
+                     for field in ("package", "version", "architecture", "depends", "provides", "conflicts", "replaces",
+                                   "alternatives", "pre-depends", "recommends", "suggests")), "control-field-invalid")
+                field_names.add(normalized)
                 fields[key] = value.strip()
                 previous = key
         zero_tail(archive)
     need(all(key in fields for key in ("Package", "Version", "Architecture")), "control-identity-missing")
+    need(all(not value.strip() for key, value in fields.items() if key.lower() in ("provides", "conflicts", "replaces", "alternatives")),
+         "artifact-replacement-metadata")
+    need(all(not value.strip() for key, value in fields.items() if key.lower() in ("pre-depends", "recommends", "suggests")),
+         "artifact-extra-dependency-metadata")
     return {"package": fields["Package"], "version": fields["Version"], "architecture": fields["Architecture"]}
 
 
@@ -192,6 +205,20 @@ def apk_entries(data):
     need(type(data) is dict and type(data.get("info")) is dict and type(data.get("paths")) is list,
          "apk-schema-invalid")
     info = data["info"]
+    for key in ("provides", "replaces"):
+        value = info.get(key)
+        # Native SDK packages expose their own generic ABI name; it cannot name another component.
+        own_alias = key == "provides" and info.get("arch") == "noarch" and info.get("name") in (
+            ROLES["backend"], ROLES["luci"], ROLES["locale"]) and value == [info["name"] + "-any"]
+        need(value is None or (type(value) is list and (not value or own_alias)), "artifact-replacement-metadata")
+    priority = info.get("provider-priority")
+    need(priority is None or (type(priority) is int and priority == 0), "artifact-replacement-metadata")
+    dependencies = info.get("depends", [])
+    need(type(dependencies) is list and len(dependencies) <= 128, "control-dependencies-invalid")
+    for dependency in dependencies:
+        need(isinstance(dependency, str) and 0 < len(dependency) <= 8192 and
+             re.fullmatch(r"[!-~]+", dependency), "control-dependencies-invalid")
+        need(not dependency.startswith("!"), "artifact-replacement-metadata")
     identity = {"package": info.get("name"), "version": info.get("version"), "architecture": info.get("arch")}
     entries, paths, total = [], set(), 0
 
