@@ -6,6 +6,7 @@ let t = require("t");
 let fs = require("fs");
 let repo = require("repo");
 let constants = require("core.constants");
+let core_version = require("core.version");
 let singbox_constants = require("singbox.constants");
 let cli = require("service.cli");
 let stub = require("stub");
@@ -58,9 +59,12 @@ t.test("application installer, updater and packages use the LoKi repository", ()
     t.eq(makefile_field("URL"), build_sh_variable("PROJECT_URL"));
 });
 
-t.test("the package requires the core version built with the bootstrap fix", () => {
+t.test("the package keeps its security minimum while accepting a newer own core build", () => {
     let version = match(fs.readfile(repo.path("core/upstream.env")), /\nCORE_VERSION=([^\n]+)\n/);
-    t.eq(version ? version[1] : null, constants.SB_REQUIRED_VERSION);
+    t.eq(constants.SB_REQUIRED_VERSION, "1.14.4-r9", "configuration checks require memory protection");
+    t.ok(version != null, "the build pins its own core version");
+    t.matches(version[1], /^[0-9]+\.[0-9]+\.[0-9]+-r[0-9]+$/);
+    t.ok(core_version.version_at_least(version[1], constants.SB_REQUIRED_VERSION), "a produced core cannot precede the package minimum");
     t.contains(fs.readfile(repo.path("install.sh")), "asset=core-release.json");
 });
 
