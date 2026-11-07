@@ -92,7 +92,9 @@ The built-in lists from [forkop-lists](https://github.com/ushan0v/forkop-lists) 
 
 ## The LoKi core
 
-The loki-core base is `ushan0v/sing-box-forkop`, pinned in `core/upstream.env`; that base supplies subscription providers, connection-format parsing and DNS extensions. LoKi patches are in `core/patches/`. The current build is `1.14.4-r9`, with the technical package name `loki-core`. The package, service, CLI, UCI and path rename is implemented; configurations from other applications are not supported.
+The loki-core base is `ushan0v/sing-box-forkop`, pinned in `core/upstream.env`; that base supplies subscription providers, connection-format parsing and DNS extensions. LoKi patches are in `core/patches/`. The current build is `1.14.4-r10`, with the technical package name `loki-core`. The package, service, CLI, UCI and path rename is implemented; configurations from other applications are not supported.
+
+The r10 core adds a bounded HTTPS downloader for public LoKi release inputs. It checks redirect destinations and response limits without reading proxy configuration. Installer integration and bootstrap verification remain incomplete; this command does not enable installation.
 
 On Linux, `loki-core check` disables process memory dumps before reading configuration. If the kernel refuses that protection, the check fails before reading the file. This guard does not replace filesystem and network isolation; non-Linux configuration checks are refused.
 

@@ -1,7 +1,12 @@
 # Modified for LoKi on 2026-11-04: include the unchanged project license.
 # Modified for LoKi on 2026-10-31: use the project release repository.
 include $(TOPDIR)/rules.mk
-include ../core/upstream.env
+
+# Optional core additions do not raise the backend's compatibility minimum.
+LOKI_CORE_MIN_VERSION:=$(shell sed -n 's/^[[:space:]]*SB_REQUIRED_VERSION: "\([^"]*\)".*/\1/p' ./files/usr/lib/core/constants.uc | awk 'NR == 1 { value=$$0 } END { if (NR == 1 && value ~ /^[0-9]+\.[0-9]+\.[0-9]+-r[0-9]+$$/) print value }')
+ifeq ($(LOKI_CORE_MIN_VERSION),)
+$(error Cannot read SB_REQUIRED_VERSION from backend constants)
+endif
 
 PKG_NAME:=loki
 
@@ -26,7 +31,7 @@ define Package/loki
 	SECTION:=net
 	CATEGORY:=Network
 	DEPENDS:=+ca-bundle +ucode +ucode-mod-fs +ucode-mod-resolv +ucode-mod-socket +ucode-mod-ubus +ucode-mod-uloop +ucode-mod-uci +uclient-fetch +kmod-nft-tproxy +nftables +kmod-nft-nat +ip +loki-core
-	EXTRA_DEPENDS:=loki-core (>=$(CORE_VERSION))
+	EXTRA_DEPENDS:=loki-core (>=$(LOKI_CORE_MIN_VERSION))
 	TITLE:=LoKi backend service
 	URL:=https://github.com/Zagorsky17/LoKi
 	PKGARCH:=all
