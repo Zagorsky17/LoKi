@@ -19,7 +19,7 @@ unformatted=$(gofmt -l adapter/dns.go dns/router.go common/dialer/resolve*.go lo
     protocol/group/{selector.go,selector_identity_test.go,fallback.go,fallback_test.go} experimental/clashapi/proxies.go \
     adapter/outbound/{manager.go,commit_test.go} provider/remote/*.go \
     experimental/cachefile/*.go dns/transport/fakeip/store_cachefile_test.go box.go \
-    common/lokicontroller/*.go common/lokigateway/*.go cmd/sing-box/cmd_gateway_linux.go cmd/sing-box/cmd_check*.go \
+    common/lokicontroller/*.go common/lokigateway/*.go cmd/sing-box/cmd_gateway_linux.go cmd/sing-box/cmd_check*.go cmd/sing-box/cmd_release_fetch*.go \
     experimental/clashapi/common.go experimental/clashapi/common_gateway_test.go \
     experimental/clashapi/server.go experimental/clashapi/server_private_controller_test.go option/experimental.go)
 if [[ -n "$unformatted" ]]; then
