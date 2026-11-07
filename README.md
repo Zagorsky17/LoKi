@@ -36,6 +36,8 @@ The application uses `loki`, `luci-app-loki`, `/etc/config/loki` and the separat
 
 ## Standalone preflight: initial implementation
 
+Candidate catalog generation rejects package replacement, foreign provision and alternative declarations, extra dependency directives (`Pre-Depends`, `Recommends`, `Suggests`), APK negative dependencies and nonzero provider priority. Native generic app packages may provide only their own exact `-any` alias. Ambiguous control fields or malformed dependency metadata fail with fixed errors, without running package hooks or replacing an existing catalog. These build-time checks do not enable installation or replace archive provenance and target preflight.
+
 Candidate component metadata must include backend, LuCI and loki-core; the Russian translation package is optional. Backend, LuCI and translations must have matching versions, and the core must meet the required LoKi revision. Each role is restricted to its own file paths, required files and modes; shared directories must retain mode 0755. Incomplete or inconsistent catalogs cannot pass this check. Metadata consistency does not verify archive contents, provenance or runtime compatibility; installation remains disabled.
 
 Declared shared-package dependencies are checked recursively against the same reread installed database. An installed provider of virtual `ip`, including `ip-tiny` or `ip-full`, can satisfy the requirement. Missing dependencies, malformed metadata and unreviewed version constraints remain incomplete; packages are never fetched, installed or replaced by this check. File provenance, ABI, executable capabilities and kernel-module availability still require separate verification, and installation remains disabled.
