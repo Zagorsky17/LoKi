@@ -10,7 +10,7 @@ LoKi 是面向 OpenWrt、由 sing-box 驱动的规则路由应用。它以 [Fork
 
 ## 开发状态
 
-截至 2026 年 11 月 6 日，本仓库尚未发布 LoKi 版本。安装脚本只从 **`Zagorsky17/LoKi`** 获取应用和修补后的内核，不会回退到 Forkop 发布包。安装还需要软件包文件、`release.json`、`core-release.json` 和 `SHA256SUMS`；仅将源码合并进 `main` 并不构成可安装发布。应用要求 LoKi 内核 `1.14.4-r8` 或更新版本；软件包名为 `loki-core`，可执行文件位于 `/usr/bin/loki-core`。尚未在路由器上验证安装和升级。
+截至 2026 年 11 月 7 日，本仓库尚未发布 LoKi 版本。安装脚本只从 **`Zagorsky17/LoKi`** 获取应用和修补后的内核，不会回退到 Forkop 发布包。安装还需要软件包文件、`release.json`、`core-release.json` 和 `SHA256SUMS`；仅将源码合并进 `main` 并不构成可安装发布。应用要求 LoKi 内核 `1.14.4-r9` 或更新版本；软件包名为 `loki-core`，可执行文件位于 `/usr/bin/loki-core`。尚未在路由器上验证安装和升级。
 
 技术名称为：命令 `loki`，软件包 `loki` 和 `luci-app-loki`，服务 `loki`、`loki-state` 和 `loki-core`，UCI 配置包 `loki` 和 `loki-core`。不提供旧 Forkop 或标准 sing-box 命令的别名；内核仅通过 `/usr/bin/loki-core` 调用。
 
@@ -92,9 +92,11 @@ r5 的合成测试覆盖部分 sing-box/Xray JSON、SIP008、Clash YAML 和原�
 
 ## LoKi 内核
 
-loki-core 以 `core/upstream.env` 固定的 `ushan0v/sing-box-forkop` 为基础，继承订阅提供者、连接格式解析和 DNS 扩展。LoKi 的补丁位于 `core/patches/`。当前构建为 `1.14.4-r8`，技术软件包名为 `loki-core`。软件包、服务、命令、UCI 与路径的重命名已实现；不支持其他应用的配置。
+loki-core 以 `core/upstream.env` 固定的 `ushan0v/sing-box-forkop` 为基础，继承订阅提供者、连接格式解析和 DNS 扩展。LoKi 的补丁位于 `core/patches/`。当前构建为 `1.14.4-r9`，技术软件包名为 `loki-core`。软件包、服务、命令、UCI 与路径的重命名已实现；不支持其他应用的配置。
 
-r8 将同一底层节点在一次 fallback 健康检查周期中只探测一次，即使多个组成员引用它。r7 中的快速响应可能使同一周期产生第二次探测。配置格式未改变。应用要求 r8，以使软件包清单与修正后的内核一致；路由器行为仍未验证。
+在 Linux 上，`loki-core check` 会在读取配置前禁止进程内存转储。如果内核拒绝启用此保护，检查会在读取文件前失败。此保护不能替代文件系统和网络隔离；非 Linux 系统上的配置检查会被拒绝。
+
+r8 将同一底层节点在一次 fallback 健康检查周期中只探测一次，即使多个组成员引用它。r7 中的快速响应可能使同一周期产生第二次探测。配置格式未改变。应用要求保留了此修复的 r9；路由器行为仍未验证。
 
 r7 使用私有目录中的固定 Unix 控制器套接字 `/tmp/loki/controller.sock`。网关和后端 RPC 检查端点所有者及权限，并在发送控制器凭据前验证对端 UID。浏览器不会取得凭据。浏览器通过受 LuCI 授权的独立 HTTPS/WSS 网关访问；本地 YACD 文件已通过 Linux 检查，仍待真实 OpenWrt 验证。 读取凭据或随机字节时，如果关闭文件失败，就拒绝使用结果；现有凭据文件保持不变。
 

@@ -1,0 +1,161 @@
+diff --git a/cmd/sing-box/cmd_check.go b/cmd/sing-box/cmd_check.go
+--- a/cmd/sing-box/cmd_check.go
++++ b/cmd/sing-box/cmd_check.go
+@@ -1,7 +1,9 @@
++// Modified for LoKi on 2026-11-07: refuse configuration reads without dump protection.
+ package main
+ 
+ import (
+ 	"context"
++	"fmt"
+ 
+ 	"github.com/sagernet/sing-box"
+ 	"github.com/sagernet/sing-box/log"
+@@ -27,6 +29,9 @@
+ }
+ 
+ func check() error {
++	if err := protectCheckMemory(); err != nil {
++		return fmt.Errorf("disable configuration-check memory dumps: %w", err)
++	}
+ 	options, err := readConfigAndMerge()
+ 	if err != nil {
+ 		return err
+diff --git a/cmd/sing-box/cmd_check_memory_linux.go b/cmd/sing-box/cmd_check_memory_linux.go
+new file mode 100644
+--- /dev/null
++++ b/cmd/sing-box/cmd_check_memory_linux.go
+@@ -0,0 +1,8 @@
++// Modified for LoKi on 2026-11-07: protect configuration reads even with a piped core handler.
++package main
++
++import "golang.org/x/sys/unix"
++
++func protectCheckMemory() error {
++	return unix.Prctl(unix.PR_SET_DUMPABLE, 0, 0, 0, 0)
++}
+diff --git a/cmd/sing-box/cmd_check_memory_other.go b/cmd/sing-box/cmd_check_memory_other.go
+new file mode 100644
+--- /dev/null
++++ b/cmd/sing-box/cmd_check_memory_other.go
+@@ -0,0 +1,10 @@
++//go:build !linux
++
++// Modified for LoKi on 2026-11-07: refuse checks without the Linux memory protection contract.
++package main
++
++import "errors"
++
++func protectCheckMemory() error {
++	return errors.New("configuration-check memory protection requires Linux")
++}
+diff --git a/cmd/sing-box/cmd_check_privacy_linux_test.go b/cmd/sing-box/cmd_check_privacy_linux_test.go
+new file mode 100644
+--- /dev/null
++++ b/cmd/sing-box/cmd_check_privacy_linux_test.go
+@@ -0,0 +1,105 @@
++// Modified for LoKi on 2026-11-07: test dump protection at the configuration-read boundary.
++package main
++
++import (
++	"context"
++	"errors"
++	"os"
++	"os/exec"
++	"path/filepath"
++	"runtime"
++	"testing"
++	"time"
++	"unsafe"
++
++	"golang.org/x/sys/unix"
++)
++
++func TestCheckMemoryPrivacy(t *testing.T) {
++	mode := os.Getenv("LOKI_CHECK_PRIVACY_HELPER")
++	if mode == "" {
++		for _, mode := range []string{"before-read", "denied"} {
++			t.Run(mode, func(t *testing.T) {
++				ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
++				defer cancel()
++				command := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestCheckMemoryPrivacy$", "-test.timeout=10s")
++				command.Env = append(os.Environ(), "LOKI_CHECK_PRIVACY_HELPER="+mode, "SING_BOX_TEST_MAIN=0")
++				if output, err := command.CombinedOutput(); err != nil {
++					t.Fatalf("privacy helper failed: %v\n%s", err, output)
++				}
++			})
++		}
++		return
++	}
++	configPaths = []string{filepath.Join(t.TempDir(), "config.json")}
++	configDirectories = nil
++	workingDir = ""
++	preRun(commandCheck, nil)
++	if err := unix.Prctl(unix.PR_SET_DUMPABLE, 1, 0, 0, 0); err != nil {
++		t.Fatal(err)
++	}
++	switch mode {
++	case "before-read":
++		if err := unix.Mkfifo(configPaths[0], 0600); err != nil {
++			t.Fatal(err)
++		}
++		observed := make(chan int, 1)
++		failures := make(chan error, 1)
++		go func() {
++			stream, err := os.OpenFile(configPaths[0], os.O_WRONLY, 0)
++			if err != nil {
++				failures <- err
++				return
++			}
++			state, err := unix.PrctlRetInt(unix.PR_GET_DUMPABLE, 0, 0, 0, 0)
++			if err == nil {
++				_, err = stream.WriteString("{")
++			}
++			closeErr := stream.Close()
++			if err != nil {
++				failures <- err
++			} else if closeErr != nil {
++				failures <- closeErr
++			} else {
++				observed <- state
++			}
++		}()
++		if err := check(); err == nil {
++			t.Fatal("malformed configuration was accepted")
++		}
++		select {
++		case state := <-observed:
++			if state != 0 {
++				t.Fatalf("configuration was read while dumpable=%d", state)
++			}
++		case err := <-failures:
++			t.Fatal(err)
++		case <-time.After(2 * time.Second):
++			t.Fatal("configuration reader did not reach the FIFO")
++		}
++	case "denied":
++		runtime.LockOSThread()
++		defer runtime.UnlockOSThread()
++		if err := unix.Prctl(unix.PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0); err != nil {
++			t.Fatal(err)
++		}
++		filter := []unix.SockFilter{
++			{Code: unix.BPF_LD | unix.BPF_W | unix.BPF_ABS},
++			{Code: unix.BPF_JMP | unix.BPF_JEQ | unix.BPF_K, K: uint32(unix.SYS_PRCTL), Jf: 1},
++			{Code: unix.BPF_RET | unix.BPF_K, K: unix.SECCOMP_RET_ERRNO | uint32(unix.EPERM)},
++			{Code: unix.BPF_RET | unix.BPF_K, K: unix.SECCOMP_RET_ALLOW},
++		}
++		program := unix.SockFprog{Len: uint16(len(filter)), Filter: &filter[0]}
++		// prctl consumes the filter synchronously; only this helper thread is restricted.
++		err := unix.Prctl(unix.PR_SET_SECCOMP, unix.SECCOMP_MODE_FILTER, uintptr(unsafe.Pointer(&program)), 0, 0)
++		runtime.KeepAlive(filter)
++		if err != nil {
++			t.Fatal(err)
++		}
++		if err := check(); !errors.Is(err, unix.EPERM) {
++			t.Fatalf("dump-protection failure did not stop config reading: %v", err)
++		}
++	default:
++		t.Fatalf("unknown helper mode %q", mode)
++	}
++}
