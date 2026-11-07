@@ -54,4 +54,15 @@ t.test("installer help is available without package or platform preparation", ()
     t.contains(result.output, "disabled");
 });
 
+t.test("the metadata checker contains no legacy package mutation implementations", () => {
+    let source = fs.readfile(repo.path("install.sh"));
+    for (let name in [ "apply", "uninstall", "transaction", "install_dependencies", "world_drop",
+        "update_lists", "download_packages", "plan_ip_swap", "plan_removals", "stop_services", "stop_cores",
+        "remove_files", "predelete_core", "restore_core", "repair_opkg_db", "drop_dependencies", "backup_config",
+        "check_config", "start_loki", "start_again", "clean_up_after", "prompt", "choose_variant", "ask_translation" ])
+        t.excludes(source, "\n" + name + "()", name);
+    for (let command in [ "opkg install", "opkg remove", "opkg update", "apk add", "apk del", "apk update", "ntpd -n -q" ])
+        t.excludes(source, command);
+});
+
 t.done();
