@@ -26,7 +26,10 @@ app = json.loads((root / 'release.json').read_text())
 core = json.loads((root / 'core-release.json').read_text())
 assert app['name'] == 'loki' and core['name'] == 'loki-core'
 assert app['tag'] == core['tag']
-assert app['requires']['loki-core'] == core['version']
+minimum = re.fullmatch(r'([0-9]+)\.([0-9]+)\.([0-9]+)-r([0-9]+)', app['requires']['loki-core'])
+provided = re.fullmatch(r'([0-9]+)\.([0-9]+)\.([0-9]+)-r([0-9]+)', core['version'])
+assert minimum and provided, 'invalid core version or minimum'
+assert tuple(map(int, provided.groups())) >= tuple(map(int, minimum.groups())), 'core is below the app minimum'
 assert core['requires']['loki'] == app['version']
 assert core['page'] == f"https://github.com/Zagorsky17/LoKi/releases/tag/{app['tag']}"
 with tarfile.open(root / f"core-source-{core['version']}.tar.gz") as source:
@@ -89,6 +92,10 @@ for package in packages:
         assert 'In addition, no derivative work' in license_text
         assert '29 June 2007' in license_text
         binary = data.extractfile(members['usr/bin/loki-core']).read()
+        bootstrap = root / (package.stem + '.bin')
+        assert bootstrap.is_file() and not bootstrap.is_symlink(), 'missing bootstrap binary'
+        assert bootstrap.stat().st_mode & 0o777 == 0o644, 'bootstrap asset permissions'
+        assert bootstrap.read_bytes() == binary, 'bootstrap/package binary mismatch'
         notice_info = json.loads(data.extractfile(members['usr/share/licenses/loki-core/build-info.json']).read())
         notices = data.extractfile(members['usr/share/licenses/loki-core/THIRD_PARTY_NOTICES']).read()
         with tempfile.TemporaryDirectory() as work:
