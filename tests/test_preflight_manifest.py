@@ -456,6 +456,55 @@ class ArtifactCatalog(ManifestHarness, unittest.TestCase):
                        {"depends": ["libc", "loki-core>=1.14.4-r8", "so:libc.so"]}):
             self.assertEqual(BUILDER.apk_entries(self.apk_fixture(**fields)), expected)
 
+    def test_apk_conditional_dependency_and_layer_controls_refuse(self):
+        for key in ("install-if", "recommends"):
+            for value in (["libc"], ["synthetic-secret"], "", {}, 0, False):
+                with self.subTest(key=key, value=value), self.assertRaisesRegex(
+                        BUILDER.InvalidCatalog, "artifact-extra-dependency-metadata"):
+                    BUILDER.apk_entries(self.apk_fixture(**{key: value}))
+        for value in (1, -1, True, False, "0", [], {}):
+            with self.subTest(layer=value), self.assertRaisesRegex(
+                    BUILDER.InvalidCatalog, "artifact-layer-metadata"):
+                BUILDER.apk_entries(self.apk_fixture(layer=value))
+
+    def test_apk_empty_conditional_controls_and_root_layer_preserve_catalog(self):
+        expected = BUILDER.apk_entries(self.apk_fixture())
+        for fields in ({"install-if": [], "recommends": [], "layer": 0},
+                       {"install-if": None, "recommends": None, "layer": None},
+                       {"provides": ["loki-any"], "install-if": [], "recommends": [], "layer": 0}):
+            before = copy.deepcopy(fields)
+            self.assertEqual(BUILDER.apk_entries(self.apk_fixture(**fields)), expected)
+            self.assertEqual(fields, before)
+
+    def test_cli_apk_conditional_refusal_preserves_output_and_masks_input(self):
+        package = self.root / "synthetic.apk"
+        package.write_bytes(b"synthetic-package")
+        output = self.root / "candidate-manifest.json"
+        output.write_text("existing-catalog\n")
+        tool = self.root / "apk"
+        tool.write_text('#!/usr/bin/python3\nimport pathlib,resource,sys\n'
+                        'assert resource.getrlimit(resource.RLIMIT_CORE) == (0, 0)\n'
+                        'assert 0 < resource.getrlimit(resource.RLIMIT_CPU)[1] <= 13\n'
+                        'assert 0 < resource.getrlimit(resource.RLIMIT_AS)[1] <= 268435456\n'
+                        'assert 0 < resource.getrlimit(resource.RLIMIT_FSIZE)[1] <= 8388608\n'
+                        'if "adbdump" in sys.argv: print(pathlib.Path(__file__).with_suffix(".json").read_text())\n')
+        tool.chmod(0o755)
+        for fields, reason in (({"install-if": ["synthetic-secret"]}, "artifact-extra-dependency-metadata"),
+                               ({"recommends": ["synthetic-secret"]}, "artifact-extra-dependency-metadata"),
+                               ({"layer": 1}, "artifact-layer-metadata")):
+            tool.with_suffix(".json").write_text(json.dumps(self.apk_fixture(**fields)))
+            before = package.read_bytes()
+            result = self.bounded_child([sys.executable, "-B", str(ROOT / "build_candidate_manifest.py"),
+                                         "--backend", str(package), "--apk-bin", str(tool), "--output", str(output)])
+            with self.subTest(fields=fields):
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertEqual(result.stderr, "candidate-manifest: " + reason + "\n")
+                self.assertEqual(result.stdout, "")
+                self.assertEqual(output.read_text(), "existing-catalog\n")
+                self.assertEqual(package.read_bytes(), before)
+                self.assertFalse((self.root / "synthetic-hook-marker").exists())
+                self.assertFalse(list(self.root.glob(".candidate-manifest-*")))
+
     def test_apk_own_generic_sdk_alias_is_exact_and_does_not_bypass_other_guards(self):
         for name in ("loki", "luci-app-loki", "luci-i18n-loki-ru"):
             data = self.apk_fixture()

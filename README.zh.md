@@ -74,6 +74,8 @@ Linux 工具 `prepare_candidate.py` 从本地 `--backend`、`--luci`、`--core`�
 
 在 Linux 构建主机上，可从已生成的最终文件建立目录：`python3 build_candidate_manifest.py --backend /path/backend.ipk --core /path/core.ipk --output /path/trusted-source/candidate-manifest.json`。把路径替换成选定的软件包和源码位置。可用 `--luci`、`--locale` 增加相应软件包；也支持只有后端的目录。所有选定文件必须使用同一种软件包格式。APK 还需传入 `--apk-bin /path/to/sdk/apk`：此构建助手离线执行 `verify` 和 `adbdump`，读取 IPK 内容时不解包到磁盘，也不执行软件包 hook。目录将文件名、类型、权限、大小及哈希绑定到整个软件包的哈希，但不证明发布来源或组件兼容性。
 
+APK 目录拒绝非空的 `install-if`、`recommends` 元数据，以及显式指定为根层 `0` 以外的安装层；字段类型不明确时也会停止准备。
+
 目前检查始终拒绝安装：退出码 1 表示发现冲突，退出码 2 表示检查不完整，结果均为 `complete: false`、`install_allowed: false`。目标设备上的制品来源和内容验证、组件兼容性、进程身份和服务来源、hook、网络、配置和内核检查仍未完成；安装器继续被限制。元数据上限为每份软件包数据库 4 MiB、每份 opkg 列表 1 MiB、opkg 总读取量 16 MiB、4096 个软件包和 16384 个 APK 项。侧文件最多 2 MiB、4096 项；报告最多 256 条观察。core dump 软硬大小上限均设为零；系统通过管道启动的转储处理程序需要单独检查（[core(5)](https://man7.org/linux/man-pages/man5/core.5.html)）。进程限制为 64 MiB 虚拟内存、10 秒 CPU 和 15 秒实际时间。失败或超限只产生“不完整”结果，不泄露源码内容。
 
 资源发现最多读取 64 KiB `/proc/meminfo`，核对打开的文件描述符和命名文件的身份，并固定运行一次 `df -Pk / /tmp`，限时两秒、输出最多 16 KiB。缺失、重复、截断、矛盾或超限的计数使检查不完整。不报告或执行设备名、挂载标签和原始响应。可读的计数仍不能证明事务峰值内存及磁盘需求、tmpfs 计算或命名空间身份；资源预算仍未验证，安装保持禁用。只使用现有系统工具，不自动安装新工具。

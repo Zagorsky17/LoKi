@@ -158,10 +158,11 @@ def read_ipk(path):
 
 
 def tool_limits():
-    resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
-    resource.setrlimit(resource.RLIMIT_CPU, (15, 15))
-    resource.setrlimit(resource.RLIMIT_AS, (268435456, 268435456))
-    resource.setrlimit(resource.RLIMIT_FSIZE, (8388608, 8388608))
+    for kind, limit in ((resource.RLIMIT_CORE, 0), (resource.RLIMIT_CPU, 15),
+                        (resource.RLIMIT_AS, 268435456), (resource.RLIMIT_FSIZE, 8388608)):
+        soft, hard = resource.getrlimit(kind)
+        resource.setrlimit(kind, (limit if soft == resource.RLIM_INFINITY else min(soft, limit),
+                                  limit if hard == resource.RLIM_INFINITY else min(hard, limit)))
 
 
 def cli_limits():
@@ -213,6 +214,11 @@ def apk_entries(data):
         need(value is None or (type(value) is list and (not value or own_alias)), "artifact-replacement-metadata")
     priority = info.get("provider-priority")
     need(priority is None or (type(priority) is int and priority == 0), "artifact-replacement-metadata")
+    for key in ("install-if", "recommends"):
+        value = info.get(key)
+        need(value is None or (type(value) is list and not value), "artifact-extra-dependency-metadata")
+    layer = info.get("layer")
+    need(layer is None or (type(layer) is int and layer == 0), "artifact-layer-metadata")
     dependencies = info.get("depends", [])
     need(type(dependencies) is list and len(dependencies) <= 128, "control-dependencies-invalid")
     for dependency in dependencies:
