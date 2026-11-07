@@ -170,4 +170,29 @@ t.test("a changed APK recheck cannot grant dependency coverage", () => {
     t.eq(fs.readfile(path), data);
 });
 
+
+t.test("APK identity byte boundaries and repeated scans retain the same grammar", () => {
+    let name = "p" + sprintf("%0127d", 0);
+    let version = "1" + sprintf("%0127d", 0);
+    let arch = "a" + sprintf("%063d", 0);
+    let data = replace(record(name), "V:1.0-r1\nA:all", "V:" + version + "\nA:" + arch);
+    let result = apk.parse(data);
+    t.eq(result.packages[0].name, name);
+    t.eq(result.packages[0].version, version);
+    t.eq(apk.parse(data), result);
+    for (let invalid in [ replace(data, "P:" + name, "P:" + name + "x"),
+        replace(data, "V:" + version, "V:" + version + "1"), replace(data, "A:" + arch, "A:" + arch + "x") ])
+        t.eq(apk.parse(invalid).error, "apk-identity-invalid");
+});
+
+
+t.test("APK number and digest byte boundaries retain their original limits", () => {
+    let number = sprintf("%020d", 0);
+    t.ok(apk.parse(record("test", "q:" + number + "\n")).error == null);
+    t.eq(apk.parse(record("test", "q:" + number + "0\n")).error, "apk-number-invalid");
+    let digest = sprintf("%0128d", 0);
+    t.ok(apk.parse(record("test", "F:etc\nR:f\nZ:" + digest + "\n")).error == null);
+    t.eq(apk.parse(record("test", "F:etc\nR:f\nZ:" + digest + "0\n")).error, "apk-digest-invalid");
+});
+
 t.done();

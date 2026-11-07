@@ -3,9 +3,19 @@
 const BYTE_LIMIT = 4194304;
 const ENTRY_LIMIT = 16384;
 const PACKAGE_LIMIT = 4096;
+// Keep recurring POSIX expressions simple and enforce the same byte limits separately on musl.
+const PATH_CONTROL_PATTERN = /[\x01-\x1f\x7f]/;
+const CONTROL_PATTERN = /[\x01-\x08\x0b-\x1f\x7f]/;
+const ACL_PATTERN = /^[0-9]{1,10}:[0-9]{1,10}:[0-7]{1,4}(:[A-Za-z0-9+\/=]{1,128})?$/;
+const DIGEST_PATTERN = /^[A-Za-z0-9+\/=]+$/;
+const NUMBER_PATTERN = /^[0-9]+$/;
+const NAME_PATTERN = /^[a-z0-9][a-z0-9+_.-]*$/;
+const VERSION_PATTERN = /^[A-Za-z0-9+_.~-]+$/;
+const ARCH_PATTERN = /^[A-Za-z0-9_-]+$/;
+
 
 function relative_path(value, directory) {
-    if (type(value) != "string" || length(value) > 4095 || index(value, "\u0000") >= 0 || match(value, /[\x01-\x1f\x7f]/))
+    if (type(value) != "string" || length(value) > 4095 || index(value, "\u0000") >= 0 || match(value, PATH_CONTROL_PATTERN))
         return false;
     if (value == "")
         return directory;
@@ -23,7 +33,7 @@ function parse(data) {
     if (length(data) > BYTE_LIMIT)
         return { error: "apk-byte-limit" };
     // POSIX regex patterns cannot contain NUL; check that byte separately.
-    if (index(data, "\u0000") >= 0 || match(data, /[\x01-\x08\x0b-\x1f\x7f]/))
+    if (index(data, "\u0000") >= 0 || match(data, CONTROL_PATTERN))
         return { error: "apk-control-byte" };
     let packages = [];
     let names = {};
@@ -71,7 +81,7 @@ function parse(data) {
             else if (key == "M" || key == "a") {
                 if ((key == "M" && (directory == null || file != null || directory_acl)) ||
                     (key == "a" && (file == null || acl)) ||
-                    !match(value, /^[0-9]{1,10}:[0-9]{1,10}:[0-7]{1,4}(:[A-Za-z0-9+\/=]{1,128})?$/))
+                    !match(value, ACL_PATTERN))
                     return { error: "apk-acl-invalid" };
                 let ids = split(value, ":");
                 if (int(ids[0], 10) > 4294967295 || int(ids[1], 10) > 4294967295)
@@ -81,7 +91,7 @@ function parse(data) {
             }
             else if (key == "Z") {
                 // Digests are opaque observations, never provenance evidence.
-                if (file == null || digest || !match(value, /^[A-Za-z0-9+\/=]{1,128}$/))
+                if (file == null || digest || length(value) > 128 || !match(value, DIGEST_PATTERN))
                     return { error: "apk-digest-invalid" };
                 digest = true;
             }
@@ -91,7 +101,7 @@ function parse(data) {
                 if (exists(fields, key) || directory != null)
                     return { error: "apk-header-duplicate-or-order" };
                 fields[key] = value;
-                if (index("SItkq", key) >= 0 && !match(value, /^[0-9]{1,20}$/))
+                if (index("SItkq", key) >= 0 && (length(value) > 20 || !match(value, NUMBER_PATTERN)))
                     return { error: "apk-number-invalid" };
                 if (key == "f" && value != "S")
                     return { error: "apk-broken-or-unknown-flags" };
@@ -99,9 +109,10 @@ function parse(data) {
             if (count > ENTRY_LIMIT)
                 return { error: "apk-entry-limit" };
         }
-        if (!match(fields.P || "", /^[a-z0-9][a-z0-9+_.-]{0,127}$/) ||
-            !match(fields.V || "", /^[A-Za-z0-9+_.~-]{1,128}$/) ||
-            !match(fields.A || "", /^[A-Za-z0-9_-]{1,64}$/))
+        if (length(fields.P || "") > 128 || length(fields.V || "") > 128 || length(fields.A || "") > 64 ||
+            !match(fields.P || "", NAME_PATTERN) ||
+            !match(fields.V || "", VERSION_PATTERN) ||
+            !match(fields.A || "", ARCH_PATTERN))
             return { error: "apk-identity-invalid" };
         if (exists(names, fields.P))
             return { error: "apk-package-duplicate" };

@@ -1,4 +1,4 @@
-"""Valid exact dependency checks must fit the preflight child's resource budget."""
+"""Dependency and package metadata scans must fit the preflight child's resource budget."""
 import json
 from pathlib import Path
 import resource
@@ -7,6 +7,7 @@ import signal
 import subprocess
 import os
 import sys
+import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -46,6 +47,31 @@ class DependencyBudget(unittest.TestCase):
                     self.fail("valid exact dependency check exceeded the five-second deadline")
                 self.assertEqual(process.returncode, 0, "child resource/check failure: " + stderr)
                 self.assertEqual((stdout, stderr), ("budget-ok", ""))
+
+
+    def test_apk_package_scan_fits_without_changing_record_limits(self):
+        binary = shutil.which("ucode")
+        self.assertIsNotNone(binary, "ucode is required; do not skip the APK resource check")
+        program = '''let fs=require("fs"),apk=require("service.preflight_apk");
+            let result=apk.parse(fs.readfile(ARGV[0]));
+            if (ARGV[1]=="valid") assert(result.error==null&&length(result.packages)==4096);
+            else assert(result.error=="apk-package-limit");
+            print("apk-budget-ok");'''
+        for count, expected in [(4096, "valid"), (4097, "limit")]:
+            with self.subTest(packages=count), tempfile.NamedTemporaryFile(mode="w") as fixture:
+                fixture.write("".join("P:p" + str(i) + "\nV:1.0-r1\nA:all\nS:100\nI:100\n\n" for i in range(count)))
+                fixture.flush()
+                command = [binary, "-L", str(ROOT / "loki/files/usr/lib"), "-e", program, fixture.name, expected]
+                process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                                           preexec_fn=child_limits, start_new_session=True)
+                try:
+                    stdout, stderr = process.communicate(timeout=5)
+                except subprocess.TimeoutExpired:
+                    os.killpg(process.pid, signal.SIGKILL)
+                    process.communicate(timeout=5)
+                    self.fail("APK metadata scan exceeded the five-second deadline")
+                self.assertEqual(process.returncode, 0, "APK child resource/check failure: " + stderr)
+                self.assertEqual((stdout, stderr), ("apk-budget-ok", ""))
 
 
 if __name__ == "__main__":
