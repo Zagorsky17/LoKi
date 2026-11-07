@@ -1,4 +1,5 @@
 let fs = require("fs");
+let process = require("core.process");
 let netstat = require("core.netstat");
 let nft_state = require("nft.state");
 let runtime_constants = require("singbox.constants");
@@ -106,36 +107,21 @@ function pid_is_sing_box(pid) {
     }
 }
 
-// After the command name, which may hold spaces and parentheses: [0] state, [11] and [12]
-// user and system time, [19] start time.
-function stat_fields(stat) {
-    stat = as_string(stat);
-    let marker = rindex(stat, ") ");
-    if (marker < 0)
-        return null;
-
-    let fields = split(trim(substr(stat, marker + 2)), /[ \t\r\n]+/);
-    for (let i in [ 11, 12, 19 ])
-        if (match(fields[i] ?? "", /^[0-9]+$/) == null)
-            return null;
-    return fields;
-}
-
 function process_start_ticks(stat) {
-    let fields = stat_fields(stat);
+    let fields = process.stat_fields(as_string(stat));
     return fields == null ? null : int(fields[19]);
 }
 
 // When the process started, in ticks since boot, or null once it is gone.
 function start_ticks(pid) {
-    return process_start_ticks(fs.readfile("/proc/" + pid + "/stat"));
+    return process.start_ticks(pid);
 }
 
 // Processor ticks and anonymous memory: the resident total also counts the binary's pages, a
 // file cache the kernel drops, which for loki-core is over half of it.
 function process_usage(pid) {
     let dir = paths.proc + "/" + pid;
-    let fields = stat_fields(fs.readfile(dir + "/stat"));
+    let fields = process.stat_fields(fs.readfile(dir + "/stat"));
     let anon = match(fs.readfile(dir + "/status") ?? "", /(^|\n)RssAnon:[ \t]*([0-9]+) kB/);
     if (fields == null || anon == null)
         return null;
