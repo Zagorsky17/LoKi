@@ -668,7 +668,7 @@ class ComponentPolicy(ManifestHarness, unittest.TestCase):
             values = []
             for path, mode in files.items():
                 item = entry(path); item["mode"] = mode; values.append(item)
-            component = dict(role=role, package=name, version="1.14.4-r8" if role == "core" else "2.0.0",
+            component = dict(role=role, package=name, version="1.14.4-r9" if role == "core" else "2.0.0",
                              architecture="x86_64" if role == "core" else "all" if kind == "ipk" else "noarch",
                              format=kind, artifact=dict(name=name + "." + kind, size=1, sha256="b" * 64), files=values)
             result["components"].append(component)
@@ -707,14 +707,15 @@ class ComponentPolicy(ManifestHarness, unittest.TestCase):
 
     def test_version_mismatches_and_unreviewed_or_old_core_refuse(self):
         for role, version in (("luci", "2.0.1"), ("locale", "2.0.1"), ("core", "1.14.4-r7"),
-                              ("core", "1.14.4"), ("core", "synthetic-secret"), ("core", "1.14.4-r8+evil")):
+                              ("core", "1.14.4-r8"), ("core", "1.14.4-r8+3"),
+                              ("core", "1.14.4"), ("core", "synthetic-secret"), ("core", "1.14.4-r9+evil")):
             value = self.complete()
             next(item for item in value["components"] if item["role"] == role)["version"] = version
             policy, _ = self.policy(value)
             self.assertEqual(policy["state"], "incomplete")
             self.assertNotIn("synthetic-secret", json.dumps(policy))
         value = self.complete()
-        next(item for item in value["components"] if item["role"] == "core")["version"] = "1.14.4-r9"
+        next(item for item in value["components"] if item["role"] == "core")["version"] = "1.14.4-r10"
         policy, _ = self.policy(value)
         self.assertEqual(policy["state"], "checked")
 

@@ -132,7 +132,7 @@ chmod +x "$1/build.sh"
             asset_digest = hashlib.sha256(b'synthetic module source asset').hexdigest()
             self.assertEqual({p.name for p in output.iterdir()},
                 {'core.ipk', 'core.apk', 'core-release.json', 'SHA256SUMS',
-                 'core-source-1.14.4-r8.tar.gz', f'core-module-sources-1.14.4-r8-{asset_digest}.tar.gz'})
+                 'core-source-1.14.4-r9.tar.gz', f'core-module-sources-1.14.4-r9-{asset_digest}.tar.gz'})
             self.assertTrue(all(p.stat().st_mode & 0o022 == 0 for p in output.iterdir()),
                             'release artifacts must not inherit a writable caller umask')
             self.assertEqual(json.loads((output / 'core-release.json').read_text())['tag'], '2.0.0')
@@ -144,7 +144,7 @@ chmod +x "$1/build.sh"
                     LOKI_TEST_PREPARED=str(work / 'prepared')), capture_output=True, text=True)
                 self.assertEqual(repeated.returncode, 0, repeated.stderr)
                 assets = {p.name for p in output.glob('core-module-sources-*.tar.gz')}
-                self.assertEqual(assets, {f'core-module-sources-1.14.4-r8-{hashlib.sha256(data).hexdigest()}.tar.gz'
+                self.assertEqual(assets, {f'core-module-sources-1.14.4-r9-{hashlib.sha256(data).hexdigest()}.tar.gz'
                                         for data in (b'synthetic module source asset', b'another module source asset')})
                 subprocess.run(['sha256sum', '--check', 'SHA256SUMS'], cwd=output, check=True, capture_output=True)
 
