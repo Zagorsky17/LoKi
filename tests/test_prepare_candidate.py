@@ -106,6 +106,32 @@ class CandidatePreparation(unittest.TestCase):
         for path, values in before.items():
             self.assertEqual((path.read_bytes(), path.stat().st_mtime_ns, path.stat().st_mode), values)
 
+    def test_apk_solver_controls_abort_each_component_without_publishing_snapshot(self):
+        selected = {role: self.root / (role + ".apk") for role in self.selected}
+        for path in selected.values():
+            path.write_bytes(b"synthetic-apk")
+            path.chmod(0o600)
+        for damaged in selected:
+            for fields, reason in (({"install-if": ["libc"]}, "artifact-extra-dependency-metadata"),
+                                   ({"recommends": ["synthetic-secret"]}, "artifact-extra-dependency-metadata"),
+                                   ({"layer": 1}, "artifact-layer-metadata")):
+                def dump(apk, arguments):
+                    if arguments[0] == "verify":
+                        return b""
+                    role = Path(arguments[-1]).stem
+                    data = fixtures.ArtifactCatalog().apk_fixture(**(fields if role == damaged else {}))
+                    data["info"]["name"] = preparer.catalog.ROLES[role]
+                    data["paths"][1]["files"][0]["name"] = role
+                    return json.dumps(data).encode()
+
+                with self.subTest(role=damaged, fields=fields), mock.patch.object(
+                        preparer.catalog, "apk_command", side_effect=dump), self.assertRaisesRegex(
+                        preparer.catalog.InvalidCatalog, reason):
+                    preparer.prepare(selected, self.core, self.output, self.ucode, apk="/synthetic/apk")
+                self.assertFalse(self.output.exists())
+                self.assertFalse(self.marker.exists())
+                self.assertTrue(all(p.read_bytes() == b"synthetic-apk" for p in selected.values()))
+
     def test_cli_success_and_competing_calls_publish_one_complete_snapshot(self):
         processes = [subprocess.Popen(self.command(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) for _ in range(2)]
         results = []
