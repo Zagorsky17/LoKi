@@ -185,7 +185,11 @@ print(request.begin());
                 self.assertNotEqual(second, first)
                 self.assertTrue(second)
                 self.assertEqual((root / "pending").read_text(), second + "\n")
-                self.assertFalse((root / "request.lock").exists())
+                self.assertFalse((root / "request.lock/pid").exists())
+                self.assertEqual((root / "request.lock/.kernel").read_text(), "loki-lock-v1\n")
+                status = subprocess.run(command + [prefix + 'print(require("service.lock").held(request.paths.lock));'],
+                                        env=environment, capture_output=True, text=True, timeout=5, check=True)
+                self.assertEqual((status.stdout, status.stderr), ("false", ""))
             finally:
                 (root / "release").touch()
                 for process in (writer, canceller):

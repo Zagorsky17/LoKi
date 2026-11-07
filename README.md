@@ -126,6 +126,8 @@ The rule-set worker uses the last confirmed applied generation. Saving different
 
 An interrupted Apply can leave an unconfirmed combination of core and nft state. Automatic Start, queued reload and interface-triggered reload refuse to finish that operation. Apply explicitly, or complete Stop and then Start; these actions use the saved configuration. Stop must record its intent before teardown. A normal reboot loses the tmpfs context and starts from the saved configuration. Recovery after a core respawn checks procd command, PID/start time and the protected configuration digest within LoKi's own lifecycle protocol; changes made by other root processes outside it are not supported for automatic recovery.
 
+Lifecycle actions use a Linux kernel lock released when the owning process exits. Temporary lock directories remain after completion; their presence alone does not indicate a busy operation. Live or uncertain legacy ownership refuses a competing action.
+
 ## Configuration backups
 
 LoKi configurations carry `option config_format 'loki'` alongside their schema version. A matching version number alone does not make a Forkop or Podkop configuration compatible. Installation, startup and backup restoration refuse foreign, unsupported or malformed schemas without moving or resetting the file. Intermediate development configurations without the LoKi marker are not converted automatically.

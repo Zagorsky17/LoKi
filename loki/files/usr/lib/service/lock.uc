@@ -1,5 +1,4 @@
-// Directory locks that serialize lifecycle actions, and marker files carrying a request (a
-// queued reload, a failed start to retry) from one process to the next.
+// Kernel leases serialize lifecycle actions; request markers queue work between processes.
 
 let fs = require("fs");
 let common = require("core.common");
@@ -7,6 +6,8 @@ let exec = require("core.exec");
 let process = require("core.process");
 
 const DEFAULT_OWNER_GRACE = 30;
+const KERNEL_MAGIC = "loki-lock-v1\n";
+let leases = {};
 
 function owner_of(lock_dir) {
     let dir = fs.lstat(lock_dir);
@@ -19,7 +20,7 @@ function owner_of(lock_dir) {
     let node = fs.lstat(lock_dir + "/pid");
     let failure = fs.error();
     if (node == null)
-        return missing != null && failure == missing ? { pid: "" } : null;
+        return missing != null && failure == missing ? { pid: "", node: null } : null;
     if (node.type != "file" || node.nlink != 1 || node.uid != dir.uid || (node.mode & 0022) != 0)
         return null;
 
@@ -32,7 +33,7 @@ function owner_of(lock_dir) {
     if (read_error != null || closed !== true || length(body) > 128 || index(body ?? "", "\x00") >= 0)
         return null;
     if (body == null || body == "")
-        return { pid: "" };
+        return { pid: "", node };
 
     let fields = split(body, "\n");
     if (fields[-1] == "") pop(fields);
@@ -40,71 +41,190 @@ function owner_of(lock_dir) {
         (length(fields) == 2 && (match(fields[1], /^[0-9]{1,19}$/) == null ||
             int(fields[1]) < 0 || "" + int(fields[1]) != fields[1])))
         return null;
-    return { pid: fields[0], ticks: length(fields) == 2 ? fields[1] : null };
+    return { pid: fields[0], ticks: length(fields) == 2 ? fields[1] : null, node };
 }
 
-// Creating the directory and writing the owner are two steps, so an ownerless lock counts as
-// held for a grace period.
-function held(lock_dir, owner_grace) {
-    let stat = lock_dir == "" ? null : fs.lstat(lock_dir);
-    if (stat == null)
-        return false;
+function same_node(a, b) {
+    return a != null && b != null && a.inode == b.inode &&
+        a.dev.major == b.dev.major && a.dev.minor == b.dev.minor;
+}
 
-    let owner = owner_of(lock_dir);
-    if (owner == null)
+function close_file(file) {
+    try { return file.close() === true; }
+    catch (e) { return false; }
+}
+
+// fs reports translated error text; establish ENOENT without trusting a failed marker stat.
+function unmarked(path) {
+    try {
+        fs.lstat("");
+        let missing = fs.error();
+        let node = fs.lstat(path);
+        let failure = fs.error();
+        return missing != null && node == null && failure == missing;
+    }
+    catch (e) { return false; }
+}
+
+function safe_anchor(node, uid) {
+    return node != null && node.type == "file" && node.nlink == 1 && node.uid == uid &&
+        (node.mode & 0777) == 0600 && node.size <= length(KERNEL_MAGIC);
+}
+
+function anchor(lock_dir, create) {
+    let dir = fs.lstat(lock_dir);
+    if (dir == null || dir.type != "directory" || dir.uid != fs.stat("/proc/self").uid ||
+        (dir.mode & 0022) != 0)
+        return null;
+    let path = lock_dir + "/.kernel";
+    let node = fs.lstat(path);
+    if (node != null && !safe_anchor(node, dir.uid))
+        return null;
+    let file = node == null && create && unmarked(path) ? fs.open(path, "wx+e", 0600)
+        : node != null ? fs.open(path, create ? "r+e" : "re") : null;
+    if (file == null)
+        return null;
+    let opened = fs.stat("/proc/self/fd/" + file.fileno());
+    let current = fs.lstat(path);
+    if (!safe_anchor(current, dir.uid) || !same_node(current, opened) || !same_node(dir, fs.lstat(lock_dir))) {
+        close_file(file);
+        return null;
+    }
+    return file;
+}
+
+function protocol(file) {
+    if (file.seek(0) == null)
+        return null;
+    let body = file.read(length(KERNEL_MAGIC) + 1) ?? "";
+    if (file.error() != null || length(body) > length(KERNEL_MAGIC) ||
+        substr(KERNEL_MAGIC, 0, length(body)) != body)
+        return null;
+    return { initialized: body != "", complete: body == KERNEL_MAGIC };
+}
+
+function publish_protocol(file) {
+    if (file.seek(0) == null || file.write(KERNEL_MAGIC) != length(KERNEL_MAGIC))
+        return false;
+    // Seeking flushes buffered output; older ucode flush() misreports successful writes.
+    return file.error() == null && file.seek(0) != null &&
+        file.read(length(KERNEL_MAGIC) + 1) == KERNEL_MAGIC && file.error() == null;
+}
+
+function legacy_held(owner, stat, owner_grace) {
+    if (owner == null || (owner.pid == "" && owner.node != null))
         return true;
     if (common.pid_alive(owner.pid)) {
         let ticks = owner.ticks == null ? null : process.start_ticks(owner.pid);
         return ticks == null || "" + ticks == owner.ticks;
     }
     if (owner.pid != "")
-        return false;
-
+        return !unmarked("/proc/" + owner.pid);
     let age = common.now_seconds() - stat.mtime;
     return age >= 0 && age < (owner_grace ?? DEFAULT_OWNER_GRACE);
 }
 
-function remove(lock_dir) {
-    fs.unlink(lock_dir + "/pid");
-    return fs.rmdir(lock_dir);
+// Queries never create anchors; closing their independent FD cannot release the holder.
+function held(lock_dir, owner_grace) {
+    if (lock_dir == "")
+        return false;
+    if (leases[lock_dir] != null)
+        return true;
+    let file = null;
+    let result = true;
+    try {
+        let stat = fs.lstat(lock_dir);
+        if (stat == null)
+            return !unmarked(lock_dir);
+        if (unmarked(lock_dir + "/.kernel"))
+            return legacy_held(owner_of(lock_dir), stat, owner_grace);
+        file = anchor(lock_dir, false);
+        if (file != null && file.lock("xn")) {
+            let state = protocol(file);
+            let owner = owner_of(lock_dir);
+            result = state == null || owner == null || (!state.initialized && legacy_held(owner, stat, owner_grace));
+        }
+    }
+    catch (e) { result = true; }
+    if (file != null && !close_file(file))
+        result = true;
+    return result;
 }
 
 function release(lock_dir, owner) {
-    let recorded = lock_dir == "" ? null : owner_of(lock_dir);
-    if (owner != "" && recorded != null && recorded.pid == owner && owner == common.own_pid() &&
-        (recorded.ticks == null || recorded.ticks == "" + process.start_ticks(owner)))
-        remove(lock_dir);
+    let lease = leases[lock_dir];
+    if (lease == null || owner != common.own_pid() || "" + process.start_ticks(owner) != lease.ticks)
+        return;
+    let recorded = owner_of(lock_dir);
+    if (recorded == null || recorded.pid != owner || recorded.ticks != lease.ticks)
+        return;
+    if (same_node(recorded.node, fs.lstat(lock_dir + "/pid")))
+        fs.unlink(lock_dir + "/pid");
+    if (close_file(lease.file))
+        delete leases[lock_dir];
+}
+
+function write_owner(lock_dir, owner, ticks, file, initialized) {
+    let path = lock_dir + "/pid";
+    let record = fs.open(path, "wxe", 0600);
+    if (record == null)
+        return false;
+    let node = fs.stat("/proc/self/fd/" + record.fileno());
+    let body = owner + "\n" + ticks + "\n";
+    let written = false;
+    try {
+        written = record.write(body) == length(body);
+        if (written && !initialized)
+            written = publish_protocol(file);
+    }
+    catch (e) { written = false; }
+    let closed = close_file(record);
+    if (written && closed)
+        return true;
+    if (same_node(node, fs.lstat(path)))
+        fs.unlink(path);
+    return false;
+}
+
+function prepare_owner(lock_dir, owner, ticks, file, created, owner_grace) {
+    let state = protocol(file);
+    let recorded = owner_of(lock_dir);
+    if (state == null || recorded == null)
+        return false;
+    if (!state.initialized && !created && legacy_held(recorded, fs.lstat(lock_dir), owner_grace))
+        return false;
+    // Only a fresh directory can publish before its exclusive owner write.
+    if ((created || state.initialized) && !state.complete) {
+        if (!publish_protocol(file))
+            return false;
+        state.initialized = true;
+    }
+    if (recorded.node != null && (!same_node(recorded.node, fs.lstat(lock_dir + "/pid")) ||
+        !fs.unlink(lock_dir + "/pid")))
+        return false;
+    return write_owner(lock_dir, owner, ticks, file, state.initialized);
 }
 
 function acquire(lock_dir, owner, owner_grace) {
     let ticks = process.start_ticks(owner);
-    if (lock_dir == "" || owner != common.own_pid() || ticks == null ||
+    if (lock_dir == "" || leases[lock_dir] != null || owner != common.own_pid() || ticks == null ||
         !common.ensure_dir(common.parent_dir(lock_dir)))
         return false;
-
-    if (!fs.mkdir(lock_dir, 0755)) {
-        if (held(lock_dir, owner_grace) || !remove(lock_dir) || !fs.mkdir(lock_dir, 0755))
-            return false;
+    let file = null;
+    let acquired = false;
+    try {
+        let created = fs.mkdir(lock_dir, 0755);
+        fs.error(); // anchor() validates an existing directory; discard the handled mkdir error.
+        file = anchor(lock_dir, true);
+        acquired = file != null && file.lock("xn") &&
+            prepare_owner(lock_dir, owner, ticks, file, created, owner_grace);
     }
-
-    let path = lock_dir + "/pid";
-    let file = fs.open(path, "wxe", 0600);
-    if (file == null) {
-        fs.rmdir(lock_dir);
-        return false;
-    }
-    let node = fs.stat("/proc/self/fd/" + file.fileno());
-    let body = owner + "\n" + ticks + "\n";
-    let written = file.write(body) == length(body);
-    let closed = file.close();
-    if (written && closed === true)
-        return true;
-    let current = fs.lstat(path);
-    if (node != null && current != null && node.inode == current.inode &&
-        node.dev.major == current.dev.major && node.dev.minor == current.dev.minor)
-        fs.unlink(path);
-    fs.rmdir(lock_dir);
-    return false;
+    catch (e) { acquired = false; }
+    if (acquired)
+        leases[lock_dir] = { file, ticks: "" + ticks };
+    else if (file != null)
+        close_file(file);
+    return acquired;
 }
 
 function acquire_wait(lock_dir, owner, timeout, owner_grace) {
@@ -126,18 +246,6 @@ function consume_request(path) {
         return false;
     fs.unlink(path);
     return true;
-}
-
-// fs reports translated error text; establish ENOENT without trusting a failed marker stat.
-function unmarked(path) {
-    try {
-        fs.lstat("");
-        let missing = fs.error();
-        let node = fs.lstat(path);
-        let failure = fs.error();
-        return missing != null && node == null && failure == missing;
-    }
-    catch (e) { return false; }
 }
 
 // Detached, so the reload that finished does not wait for the one it queued.
