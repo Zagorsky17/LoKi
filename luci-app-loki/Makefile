@@ -30,7 +30,7 @@ LUCI_DESCRIPTION:=Web interface for LoKi
 # shortcut: Preserve esbuild output; recheck SDK jsmin before enabling a second minifier.
 LUCI_MINIFY_JS:=0
 
-PKG_LICENSE:=GPL-2.0-or-later AND MIT AND Apache-2.0 AND 0BSD AND OFL-1.1
+PKG_LICENSE:=GPL-2.0-or-later AND MIT AND Apache-2.0 AND 0BSD AND OFL-1.1 AND ISC
 # LuCI's automatic locale packages write luci.languages.*; LoKi owns its locale.
 override LUCI_LANGUAGES :=
 
@@ -42,6 +42,8 @@ define Build/Prepare/$(PKG_NAME)
 	$(INSTALL_DATA) ../yacd-loki/licenses/roboto-mono-OFL.txt $(PKG_BUILD_DIR)/root/usr/share/licenses/luci-app-loki/ROBOTO-MONO-OFL
 	$(INSTALL_DATA) ../yacd-loki/licenses/THIRD_PARTY_NOTICES.txt $(PKG_BUILD_DIR)/root/usr/share/licenses/luci-app-loki/YACD-THIRD-PARTY-NOTICES
 	$(INSTALL_DATA) ../yacd-loki/licenses/THIRD_PARTY_INVENTORY.json $(PKG_BUILD_DIR)/root/usr/share/licenses/luci-app-loki/YACD-THIRD-PARTY-INVENTORY
+	$(INSTALL_DATA) ../fe-app-loki/licenses/lucide-LICENSE.txt $(PKG_BUILD_DIR)/root/usr/share/licenses/luci-app-loki/LUCIDE-LICENSE
+	$(INSTALL_DATA) ../fe-app-loki/licenses/lucide-provenance.json $(PKG_BUILD_DIR)/root/usr/share/licenses/luci-app-loki/LUCIDE-PROVENANCE
 	sed -i -e 's/__COMPILED_VERSION_VARIABLE__/$(LOKI_COMPILED_VERSION)/g' $(PKG_BUILD_DIR)/htdocs/luci-static/resources/view/loki/main.js
 endef
 
