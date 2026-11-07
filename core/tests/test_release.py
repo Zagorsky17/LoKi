@@ -58,7 +58,7 @@ class ReleaseTests(unittest.TestCase):
             self.assertFalse(marker.exists())
             self.assertFalse(output.exists())
 
-    def build_case(self, binary_only=False, source_failure=False, repeat_profile=False, fetch_failure=False):
+    def build_case(self, binary_only=False, source_failure=False, repeat_profile=False, fetch_failure=False, binary_failure=False):
         with tempfile.TemporaryDirectory() as work:
             work = Path(work)
             recipe, binary, output = work / 'recipe', work / 'bin', work / 'output'
@@ -80,6 +80,16 @@ output.write_bytes(b'synthetic module source asset')
 ''' if not source_failure else "import sys\nif sys.argv[1:] != ['--fetch-go-source']: raise SystemExit(23)\n")
             if fetch_failure:
                 collector.write_text('raise SystemExit(29)\n')
+            exporter = recipe / 'release_binaries.py'
+            exporter.write_text('''from pathlib import Path
+import sys
+packages, output, version = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3]
+assert version == '1.14.4-r10'
+assert packages.joinpath('core.ipk').read_bytes() == b'ipk'
+assert all(Path(p).read_bytes() == b'binary' for p in sys.argv[4:])
+output.mkdir()
+(output / 'loki-core_1.14.4-r10_base_x86_64.bin').write_bytes(b'binary')
+''' if not binary_failure else 'raise SystemExit(31)\n')
             go = binary / 'go'
             go.write_text('#!/bin/sh\nprintf "go' + (recipe / 'GO_VERSION').read_text().strip() + '\\n"\n')
             go.chmod(0o755)
@@ -109,7 +119,7 @@ chmod +x "$1/build.sh"
 ''')
             prepare.chmod(0o755)
             args = [str(recipe / 'build.sh'), '2.0.0', str(output)]
-            if source_failure or fetch_failure:
+            if source_failure or fetch_failure or binary_failure:
                 output.mkdir()
                 (output / 'existing').write_bytes(b'keep')
             if binary_only:
@@ -118,7 +128,7 @@ chmod +x "$1/build.sh"
                 PATH=str(binary) + os.pathsep + os.environ['PATH'],
                 LOKI_TEST_PREPARED=str(work / 'prepared')), capture_output=True, text=True,
                 preexec_fn=lambda: os.umask(0o002))
-            if source_failure or fetch_failure:
+            if source_failure or fetch_failure or binary_failure:
                 self.assertNotEqual(result.returncode, 0)
                 self.assertEqual({p.name for p in output.iterdir()}, {'existing'})
                 self.assertEqual((output / 'existing').read_bytes(), b'keep')
@@ -132,6 +142,7 @@ chmod +x "$1/build.sh"
             asset_digest = hashlib.sha256(b'synthetic module source asset').hexdigest()
             self.assertEqual({p.name for p in output.iterdir()},
                 {'core.ipk', 'core.apk', 'core-release.json', 'SHA256SUMS',
+                 'loki-core_1.14.4-r10_base_x86_64.bin',
                  'core-source-1.14.4-r10.tar.gz', f'core-module-sources-1.14.4-r10-{asset_digest}.tar.gz'})
             self.assertTrue(all(p.stat().st_mode & 0o022 == 0 for p in output.iterdir()),
                             'release artifacts must not inherit a writable caller umask')
@@ -148,8 +159,11 @@ chmod +x "$1/build.sh"
                                         for data in (b'synthetic module source asset', b'another module source asset')})
                 subprocess.run(['sha256sum', '--check', 'SHA256SUMS'], cwd=output, check=True, capture_output=True)
 
-    def test_only_packages_and_manifests_are_published_as_build_outputs(self):
+    def test_only_verified_release_artifacts_are_published_as_build_outputs(self):
         self.build_case()
+
+    def test_binary_export_failure_preserves_the_existing_release_directory(self):
+        self.build_case(binary_failure=True)
 
     def test_a_binary_only_build_is_not_a_package_release(self):
         self.build_case(binary_only=True)

@@ -161,6 +161,8 @@ core/build.sh 0.1.0 "$PWD/release" --arch aarch64_cortex-a53 --variant base
 
 `core/build.sh` 接受继承的构建器变体和目标；不指定架构时会构建全部目标。full 变体还可能下载数 GB 的 Chromium 源码和工具。发布工作流在应用文件旁加入 tiny/base/full 内核软件包和单独的内核清单。构建不会发布版本，也不会安装软件包。
 
+构建器还会导出用于初始引导（bootstrap）的独立二进制文件 `loki-core_VERSION_VARIANT_ARCH.bin`。复制到输出目录前，会将其大小和 SHA-256 与每个 IPK/APK 中的 `/usr/bin/loki-core` 核对；同一构建配置的两种格式必须包含相同字节。文件权限为 `0644`，并加入 `SHA256SUMS`。应与对应的软件包、源码和许可证声明一起分发。此文件不是安装器；当前开发阶段仍禁止安装。
+
 每次成功构建软件包还会生成 `core-module-sources-VERSION-SHA256.tar.gz`，其中包含已核实的外部 Go 模块源码 ZIP、可用的 `go.sum` 校验依赖图元数据，以及固定的 Public Suffix List 源码及其 MPL 2.0 文本。`SOURCES.json` 将文件绑定到二进制哈希、构建设置、Go 版本和已打补丁的源码树。在同一输出目录合并多个构建配置时，各配置保留单独归档。源码清单 schema 2 要求 Go 归档；旧清单仅作为历史记录，不能通过此检查。
 
 归档还包含未修改的官方 `go1.26.10.src.tar.gz`，其中有 Go runtime、标准库、工具链源码及其原始声明。收集器固定并再次核查其精确大小和 SHA-256。源码归档只作为数据复制，收集时不会解压到磁盘或执行。已安装的 Go 源码文件必须与归档相同；缺失或改变会阻止收集。
