@@ -2,7 +2,7 @@
 
 [Русский](README.ru.md) · English · [简体中文](README.zh.md)
 
-> **LoKi 2.0.1 beta.** Software checks have passed on Linux. Initial real-router acceptance and failure recovery still need testing.
+> **LoKi 2.0.2 beta.** Software checks have passed on Linux. Initial real-router acceptance and failure recovery still need testing.
 
 Rule-based traffic routing for OpenWrt with the dedicated loki-core engine.
 
@@ -10,17 +10,15 @@ Project: [Zagorsky17/LoKi](https://github.com/Zagorsky17/LoKi). Report bugs and 
 
 ## Beta installation
 
-Connect to the router over SSH as `root` and run one command:
+Connect to OpenWrt over SSH as `root` and run:
 
 ```sh
 (set -o pipefail; wget -O - https://raw.githubusercontent.com/Zagorsky17/LoKi/main/install-beta.sh | sh)
 ```
 
-The LoKi `2.0.1` kit includes core `1.14.4-r10` for OpenWrt 24.10/IPK and 25.12/APK on `aarch64_cortex-a53`. For Cudy WR3000S running OpenWrt 25.12, use the [installation guide (Russian)](INSTALL-CUDY-WR3000S-25.ru.md) and the complete verified kit from the [release](https://github.com/Zagorsky17/LoKi/releases/tag/2.0.1).
+The same installer supports OpenWrt 24.10/opkg and 25.12/apk. It detects the firmware architecture, downloads individual release packages, checks SHA256, and delegates dependency resolution and the simulated transaction to the native package manager. It does not select devices by brand or model. The fixed 160 MiB threshold and mandatory offline kit are removed.
 
-A standalone preflight is mandatory before installation. SSH and LuCI use the same component engine, checking package contents, SHA256, compatibility, file ownership and resources before changes. Stop LoKi before beta updates or removal; updating a stopped service does not start it automatically.
-
-Only dedicated `loki-core` packages are supported. Configuration migration from other applications is not supported. The installer changes LoKi components only, without upgrading firmware or shared system packages. Real OpenWrt/rpcd/procd, package hooks and ARM64 memory use still require router acceptance.
+[Installation, updates and removal (Russian)](INSTALL.ru.md). SSH and LuCI use the same `install.sh`. Updates preserve LoKi configuration and the previous service state. LoKi requires its own `loki-core`; configuration migration from other applications is unsupported. Installation and load on real devices still require owner testing.
 
 ## LuCI interface and YACD panel
 
@@ -36,19 +34,9 @@ The local HTTP transport accepts at most 64 KiB of response headers and 4 MiB of
 
 The application uses `loki`, `luci-app-loki`, `/etc/config/loki` and the dedicated `/usr/bin/loki-core` binary. It requires a clean installation with its own configuration; importing or migrating another application's configuration is not supported.
 
-## Standalone preflight
+## Environment diagnostics
 
-Run the supplied `preflight.sh` from the trusted private offline kit before installing LoKi. It needs the firmware's native `ucode` modules and BusyBox, but does not require an installed LoKi. It does not install packages, execute package hooks or apply routing. Use the exact `candidate-manifest.json` SHA256 supplied with the kit; the [installation guide](INSTALL-CUDY-WR3000S-25.ru.md) gives the complete command sequence.
-
-The gate checks eight mandatory domains: supported environment and namespaces; package manager, dependencies and file ownership; existing services and processes; listeners; DNS/dnsmasq; loaded and persisted nftables/fw4 state; routes, policy rules and marks; and the candidate configuration and core. Discovery uses bounded reads, repeated snapshots and protected executable/file provenance. Pending UCI changes, ambiguous ownership, conflicts, changing evidence, unsupported layouts and missing proofs refuse admission. A harmless leftover does not alone prove a conflict; other applications are never stopped or removed automatically.
-
-The prepared LoKi configuration is parsed with native UCI in a private temporary directory, validated and generated from snapshots, then checked by the checksum-bound core. Runtime controller credentials and routing are not applied. DNS checks verify the existing stock dnsmasq process, configuration and sockets; firewall checks inspect loaded rules and persisted includes without executing them. The same preflight runs immediately before package changes and before the first Start. Start through Apply uses the same gate.
-
-Proceed only after exit 0 and simultaneous `result: "checked"`, `complete: true`, `install_allowed: true`. A conflict returns exit 1; an incomplete or unknown result returns exit 2. No single passed collector grants installation. The watchdog allows 15 seconds without BusyBox's optional timeout applet; the reader has a 64 MiB virtual-memory limit and 10 CPU seconds. Missing data and exhausted budgets return an explicit refusal.
-
-For package archive size A and unpacked payload U, required free tmpfs is `T = max(2*A, A+U, 4 MiB)` and required available RAM is `max(T, 48 MiB)`. Before uploading a kit, also account for the archive and unpacked kit themselves. Persistent storage checks include owned-state backups, replacement/rollback space and package database metadata, and repeat before mutation. Swap is not credited. Actual ARM64 peak memory and real OpenWrt acceptance remain untested.
-
-On a Linux build host, `build_candidate_manifest.py` builds a catalog from local packages and `prepare_candidate.py` prepares the private offline kit, including the separate checked core, source modules, installers and license. They reject foreign package roles, unsupported dependency directives, inconsistent versions, unsafe paths and nonmatching core bytes. IPK and APK must not be mixed; APK verification uses the pinned SDK tool. These helpers run without package hooks and do not prove download origin. Obtain the complete kit and its checksums from the LoKi release; partial source archives are not installation kits.
+`preflight.sh` remains available as a separate diagnostic tool. Its extended inventory is not a mandatory admission gate for normal installation or startup. The supported path uses installer and package-manager checks plus LoKi’s regular configuration and core checks.
 
 ## Features
 
@@ -67,7 +55,7 @@ The built-in lists from [forkop-lists](https://github.com/ushan0v/forkop-lists) 
 
 The loki-core base is `ushan0v/sing-box-forkop`, pinned in `core/upstream.env`; that base supplies subscription providers, connection-format parsing and DNS extensions. LoKi patches are in `core/patches/`. The current build is `1.14.4-r10`, with the technical package name `loki-core`. The package, service, CLI, UCI and path rename is implemented; configurations from other applications are not supported.
 
-The r10 core adds a bounded HTTPS downloader for public LoKi release inputs. It checks redirect destinations and response limits without reading proxy configuration. Use the verified offline kit and preflight for installation; the downloader alone does not grant admission.
+The r10 core adds a bounded HTTPS downloader for public LoKi release inputs. It checks redirect destinations and response limits without reading proxy configuration. Use the common package installer described above.
 
 On Linux, `loki-core check` disables process memory dumps before reading configuration. If the kernel refuses that protection, the check fails before reading the file. This guard does not replace filesystem and network isolation; non-Linux configuration checks are refused.
 
@@ -91,7 +79,7 @@ Only marked LoKi r5 stores can be reused: legacy SRS entries retain their histor
 
 The LoKi core folds exact ERROR repeats from the same component within a 10-second window. The first error is visible immediately; subsequent repeats produce a numeric summary. The cache holds at most 64 pairs of component and message hashes without retaining their text. New uncached errors, other levels and FATAL/PANIC remain visible. A summary appears with the next entry after the window or on normal shutdown; there is no background timer. Abrupt termination can lose a pending summary. Different messages are not combined, so this does not cap all logging traffic.
 
-SSH and LuCI use the shared component update mechanism. Its scope is a compatible set of LoKi backend, LuCI, core, translations, YACD and bundled helpers. It must not change OS/firmware versions, shared system packages or settings, including through package-manager dependencies. System requirements are checked before changes; incompatibility must stop the update with a specific reason. Preflight and recovery have passed Linux checks; actual OpenWrt upgrades still require router testing.
+SSH and LuCI use the same installer adapted from Forkop. It installs LoKi packages and required dependencies through the native package manager. It does not flash firmware or migrate configurations from other applications. Bench checks do not establish the result on every OpenWrt device.
 
 ## Startup recovery
 

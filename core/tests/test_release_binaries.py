@@ -77,6 +77,26 @@ class BootstrapBinaries(unittest.TestCase):
         self.assertEqual((self.binary.read_bytes(), self.binary.stat().st_mtime_ns), original)
         self.assertFalse(self.marker.exists())
 
+    def test_full_release_budget_scales_while_small_exports_keep_the_existing_limit(self):
+        budgets = []
+        for count in (2, 64, 128):
+            for index in range(count):
+                self.package(architecture="cpu" + str(index))
+            arguments = ["release_binaries.py", str(self.packages), str(self.output), VERSION, str(self.binary)]
+            with mock.patch.object(sys, "argv", arguments), mock.patch.object(EXPORT.catalog, "cli_limits") as limits, \
+                    mock.patch("sys.stdout", new_callable=io.StringIO):
+                self.assertEqual(EXPORT.main(), 0)
+            budgets.append(limits.call_args.kwargs.get("cpu_seconds", 30))
+            self.assertEqual(len(list(self.output.iterdir())), count)
+            self.assertFalse(self.marker.exists())
+            for path in self.output.iterdir(): path.unlink()
+            self.output.rmdir()
+            for path in self.packages.iterdir(): path.unlink()
+        self.assertEqual(budgets[0], 30)
+        self.assertGreater(budgets[1], budgets[0])
+        self.assertLess(budgets[1], budgets[2])
+        self.assertEqual(budgets[2], 300)
+
     def test_mismatched_or_unpackaged_binaries_refuse_without_partial_export(self):
         self.package(body=b"different packaged binary")
         with self.assertRaisesRegex(EXPORT.catalog.InvalidCatalog, "core-binary-content-mismatch"):

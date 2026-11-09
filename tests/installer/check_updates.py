@@ -32,7 +32,9 @@ def main():
             def do_GET(self):
                 name = self.path.rsplit('/', 1)[-1]
                 hits.append(name)
+                if '/releases/assets/' in self.path and name.isdigit(): name = list(assets)[int(name)-1]
                 data = assets.get(name)
+                if name == 'releases?per_page=1': data = json.dumps([{'assets': [{'name': n, 'url': f'https://127.0.0.1:{self.server.server_port}/repos/Zagorsky17/LoKi/releases/assets/{i}'} for i,n in enumerate(assets,1)]}]).encode()
                 if data is None:
                     self.send_error(404)
                 else:
@@ -60,7 +62,8 @@ args=sys.argv[1:]
 try:
  d=json.load(open(args[args.index('-i')+1])) if '-i' in args else json.load(sys.stdin)
  e=args[args.index('-e')+1]
- if e.startswith('@.assets['):
+ if e=='@[0]':values=[json.dumps(d[0])]
+ elif e.startswith('@.assets['):
   name=re.search(r'@.name="([^"]+)"',e).group(1)
   values=[a['url'] for a in d['assets'] if a.get('name')==name]
  else:
@@ -71,7 +74,7 @@ try:
 except (ValueError,KeyError,TypeError,AttributeError):sys.exit(1)
 ''')
             shim.chmod(0o755)
-            for case in ['current-apk', 'current-opkg', 'available', 'custom', 'incompatible', 'unsupported-arch', 'bad-manifest', 'nul-manifest', 'bad-core-tag', 'stock-core-version', 'bad-checksum', 'duplicate-checksum', 'missing', 'tls', 'http-source', 'busy', 'memory', 'memory-20', 'tmp-small', 'oversized']:
+            for case in ['api-current', 'api-available', 'current-apk', 'current-opkg', 'available', 'custom', 'incompatible', 'unsupported-arch', 'bad-manifest', 'nul-manifest', 'bad-core-tag', 'stock-core-version', 'bad-checksum', 'duplicate-checksum', 'missing', 'tls', 'http-source', 'busy', 'memory', 'memory-20', 'tmp-small', 'oversized']:
                 work = root / case
                 work.mkdir()
                 events = work / 'events'
@@ -79,7 +82,7 @@ except (ValueError,KeyError,TypeError,AttributeError):sys.exit(1)
                 log.write_text('existing installation log\n')
                 (work / 'openwrt_release').touch()
                 (work / 'variant').write_text('custom' if case == 'custom' else 'base')
-                app_version = '2.0.1' if case in ['available', 'custom'] else '2.0.0'
+                app_version = '2.0.1' if case in ['api-available', 'available', 'custom'] else '2.0.0'
                 core_version = '1.14.4-r4' if case == 'available' else '1.14.4-r3'
                 app = {'schema': 1, 'name': 'loki', 'version': app_version, 'tag': app_version, 'requires': {'loki-core': '9.0.0-r1' if case == 'incompatible' else '1.14.4-r3'}}
                 if case == 'bad-manifest': app['version'] = '../synthetic-secret'
@@ -92,6 +95,7 @@ except (ValueError,KeyError,TypeError,AttributeError):sys.exit(1)
                 assets['release.json'] = json.dumps(app).encode()
                 assets['core-release.json'] = json.dumps(core).encode()
                 names = ['release.json', 'core-release.json', f'loki_{app_version}_all.{ext}', f'luci-app-loki_{app_version}_all.{ext}', f'loki-core_{core_version}_base_x86_64.{ext}']
+                for n in names: assets.setdefault(n, b'package')
                 sums = ''.join(f'{hashlib.sha256(assets.get(n, b"package")).hexdigest()}  {n}\n' for n in names)
                 if case == 'bad-checksum': sums = sums.replace(hashlib.sha256(assets['release.json']).hexdigest(), '0' * 64)
                 if case == 'duplicate-checksum': sums += sums.splitlines()[0] + '\n'
@@ -102,7 +106,10 @@ except (ValueError,KeyError,TypeError,AttributeError):sys.exit(1)
                 pm = 'opkg' if ext == 'ipk' else 'apk'
                 mirror = f'https://127.0.0.1:{server.server_port}'
                 if case == 'http-source': mirror = mirror.replace('https:', 'http:')
+                api_url=mirror
+                if case.startswith('api-'):mirror=''
                 script = SOURCE.replace('/etc/openwrt_release', str(work / 'openwrt_release')).replace('/usr/share/loki-core/variant', str(work / 'variant'))
+                script = script.replace('API_URL=https://api.github.com', 'API_URL='+q(api_url), 1)
                 script = script.replace('PATH=/usr/sbin:/usr/bin:/sbin:/bin', 'PATH=' + q(str(root)) + ':/usr/sbin:/usr/bin:/sbin:/bin', 1)
                 overrides = f'''
 LOG={q(str(log))} MIRROR={q(mirror)} FOREIGN_CORES='' FOREIGN_CORE_FILES=''
@@ -141,14 +148,14 @@ main --check --lang en
                 records = [json.loads(line) for line in run.stdout.splitlines() if line.startswith('{')]
                 assert len(records) == 1, (case, run.returncode, run.stdout, run.stderr)
                 result = records[0]
-                failures = {'incompatible': 'incompatible', 'unsupported-arch': 'unsupported_arch', 'bad-manifest': 'release', 'nul-manifest': 'release', 'bad-core-tag': 'release', 'stock-core-version': 'release', 'bad-checksum': 'checksum', 'duplicate-checksum': 'checksum', 'missing': 'release', 'tls': 'network', 'http-source': 'source', 'busy': 'locked', 'memory': 'no_memory', 'memory-20': 'no_memory', 'tmp-small': 'no_memory', 'oversized': 'network'}
+                failures = {'incompatible': 'incompatible', 'unsupported-arch': 'unsupported_arch', 'bad-manifest': 'release', 'nul-manifest': 'release', 'bad-core-tag': 'release', 'stock-core-version': 'release', 'bad-checksum': 'checksum', 'duplicate-checksum': 'checksum', 'missing': 'release', 'tls': 'network', 'http-source': 'source', 'memory': 'no_memory', 'tmp-small': 'no_memory', 'oversized': 'network'}
                 if case in failures:
                     assert run.returncode != 0 and result['success'] is False and result['reason'] == failures[case], (case, result, run.stderr)
                 else:
                     assert run.returncode == 0 and result['success'] is True, (case, result, run.stderr)
-                    assert result['available'] == (case in ['available', 'custom']), (case, result)
+                    assert result['available'] == (case in ['api-available', 'available', 'custom']), (case, result)
                     assert result['installed']['app'] == '2.0.0' and result['latest']['app'] == app_version, result
-                if case in ['memory', 'memory-20', 'tmp-small']: assert not hits, (case, hits)
+                if case in ['memory', 'tmp-small']: assert not hits, (case, hits)
                 assert not events.exists(), (case, events.read_text())
                 assert log.read_text() == 'existing installation log\n', case
                 assert not any(n.endswith(('.apk', '.ipk')) for n in hits), (case, hits)
@@ -157,7 +164,7 @@ main --check --lang en
         finally:
             server.shutdown()
             server.server_close()
-    print('20 isolated metadata-only HTTPS checks passed')
+    print('22 isolated metadata-only HTTPS checks passed')
 
 
 if __name__ == '__main__':

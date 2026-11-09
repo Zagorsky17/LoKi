@@ -165,14 +165,15 @@ def tool_limits():
                                   limit if hard == resource.RLIM_INFINITY else min(hard, limit)))
 
 
-def cli_limits():
+def cli_limits(cpu_seconds=30):
+    need(type(cpu_seconds) is int and 0 < cpu_seconds <= 300, "artifact-resource-limit")
     # tarfile consumes GNU/PAX metadata before yielding a size-checkable TarInfo.
     def exhausted(signum, frame):
         raise InvalidCatalog("artifact-resource-limit")
 
     signal.signal(signal.SIGXCPU, exhausted)
     for kind, soft, hard in ((resource.RLIMIT_AS, 268435456, 268435456),
-                             (resource.RLIMIT_CPU, 30, 31), (resource.RLIMIT_CORE, 0, 0)):
+                             (resource.RLIMIT_CPU, cpu_seconds, cpu_seconds + 1), (resource.RLIMIT_CORE, 0, 0)):
         previous_soft, previous_hard = resource.getrlimit(kind)
         if previous_hard != resource.RLIM_INFINITY:
             hard = min(hard, previous_hard)

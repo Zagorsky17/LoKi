@@ -30,7 +30,18 @@ if (( ${#packages[@]} == 0 )); then
 fi
 tar -C "$work/source" --exclude=./.git --sort=name --mtime="@$CORE_SOURCE_DATE_EPOCH" \
     --owner=0 --group=0 --numeric-owner -cf - . | gzip -9n > "$work/core-source-$CORE_VERSION.tar.gz"
-mapfile -d '' binaries < <(find "$work/output/build" -type f -name sing-box -print0 | LC_ALL=C sort -z)
+# Different OpenWrt targets can share one Go binary profile.
+mapfile -d '' binaries < <(python3 - "$work/output/build" <<'PYTHON'
+import hashlib, os, sys
+from pathlib import Path
+profiles = {}
+for path in sorted(Path(sys.argv[1]).rglob('sing-box')):
+    with path.open('rb') as stream:
+        profiles.setdefault(hashlib.file_digest(stream, 'sha256').hexdigest(), path)
+for path in profiles.values():
+    sys.stdout.buffer.write(os.fsencode(path) + b'\0')
+PYTHON
+)
 python3 -B "$HERE/module_sources.py" "$work/source" "$work/core-module-sources-$CORE_VERSION.tar.gz" "${binaries[@]}"
 module_digest=$(sha256sum "$work/core-module-sources-$CORE_VERSION.tar.gz" | cut -d ' ' -f1)
 python3 -B "$HERE/release_binaries.py" "$work/output" "$work/bootstrap" "$CORE_VERSION" "${binaries[@]}"

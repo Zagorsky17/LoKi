@@ -31,7 +31,7 @@ const PUBLISH_TRIES = 10;
 // install.sh's shell becomes a session of its own a moment after it starts; until then an
 // interrupt of that session is sent again.
 const INTERRUPT_TRIES = 10;
-// Release checks execute the protected installed checker; package changes use its prepared kit.
+// SSH and LuCI execute the same protected package-manager installer.
 const API_URL = "https://api.github.com";
 
 let paths = {
@@ -44,7 +44,7 @@ let paths = {
     sums: "/tmp/loki-installer/SHA256SUMS",
     listing: "/tmp/loki-installer/listing.json",
     start_lock: "/tmp/loki-installer/start.lock",
-    install_lock: "/var/lock/loki-install.lock",
+    install_lock: "/var/lock/loki-package-install.lock",
     cli: "/usr/bin/loki",
     install_log: "/tmp/loki-installer/install.log",
     proc: "/proc",
@@ -272,31 +272,6 @@ function install_arguments(action, variant, purge, lang) {
     return argv;
 }
 
-// Only a prepared private kit reaches the common worker; RPC callers cannot choose paths.
-function prepared_arguments(action, variant, purge) {
-    if (purge) die("The beta uninstaller preserves configuration; purge is unavailable");
-    let update = require("service.update");
-    let directory = action == "uninstall" ? common.parent_dir(update.paths.state) + "/active" : paths.candidate;
-    let marker = action == "uninstall" ? common.parent_dir(update.paths.state) + "/active.sha256" : directory + "/candidate-prepared.json";
-    let read;
-    try {
-        require("core.cache_path").validate({ cache_path: marker });
-        read = require("service.preflight").read_metadata(marker, 65536, common.parent_dir(marker));
-    }
-    catch (e) { die("A verified private candidate kit is required before package changes"); }
-    let digest = action == "uninstall" ? trim(read.data ?? "") : common.parse_json(read.data)?.manifest_sha256;
-    if (read.error != null || type(digest) != "string" || length(digest) != 64 || match(digest, /^[a-f0-9]+$/) == null ||
-        require("singbox.runtime").file_digest(directory + "/candidate-manifest.json") != digest)
-        die("A verified private candidate kit is required before package changes");
-    if (action == "variant") {
-        let manifest = common.parse_json(fs.readfile(directory + "/candidate-manifest.json"));
-        let core = filter(manifest?.components ?? [], (component) => component.role == "core")[0];
-        if (variant == "" || index(core?.artifact?.name ?? "", "_" + variant + "_") < 0)
-            die("The prepared kit must contain the explicitly selected core build");
-    }
-    return [ "--candidate", directory, digest, action == "uninstall" ? "uninstall" : "update" ];
-}
-
 // The mirror install.sh downloads from instead of GitHub, if one is set.
 function mirror_url() {
     return getenv("LOKI_DOWNLOAD_URL") || null;
@@ -404,6 +379,7 @@ function child_environment() {
     let env = { ...getenv(), TERM: "xterm" };
     delete env.NO_COLOR;
     delete env.LOKI_LIB;
+    env.LOKI_INSTALL_LOG = paths.install_log;
     return env;
 }
 
@@ -532,7 +508,6 @@ function start(action, variant, purge, lang) {
     lang = common.as_string(lang);
     if (!valid_run(action, variant, lang))
         die("Invalid installer run: " + join(" ", [ action, variant, lang ]));
-    if (action != "check") prepared_arguments(action, variant, purge === true || purge == "1");
 
     let owner = common.own_pid();
     require("core.cache_path").ensure({ cache_path: paths.state });
@@ -602,10 +577,6 @@ function run(id) {
     let state = read_state();
     if (state?.id != id || state.finished_at != null)
         return 1;
-    if (state.action != "check") {
-        try { prepared_arguments(state.action, state.variant ?? "", state.purge); }
-        catch (e) { warn("A verified private candidate kit is required before package changes\n"); return 1; }
-    }
     state = { ...state, runner_pid: common.own_pid() };
     write_state(state);
 
@@ -733,8 +704,7 @@ function run(id) {
     function start_install() {
         let arguments;
         try {
-            arguments = state.action == "check" ? install_arguments(state.action, state.variant ?? "", state.purge, state.lang) :
-                prepared_arguments(state.action, state.variant ?? "", state.purge);
+            arguments = install_arguments(state.action, state.variant ?? "", state.purge, state.lang);
         }
         catch (e) { return fail_with([ mark_line("error", "The prepared component kit is missing, invalid or incompatible") ]); }
         terminal = open_terminal();
@@ -744,7 +714,7 @@ function run(id) {
         let fd = terminal.master.fileno();
         start_pump(pump_script(fd));
         size_watch = uloop.interval(1000, () => cap_output(fd));
-        child = uloop.process("/bin/sh", [ "-c", child_script(state.interactive), "sh", terminal.tty, state.action == "check" ? paths.script : paths.local_script,
+        child = uloop.process("/bin/sh", [ "-c", child_script(state.interactive), "sh", terminal.tty, paths.script,
             ...arguments ], env, on_child_exit);
         state = { ...state, child_pid: common.as_string(child.pid()) };
         write_state(state);
@@ -803,7 +773,7 @@ function run(id) {
     else {
         let trusted = protected_checker(fs.lstat(paths.local_script), fs.lstat(common.parent_dir(paths.local_script)));
         let source = trusted ? fs.readfile(paths.local_script) : null;
-        if (source == null || !common.write_file(paths.script, source))
+        if (source == null || !common.write_file_atomic(paths.install_log, "", 0600) || !common.write_file_atomic(paths.script, source, 0600))
             fail_with([ mark_line("error", text(state.lang, "invalid_checker")) ]);
         else
             start_install();
@@ -831,7 +801,6 @@ return {
     status,
     whole_characters,
     install_arguments,
-    prepared_arguments,
     release_url,
     listing_url,
     asset_url,

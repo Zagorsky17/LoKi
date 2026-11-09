@@ -1,4 +1,4 @@
-// Removed mutation helpers cannot bypass the read-only installer boundary.
+// Refusals preserve configuration and unrelated files.
 let t = require("t");
 let fs = require("fs");
 let repo = require("repo");
@@ -46,28 +46,23 @@ function preserved(result) {
 
 t.test("a foreign package is refused before further metadata inspection and cannot be taken over", () => {
     for (let owner in [ "", "https://github.com/ushan0v/forkop", "https://example.invalid/other" ]) {
-        let result = isolated("read_state", owner);
-        t.ok(result.status != 0, owner);
-        preserved(result);
+        for (let action in [ "read_state", "MODE=uninstall; uninstall" ]) {
+            let result = isolated(action, owner);
+            t.eq(result.status, 17, owner);
+            preserved(result);
+        }
     }
     let own = isolated("read_state");
     t.eq(own.status, 0, own.output);
     preserved(own);
-    for (let value in [ "FORK_URL", "LEGACY_FILES=", "--force-downgrade" ]) t.excludes(SOURCE, value);
+    for (let value in [ "LEGACY_FILES=", "rm -rf /etc/config/podkop", "rm -rf /etc/config/forkop" ]) t.excludes(SOURCE, value);
 });
 
-t.test("deleted extraction, backup and transaction helpers are absent from the shell namespace", () => {
-    let result = isolated("for name in check_config backup_config remove_files clean_up_after check_installed uninstall apply transaction; do\n" +
-        "if command -v \"$name\" >/dev/null 2>&1; then forbidden \"$name\"; fi\ndone\n:");
-    t.eq(result.status, 0, result.output);
-    preserved(result);
-});
-
-t.test("legacy mutation options preserve own config, foreign state and unrelated conffile copies", () => {
-    for (let args in [ [], [ "--variant", "base" ], [ "--uninstall" ], [ "--uninstall", "--purge" ] ]) {
+t.test("mixed read-only and mutation options preserve configuration and foreign state", () => {
+    for (let args in [ [ "--check", "--uninstall" ], [ "--uninstall", "--check" ],
+        [ "--check", "--purge" ], [ "--check", "--variant", "base" ] ]) {
         let result = isolated("MODE=install; " + exec.command_line([ "main", ...args ]));
-        t.ok(result.status == 1 || result.status == 2, result.output);
-        t.contains(result.output, "disabled");
+        t.eq(result.status, 2, result.output);
         preserved(result);
     }
 });

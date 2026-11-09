@@ -65,7 +65,7 @@ t.test("the package keeps its security minimum while accepting a newer own core 
     t.ok(version != null, "the build pins its own core version");
     t.matches(version[1], /^[0-9]+\.[0-9]+\.[0-9]+-r[0-9]+$/);
     t.ok(core_version.version_at_least(version[1], constants.SB_REQUIRED_VERSION), "a produced core cannot precede the package minimum");
-    t.contains(fs.readfile(repo.path("install.sh")), "asset=core-release.json");
+    t.contains(fs.readfile(repo.path("install.sh")), "manifest_file=core-release.json");
 });
 
 let makefile_depends = sorted(map(words(makefile_field("DEPENDS")), (word) => ltrim(word, "+")));

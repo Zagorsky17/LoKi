@@ -74,7 +74,10 @@ def main():
     parser.add_argument("binaries", nargs="+", type=Path)
     args = parser.parse_args()
     try:
-        catalog.cli_limits()
+        # Bound discovery before selecting a CPU budget for the complete release.
+        catalog.cli_limits(cpu_seconds=300)
+        count = sum(1 for suffix in ("ipk", "apk") for _ in args.packages.glob("loki-core_*." + suffix))
+        catalog.cli_limits(cpu_seconds=max(30, min(300, 3 * count)))
         exported = collect(args.packages, args.output, args.version, args.binaries)
     except MemoryError:
         os.write(2, b"core-binaries: artifact-resource-limit\n")

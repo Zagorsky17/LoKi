@@ -1469,21 +1469,32 @@ t.test("a stopped update snapshot creates no runtime and preserves the autostart
     t.eq(fs.lstat(world.dir + "/private"), null);
 });
 
-t.test("cold Start and Apply refuse admission before migration, core or network changes", () => {
+t.test("the native package mutex remains separate from legacy component recovery", () => {
+    let update = require("service.update"), state_path = update.paths.state, lock_path = update.paths.lock;
+    for (let stopping in [ false, true ]) {
+        if (stopping) running(); else reset();
+        update.paths.state = world.dir + "/old-component/state.json";
+        update.paths.lock = world.dir + "/old-component.lock";
+        let native = world.dir + "/package-install.lock";
+        fs.mkdir(native, 0700); fs.writefile(native + "/pid", require("core.common").own_pid() + "\n"); fs.chmod(native + "/pid", 0600);
+        t.eq(lock.held(native), true);
+        t.eq(update.allowed(), true);
+        t.eq(run(stopping ? () => lifecycle.stop() : () => lifecycle.start()).result, 0);
+        t.eq(world.network, !stopping);
+    }
+    update.paths.state = state_path; update.paths.lock = lock_path;
+});
+
+t.test("native installations start and apply through the regular configuration and core checks", () => {
     for (let action in [ lifecycle.start, () => lifecycle.reload("manual") ]) {
-        reset({ admission_error: "preflight-dns-pending-unverified" });
-        let before = fs.readfile(lifecycle.paths.config);
-        let result = run(action);
-        t.eq(result.result, 1);
-        t.eq(world.events, []);
-        t.eq(world.migration_checks ?? 0, 0);
-        t.eq([ world.pid, world.network ], [ 0, false ]);
-        t.eq(fs.readfile(lifecycle.paths.config), before);
-        t.eq(fs.lstat(world.dir + "/core-config.json"), null);
-        t.ok(index(join("\n", world.logs), "preflight-dns-pending-unverified") >= 0);
         reset();
-        t.eq(run(action).result, 0, "an explicit retry uses a new admission result");
+        require("service.update").start_admission = () => die("offline-kit-admission-must-not-run");
+        t.eq(run(action).result, 0);
         t.eq(world.network, true);
+        t.ok((world.migration_checks ?? 0) > 0);
+        reset({ requirements_fail: true });
+        t.eq(run(action).result, 1, "installed core requirements still refuse before capture");
+        t.eq(world.network, false);
     }
 });
 
