@@ -57,6 +57,8 @@ The loki-core base is `ushan0v/sing-box-forkop`, pinned in `core/upstream.env`; 
 
 The r10 core adds a bounded HTTPS downloader for public LoKi release inputs. It checks redirect destinations and response limits without reading proxy configuration. Use the common package installer described above.
 
+In r11, subscription responses that report a missing X-HWID or a device limit produce a specific log error and preserve the previous working connections. Servers with unspecified addresses `0.0.0.0` or `::` are excluded from import. If an earlier beta created a subscription entry without HTTP headers, create a new entry using the same link and check for `X-HWID` under Headers before applying. The identifier belongs to the router; the provider may count it as another device. Saved custom headers are not replaced automatically.
+
 On Linux, `loki-core check` disables process memory dumps before reading configuration. If the kernel refuses that protection, the check fails before reading the file. This guard does not replace filesystem and network isolation; non-Linux configuration checks are refused.
 
 The existing configuration check before startup or apply is limited to 10 seconds and 64 KiB of combined output. On refusal, interruption or output overflow, its temporary input is removed and the previous generated configuration file is preserved. It reuses the RPC worker’s BusyBox `ash`, `setsid` and `sleep` watchdog to terminate a separate process group at the deadline. The optional `timeout` applet and additional packages are not required.

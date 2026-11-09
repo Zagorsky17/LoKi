@@ -1,0 +1,50 @@
+diff --git a/parser/subscription/subscription.go b/parser/subscription/subscription.go
+--- a/parser/subscription/subscription.go
++++ b/parser/subscription/subscription.go
+@@ -6,6 +6,7 @@
+ package subscription
+ 
+ import (
++	"net/netip"
+ 	"strconv"
+ 
+ 	"github.com/sagernet/sing-box/log"
+@@ -59,6 +60,13 @@
+ 
+ // Add keeps a server the parser could represent.
+ func (c *Collector) Add(outbound option.Outbound) {
++	if server, ok := outbound.Options.(option.ServerOptionsWrapper); ok {
++		address, err := netip.ParseAddr(server.TakeServerOptions().Server)
++		if err == nil && address.Unmap().IsUnspecified() {
++			c.Skip(outbound.Tag, outbound.Tag, E.New("server address is unspecified; subscription may contain an access refusal"))
++			return
++		}
++	}
+ 	XHTTPOverQUIC(outbound)
+ 	c.outbounds = append(c.outbounds, outbound)
+ }
+diff --git a/provider/remote/provider.go b/provider/remote/provider.go
+--- a/provider/remote/provider.go
++++ b/provider/remote/provider.go
+@@ -1,4 +1,5 @@
+ // Modified for LoKi on 2026-11-03: commit cached subscriptions before publishing updates.
++// Modified for LoKi on 2026-11-10: report device refusals before importing response content.
+ package provider
+ 
+ import (
+@@ -362,6 +363,15 @@
+ 	defer response.Body.Close()
+ 	result.metadataValues = metadataHeaderValues(response.Header)
+ 	result.etag = response.Header.Get("Etag")
++	if strings.EqualFold(strings.TrimSpace(response.Header.Get("X-Hwid-Not-Supported")), "true") {
++		result.rejectedResponse = true
++		return result, E.New("subscription requires X-HWID; set the router's default subscription headers")
++	}
++	if strings.EqualFold(strings.TrimSpace(response.Header.Get("X-Hwid-Max-Devices-Reached")), "true") ||
++		strings.EqualFold(strings.TrimSpace(response.Header.Get("X-Hwid-Limit")), "true") {
++		result.rejectedResponse = true
++		return result, E.New("subscription device limit reached; remove an unused device or contact the provider")
++	}
+ 	if response.StatusCode == http.StatusNotModified {
+ 		s.access.RLock()
+ 		hasContent := s.rawContent != ""
