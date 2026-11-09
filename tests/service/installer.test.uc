@@ -213,40 +213,6 @@ t.test("a run whose processes all died is recorded as interrupted, one with a li
     kill(starter);
 });
 
-t.test("mutating starts without a prepared kit refuse before locks, state, download or children", () => {
-    for (let action in [ "update", "variant", "uninstall" ]) {
-        fresh();
-        uloop.__reset();
-        stub.commands([]);
-        let error = t.throws(() => installer.start(action, "", "0", "en"));
-        let calls = stub.calls();
-        stub.restore();
-        t.contains(error.message, "private candidate kit");
-        t.eq(calls, []);
-        t.eq(state(), null);
-        t.eq(fs.stat(installer.paths.start_lock), null);
-        t.eq(uloop.__processes(), []);
-    }
-});
-
-t.test("a recorded mutation without a prepared kit cannot resume the legacy installer", () => {
-    for (let action in [ "update", "variant", "uninstall" ]) {
-        fresh();
-        write_state({ action });
-        let previous = fs.readfile(installer.paths.state);
-        uloop.__reset();
-        ubus.__reset();
-        stub.commands([]);
-        let result = installer.run("run-1");
-        let calls = stub.calls();
-        stub.restore();
-        t.eq(result, 1);
-        t.eq(calls, []);
-        t.eq(fs.readfile(installer.paths.state), previous);
-        t.eq(uloop.__processes(), []);
-    }
-});
-
 t.test("a start launches the runner, and a start while a run goes on follows that run", () => {
     fresh();
     let launched = [];
@@ -301,7 +267,7 @@ function run_with(value, steps, source) {
     let result = { status: null };
     uloop.__on_run(() => { fs.writefile(installer.paths.script, "#!/bin/sh\nexit 0\n"); steps(result); });
     let original_lstat = fs.lstat;
-    if (value.action == "check") {
+    {
         fs.chmod(installer.paths.local_script, value.local_mode ?? 0644);
         // Model package permissions independently of the test user's umask.
         fs.chmod(common.parent_dir(installer.paths.local_script), value.local_directory_mode ?? 0755);
@@ -496,12 +462,14 @@ t.test("bootstrap SHA entries and asset names are unique and canonical", () => {
     t.eq(installer.asset_url(sprintf("%J", { assets: [ asset, asset ] }), "install.sh"), null);
 });
 
-t.test("read checks refuse a missing or writable installed resolver without remote fallback", () => {
+t.test("every action refuses an unsafe installed script without remote fallback", () => {
+    for (let action in [ "check", "update", "uninstall" ])
     for (let options in [ { local_missing: true }, { local_mode: 0666 }, { local_directory_mode: 0775 } ]) {
-        run_with({ action: "check", interactive: false, ...options }, () => {
+        run_with({ action, interactive: false, ...options }, () => {
             t.eq(length(uloop.__processes()), 0);
         });
-        t.eq([ state().exit, state().check_result.success ], [ 1, false ]);
+        t.eq(state().exit, 1);
+        if (action == "check") t.eq(state().check_result.success, false);
     }
     let file = { type: "file", uid: 0, mode: 0644, size: 100 };
     let directory = { type: "directory", uid: 0, mode: 0755 };
@@ -565,21 +533,22 @@ t.test("installer logs refuse public, linked and oversized files without disclos
 
 
 
-t.test("prepared UI actions bind fixed paths and a verified manifest digest", () => {
-    fresh();
-    let directory=installer.paths.candidate;
-    fs.mkdir(directory,0700);
-    let body=sprintf("%J\n",{components:[{role:"core",artifact:{name:"loki-core_1.14.4-r10_base_x86_64.ipk"}}]});
-    common.write_private_file(directory+"/candidate-manifest.json",body);
-    let digest=require("singbox.runtime").file_digest(directory+"/candidate-manifest.json");
-    t.ok(digest!=null);
-    common.write_private_file(directory+"/candidate-prepared.json",sprintf("%J\n",{manifest_sha256:digest}));
-    t.eq(installer.prepared_arguments("update","",false),["--candidate",directory,digest,"update"]);
-    t.eq(installer.prepared_arguments("variant","base",false),["--candidate",directory,digest,"update"]);
-    t.contains(t.throws(()=>installer.prepared_arguments("variant","tiny",false)).message,"selected core build");
-    t.contains(t.throws(()=>installer.prepared_arguments("update","",true)).message,"preserves configuration");
-    fs.writefile(directory+"/candidate-manifest.json",body+" ");
-    t.contains(t.throws(()=>installer.prepared_arguments("update","",false)).message,"private candidate kit");
+t.test("native UI actions execute only the protected installed script without an offline kit", () => {
+    for (let action in [ "check", "update", "uninstall" ]) {
+        stub.commands([ real_sha() ]);
+        run_with({ action, interactive: false }, () => {
+            let children = uloop.__processes();
+            t.eq(length(children), 2);
+            t.eq(children[1].executable, "/bin/sh");
+            t.contains(join(" ", children[1].args), installer.paths.script);
+            t.excludes(join(" ", children[1].args), "--candidate");
+            t.eq(children[1].env.LOKI_INSTALL_LOG, installer.paths.install_log);
+            t.eq(fs.lstat(installer.paths.install_log).mode & 0777, 0600);
+            if (action == "uninstall") t.contains(join(" ", children[1].args), "--uninstall");
+            uloop.__exit(1, 0); uloop.__exit(0, 0);
+        });
+        stub.restore();
+    }
 });
 
 t.test("private installer defaults work with the OpenWrt var symlink without following it", () => {

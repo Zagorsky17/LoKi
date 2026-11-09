@@ -196,4 +196,6 @@ jobs:
         run: python3 tests/bench_bytecode.py
 
       - name: Check update metadata over loopback HTTPS
-        run: python3 tests/installer/check_updates.py
+        run: |
+          python3 tests/installer/check_updates.py
+          python3 -B tests/installer/native_install.py

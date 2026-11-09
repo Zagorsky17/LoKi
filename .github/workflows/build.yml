@@ -62,8 +62,8 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           export PATH="$HOME/.cache/loki/openwrt-sdk/extracted/apk/staging_dir/host/bin:$PATH"
-          # Beta ships the tested ARM64/base profile.
-          core/build.sh "$TAG" "$PWD/release" --arch aarch64_cortex-a53 --variant base
+          # Base packages use the upstream OpenWrt architecture matrix.
+          core/build.sh "$TAG" "$PWD/release" --variant base
           python3 core/tests/verify_packages.py "$PWD/release"
 
       - name: Upload the release files

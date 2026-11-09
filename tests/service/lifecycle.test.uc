@@ -1469,21 +1469,16 @@ t.test("a stopped update snapshot creates no runtime and preserves the autostart
     t.eq(fs.lstat(world.dir + "/private"), null);
 });
 
-t.test("cold Start and Apply refuse admission before migration, core or network changes", () => {
+t.test("native installations start and apply through the regular configuration and core checks", () => {
     for (let action in [ lifecycle.start, () => lifecycle.reload("manual") ]) {
-        reset({ admission_error: "preflight-dns-pending-unverified" });
-        let before = fs.readfile(lifecycle.paths.config);
-        let result = run(action);
-        t.eq(result.result, 1);
-        t.eq(world.events, []);
-        t.eq(world.migration_checks ?? 0, 0);
-        t.eq([ world.pid, world.network ], [ 0, false ]);
-        t.eq(fs.readfile(lifecycle.paths.config), before);
-        t.eq(fs.lstat(world.dir + "/core-config.json"), null);
-        t.ok(index(join("\n", world.logs), "preflight-dns-pending-unverified") >= 0);
         reset();
-        t.eq(run(action).result, 0, "an explicit retry uses a new admission result");
+        require("service.update").start_admission = () => die("offline-kit-admission-must-not-run");
+        t.eq(run(action).result, 0);
         t.eq(world.network, true);
+        t.ok((world.migration_checks ?? 0) > 0);
+        reset({ requirements_fail: true });
+        t.eq(run(action).result, 1, "installed core requirements still refuse before capture");
+        t.eq(world.network, false);
     }
 });
 
