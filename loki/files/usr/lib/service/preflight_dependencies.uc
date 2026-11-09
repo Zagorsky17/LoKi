@@ -36,8 +36,8 @@ function terms(data, format, provides) {
     for (let value in values) {
         value = trim(value);
         if (name_valid(value)) { push(result, { name: value }); continue; }
-        // shortcut: prove byte-identical direct equality only; extend comparisons after native PM coverage.
-        let exact = !provides ? match(value, format == "ipk" ? IPK_EXACT : APK_EXACT) : null;
+        // shortcut: prove byte-identical equality only; extend comparisons after native PM coverage.
+        let exact = !provides || format == "apk" ? match(value, format == "ipk" ? IPK_EXACT : APK_EXACT) : null;
         if (exact == null || !name_valid(exact[1]) || !version_valid(exact[2]))
             return { error: "system-dependency-constraint-unverified" };
         push(result, { name: exact[1], version: exact[2] });
@@ -67,7 +67,7 @@ function check(packages, format) {
             seen[term.name] = true;
             if (++provider_count > PROVIDER_LIMIT) return failure("system-dependency-metadata-limit");
             if (providers[term.name] == null) providers[term.name] = [];
-            push(providers[term.name], package);
+            push(providers[term.name], { package, version: term.version });
         }
     }
     let observations = [];
@@ -93,12 +93,14 @@ function check(packages, format) {
             let direct = names[term.name];
             let candidates = [];
             if (term.version != null) {
-                if (direct == null || direct.version != term.version) return "system-dependency-version-unverified";
-                push(candidates, direct);
+                if (direct != null && direct.version == term.version) push(candidates, direct);
+                for (let provider in providers[term.name] || [])
+                    if (provider.version == term.version) push(candidates, provider.package);
+                if (length(candidates) == 0) return "system-dependency-version-unverified";
             }
             else {
                 if (direct != null) push(candidates, direct);
-                for (let provider in providers[term.name] || []) push(candidates, provider);
+                for (let provider in providers[term.name] || []) push(candidates, provider.package);
             }
             let error = depth == 0 ? "required-system-package-missing" : "required-system-dependency-missing";
             for (let package in candidates) {

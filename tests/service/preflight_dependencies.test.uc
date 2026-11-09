@@ -167,4 +167,20 @@ t.test("explicit name and exact-version byte limits preserve the 128-byte edge",
     }
 });
 
+t.test("APK versioned virtual providers resolve their advertised version", () => {
+    let packages = filter(fixture(), (package) => package.name != "ip");
+    push(packages, { ...record("ip-tiny", "", "ip=6.18.0-r2"), version: "6.18.0-r2" });
+    t.eq(result(packages, "apk", "ip").state, "checked");
+    item(packages, "ucode").depends = "virtual-library=1";
+    push(packages, { ...record("actual-library", "", "virtual-library=1"), version: "2" });
+    t.eq(result(packages, "apk", "ucode").state, "checked", "compare the provided version, not the package version");
+    item(packages, "ucode").depends = "virtual-library=2";
+    t.eq(result(packages, "apk", "ucode").state, "incomplete");
+    item(packages, "actual-library").provides = "virtual-library";
+    t.eq(result(packages, "apk", "ucode").state, "incomplete", "an unversioned alias cannot prove an exact constraint");
+    item(packages, "ucode").depends = "";
+    packages = filter(packages, (package) => package.name != "ip-tiny");
+    t.eq(result(packages, "apk", "ip").reason, "required-system-package-missing", "valid versioned providers do not obscure a missing dependency");
+});
+
 t.done();
