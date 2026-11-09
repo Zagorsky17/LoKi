@@ -104,7 +104,7 @@ class NativeInstall(unittest.TestCase):
             if failure=='checksum':sums=sums.replace(sums[:64],'0'*64,1)
             (assets/'SHA256SUMS').write_text(sums)
             source=SOURCE
-            mappings={'/etc/openwrt_release':'openwrt_release','/lib/apk/db/installed':'installed','/usr/lib/opkg/status':'status','/usr/lib/opkg/info':'info','/etc/apk/arch':'arch','/etc/apk/world':'world','/usr/share/loki-core/variant':'variant','/var/lock/loki-install.lock':'lock','/etc/config/loki':'config/loki','/etc/init.d/loki':'init/loki','/usr/bin/loki':'owned-bin/loki','/usr/lib/loki':'owned-lib/loki','/usr/share/loki':'owned-share/loki','/www/luci-static/resources/view/loki':'owned-www/loki','/etc/loki-core':'core-config'}
+            mappings={'/etc/openwrt_release':'openwrt_release','/lib/apk/db/installed':'installed','/usr/lib/opkg/status':'status','/usr/lib/opkg/info':'info','/etc/apk/arch':'arch','/etc/apk/world':'world','/usr/share/loki-core/variant':'variant','/var/lock/loki-package-install.lock':'lock','/etc/config/loki':'config/loki','/etc/init.d/loki':'init/loki','/usr/bin/loki':'owned-bin/loki','/usr/lib/loki':'owned-lib/loki','/usr/share/loki':'owned-share/loki','/www/luci-static/resources/view/loki':'owned-www/loki','/etc/loki-core':'core-config'}
             for original,relative in mappings.items():source=source.replace(original,str(home/relative))
             source=source.replace('PATH=/usr/sbin:/usr/bin:/sbin:/bin','PATH='+shlex.quote(str(binaries))+':/usr/sbin:/usr/bin:/sbin:/bin',1)
             shell=home/'install.sh'

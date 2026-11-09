@@ -30,14 +30,13 @@ export PATH
 umask 077
 
 LOKI_REPO=Zagorsky17/LoKi
-RELEASE_TAG=2.0.2
 CHECK_AVAILABLE=false
 CORE_REPO=Zagorsky17/LoKi
 # github.com answers a release link with a header line longer than uclient-fetch reads
 API_URL=https://api.github.com
 MIRROR=${LOKI_DOWNLOAD_URL:-}
 LOG=${LOKI_INSTALL_LOG:-/dev/null}
-LOCK_DIR=/var/lock/loki-install.lock
+LOCK_DIR=/var/lock/loki-package-install.lock
 OUR_PACKAGES="loki luci-app-loki luci-i18n-loki-ru loki-core"
 # The other packages known to install /usr/bin/loki-core; any other package that owns it counts too.
 # What loki-core provides: a package that needs it stays when a foreign core goes.
@@ -54,7 +53,7 @@ APK_OFFLINE="--no-network --repositories-file /dev/null"
 # The defaults a package manager leaves beside a config it keeps.
 CONFFILE_COPIES="/etc/config/loki-opkg /etc/config/loki.apk-new /etc/config/loki-core-opkg /etc/config/loki-core.apk-new /etc/loki-core/config.json-opkg /etc/loki-core/config.json.apk-new"
 
-MODE=install VARIANT='' ASK_VARIANT=0 PURGE=0 QUIET=0 LANG_OPT='' BAD_ARG=''
+MODE=install VARIANT='' ASK_VARIANT=0 PURGE=0 QUIET=0 LANG_OPT='' BAD_ARG='' HELP=0
 RU=0 INTERACTIVE=0 ASKED=0 PROMPTING=0 ANSWER='' C_STEP='' C_OK='' C_WARN='' C_ERR='' C_BOLD='' C_OFF=''
 WORK='' LOCKED=0
 PM='' PM_DB='' EXT='' ARCH='' RELEASE='' FLASH_MOUNT=/ FLASH_FS=''
@@ -156,13 +155,14 @@ usage_error() {
 	variant) message=$(t 'The option --variant takes base, full or tiny' 'Параметр --variant принимает base, full или tiny') ;;
 	lang) message=$(t 'The option --lang takes ru or en' 'Параметр --lang принимает ru или en') ;;
 	purge) message=$(t 'The option --purge goes with --uninstall' 'Параметр --purge работает только с --uninstall') ;;
+	check) message=$(t '--check cannot be combined with installation or removal options' '--check нельзя сочетать с установкой или удалением') ;;
 	uninstall) message=$(t 'The option --uninstall takes no --variant' 'Параметр --uninstall не сочетается с --variant') ;;
 	variant_tty) message=$(t 'The option --variant with no value asks for the build and needs a terminal' 'Параметр --variant без значения спрашивает сборку и работает только в терминале') ;;
 	value:*) message=$(t '%s needs a value' 'Параметру %s нужно значение' "${BAD_ARG#value:}") ;;
 	*) message=$(t 'Unknown option: %s' 'Неизвестный параметр: %s' "${BAD_ARG#unknown:}") ;;
 	esac
 	say '[x]' "$C_ERR" "$message" >&2
-	detail "$(t 'Options: --variant [base|full|tiny], --uninstall [--purge], --quiet, --lang ru|en' 'Параметры: --variant [base|full|tiny], --uninstall [--purge], --quiet, --lang ru|en')" >&2
+	detail "$(t 'Options: --check, --help, --variant [base|full|tiny], --uninstall [--purge], --quiet, --lang ru|en' 'Параметры: --check, --help, --variant [base|full|tiny], --uninstall [--purge], --quiet, --lang ru|en')" >&2
 	exit 2
 }
 
@@ -566,7 +566,7 @@ release_url() { # release_url REPO TAG FILE: FILE at the mirror, TAG empty for t
 	if [ -n "$2" ]; then
 		printf '%s/%s/releases/download/%s/%s' "$MIRROR" "$1" "$2" "$3"
 	else
-		printf '%s/%s/releases/download/%s/%s' "$MIRROR" "$1" "$RELEASE_TAG" "$3"
+		printf '%s/%s/releases/latest/download/%s' "$MIRROR" "$1" "$3"
 	fi
 }
 
@@ -772,7 +772,7 @@ read_state() {
 		[ -z "$(pkg_version "$name")" ] || [ "$(pkg_url "$name")" = "https://github.com/$LOKI_REPO" ] ||
 			fail 1 ownership "$(t 'A package named %s belongs to another project' 'Пакет с именем %s принадлежит другому проекту' "$name")"
 	done
-	[ "$MODE" = check ] || ! pidof sing-box >/dev/null 2>&1 ||
+	[ "$MODE" != install ] || ! pidof sing-box >/dev/null 2>&1 ||
 		fail 1 conflict "$(t 'Stop the other sing-box application before installing LoKi' 'Перед установкой LoKi остановите другое приложение sing-box')"
 }
 
@@ -816,8 +816,11 @@ fetch_release() { # fetch_release loki|core: the latest release's manifest, and 
 	local repo=$LOKI_REPO name=LoKi package=loki manifest_file=release.json manifest="$WORK/$1.json" url status=0
 	[ "$1" = loki ] || repo=$CORE_REPO name=loki-core package=loki-core manifest_file=core-release.json
 	if [ -z "$MIRROR" ]; then
-		download "$API_URL/repos/$repo/releases/tags/$RELEASE_TAG" "$WORK/$1.release"
+		download "$API_URL/repos/$repo/releases?per_page=1" "$WORK/$1.releases.json"
 		status=$?
+		if [ "$status" = 0 ]; then
+			jsonfilter -i "$WORK/$1.releases.json" -e '@[0]' >"$WORK/$1.release" || status=1
+		fi
 	fi
 	if [ "$status" = 0 ]; then
 		url=$(asset_url "$1" "$manifest_file")
@@ -1586,7 +1589,8 @@ parse_args() { # BAD_ARG names the first mistake, reported once the language is 
 			;;
 		--lang=*) LANG_OPT=${1#*=} ;;
 		--check) [ "$MODE" = install ] || BAD_ARG=check; MODE=check ;;
-		--uninstall) MODE=uninstall ;;
+		--uninstall) [ "$MODE" = install ] || BAD_ARG=check; MODE=uninstall ;;
+		--help) HELP=1 ;;
 		--purge) PURGE=1 ;;
 		--quiet) QUIET=1 ;;
 		*) BAD_ARG="unknown:$1" && return ;;
@@ -1704,6 +1708,10 @@ main() {
 	[ -z "$MIRROR" ] || valid_mirror "$MIRROR" || fail 1 source 'The release source must use a valid HTTPS URL'
 	[ "$ASK_VARIANT" = 0 ] || [ -n "$BAD_ARG" ] || may_ask || BAD_ARG=variant_tty
 	[ -z "$BAD_ARG" ] || usage_error
+	if [ "$HELP" = 1 ]; then
+		printf '%s\n' 'LoKi: --check, --variant [base|full|tiny], --uninstall [--purge], --quiet, --lang ru|en'
+		return 0
+	fi
 	log "install.sh $* ($(date))"
 	trap on_signal INT TERM HUP PIPE
 	[ "$(id -u)" = 0 ] || fail 1 not_root "$(t 'Run the installer as root' 'Запустите установщик от имени root')"

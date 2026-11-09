@@ -44,7 +44,7 @@ let paths = {
     sums: "/tmp/loki-installer/SHA256SUMS",
     listing: "/tmp/loki-installer/listing.json",
     start_lock: "/tmp/loki-installer/start.lock",
-    install_lock: "/var/lock/loki-install.lock",
+    install_lock: "/var/lock/loki-package-install.lock",
     cli: "/usr/bin/loki",
     install_log: "/tmp/loki-installer/install.log",
     proc: "/proc",

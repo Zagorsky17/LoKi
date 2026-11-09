@@ -1469,6 +1469,22 @@ t.test("a stopped update snapshot creates no runtime and preserves the autostart
     t.eq(fs.lstat(world.dir + "/private"), null);
 });
 
+t.test("the native package mutex remains separate from legacy component recovery", () => {
+    let update = require("service.update"), state_path = update.paths.state, lock_path = update.paths.lock;
+    for (let stopping in [ false, true ]) {
+        if (stopping) running(); else reset();
+        update.paths.state = world.dir + "/old-component/state.json";
+        update.paths.lock = world.dir + "/old-component.lock";
+        let native = world.dir + "/package-install.lock";
+        fs.mkdir(native, 0700); fs.writefile(native + "/pid", require("core.common").own_pid() + "\n"); fs.chmod(native + "/pid", 0600);
+        t.eq(lock.held(native), true);
+        t.eq(update.allowed(), true);
+        t.eq(run(stopping ? () => lifecycle.stop() : () => lifecycle.start()).result, 0);
+        t.eq(world.network, !stopping);
+    }
+    update.paths.state = state_path; update.paths.lock = lock_path;
+});
+
 t.test("native installations start and apply through the regular configuration and core checks", () => {
     for (let action in [ lifecycle.start, () => lifecycle.reload("manual") ]) {
         reset();
