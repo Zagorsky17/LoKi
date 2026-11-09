@@ -103,6 +103,22 @@ pathlib.Path(args[args.index('-O')+1]).write_bytes(data)
                 self.assertEqual(events, [])
                 self.assertEqual(kept, 0)
 
+    def test_100_mib_ram_and_110_mib_tmpfs_can_install_both_kits(self):
+        for version in ['24.10.5', '25.12.6']:
+            with self.subTest(version=version):
+                p, events, kept = self.run_installer(release=version, memory=102400, space=112640)
+                self.assertEqual(p.returncode, 0, p.stdout+p.stderr)
+                self.assertEqual(events[1:], ['preflight', 'worker:install'])
+                self.assertEqual(kept, 0)
+
+    def test_resource_refusal_reports_available_ram_and_tmpfs_separately(self):
+        p, events, kept = self.run_installer(memory=81920, space=102400)
+        self.assertNotEqual(p.returncode, 0)
+        self.assertEqual(events, [])
+        self.assertEqual(kept, 0)
+        self.assertIn('RAM: доступно 80 МиБ', p.stderr)
+        self.assertIn('/tmp: доступно 100 МиБ', p.stderr)
+
     def test_download_failure_checksum_and_timeout_never_run_kit(self):
         for mode in ['fail', 'corrupt', 'hang']:
             with self.subTest(mode=mode):
