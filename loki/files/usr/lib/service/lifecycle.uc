@@ -412,13 +412,6 @@ function loki_running() {
     return health.loki_running(RT_TABLE, NFT_TABLE, FAKEIP_MARK);
 }
 
-function start_allowed() {
-    let reason = require("service.update").start_admission();
-    if (reason == null) return true;
-    log("error", "Preflight refused runtime startup: " + reason);
-    return false;
-}
-
 function start(guard) {
     if (guard != null && !guard())
         return 0;
@@ -472,7 +465,6 @@ function start(guard) {
             log("error", "The planned-stop marker is unsafe; runtime startup was not started");
             return 1;
         }
-        if (!start_allowed()) return 1;
         log("info", "Starting LoKi");
         if (!validate_cache_path(false))
             return 1;
@@ -643,7 +635,6 @@ function reload_runtime(reason) {
     let automatic = reason == "on_config_change" || reason == "pending" || match(reason, /^interface_up:/) != null;
     if (state.error != null || (automatic && state.model?.phase == "applying"))
         return abort_reload("LoKi has an unconfirmed configuration apply; apply explicitly or stop and start it", false);
-    if (!loki_running() && !start_allowed()) return 1;
     if (!validate_cache_path(false) || !migrate_restored_config())
         return reload_failed(false);
     let fingerprint = config_fingerprint();
