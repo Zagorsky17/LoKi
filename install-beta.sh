@@ -45,6 +45,7 @@ fetch_kit() {
 
 main() {
     local release arch version archive archive_sha manifest_sha expected_bytes available space kit status
+    local kit_bytes package_bytes payload_bytes reserve memory_reserve extraction_peak required_ram required_tmp overhead
     [ "$#" = 0 ] || fail 'Этот загрузчик устанавливает только текущую бету без дополнительных параметров.'
     [ "$(id -u)" = 0 ] || fail 'Подключитесь по SSH от root.'
     [ -r /etc/openwrt_release ] || fail 'Требуется OpenWrt 24.10 или 25.12.'
@@ -57,20 +58,41 @@ main() {
             archive_sha=87327a8f430e1796624c37e852815603c0e7457078f83f907acc84374f137c52
             manifest_sha=2bbf0b8d48cdaf9111520b20b54b8e00007cecc35f5a267fa03c5dbefecca8ba
             expected_bytes=25501443
+            kit_bytes=46938798
+            package_bytes=13284695
+            payload_bytes=36596111
             ;;
         25.12|25.12.*)
             version=25.12
             archive_sha=c9f1163d5bb9cb7c286802b63ff3660e7c8422852227a5687dea5122980741c9
             manifest_sha=60330a1e5a35778af13f4d50fa6944852bcbbd781fffaf0f157ecfeb929de48f
             expected_bytes=25487033
+            kit_bytes=46956028
+            package_bytes=13299617
+            payload_bytes=36601458
             ;;
         *) fail 'Эта бета поддерживает OpenWrt 24.10 и 25.12.' ;;
     esac
     available=$(awk '$1 == "MemAvailable:" && $2 ~ /^[0-9]+$/ && $3 == "kB" { print $2; exit }' /proc/meminfo)
     space=$(df -Pk /tmp 2>/dev/null | awk 'NR == 2 { print $4 }')
     case "$available:$space" in *[!0-9:]*|:*|*:) fail 'Не удалось проверить свободную память.' ;; esac
-    if [ "$available" -lt 163840 ] || [ "$space" -lt 163840 ]; then
-        fail 'Перед загрузкой требуется 160 МиБ MemAvailable и свободного /tmp. Общие пакеты и службы автоматически не изменяются.'
+    # Mirror candidate_need() for the checksum-pinned kit; the archive is removed before preflight.
+    reserve=$((package_bytes + payload_bytes))
+    if [ "$((2 * package_bytes))" -gt "$reserve" ]; then reserve=$((2 * package_bytes)); fi
+    if [ "$reserve" -lt 4194304 ]; then reserve=4194304; fi
+    memory_reserve=$reserve
+    if [ "$memory_reserve" -lt 50331648 ]; then memory_reserve=50331648; fi
+    # Cover filesystem block rounding and the small launcher/extraction processes.
+    overhead=4194304
+    extraction_peak=$((expected_bytes + kit_bytes))
+    required_ram=$((kit_bytes + memory_reserve))
+    required_tmp=$((kit_bytes + reserve))
+    if [ "$extraction_peak" -gt "$required_ram" ]; then required_ram=$extraction_peak; fi
+    if [ "$extraction_peak" -gt "$required_tmp" ]; then required_tmp=$extraction_peak; fi
+    required_ram=$(((required_ram + overhead + 1023) / 1024))
+    required_tmp=$(((required_tmp + overhead + 1023) / 1024))
+    if [ "$available" -lt "$required_ram" ] || [ "$space" -lt "$required_tmp" ]; then
+        fail "Недостаточно ресурсов. RAM: доступно $((available / 1024)) МиБ, требуется $(((required_ram + 1023) / 1024)) МиБ; /tmp: доступно $((space / 1024)) МиБ, требуется $(((required_tmp + 1023) / 1024)) МиБ."
     fi
     WORK=$(mktemp -d /tmp/loki-beta.XXXXXX) || fail 'Не удалось создать закрытый временный каталог.'
     trap cleanup EXIT
