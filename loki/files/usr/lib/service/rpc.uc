@@ -30,12 +30,12 @@ let loaded = false;
 let epoch = "";
 
 function failure(message, code) {
-    exec.log("error", "RPC failed: " + message);
+    exec.log("error", "RPC failed: " + message, "loki-rpc");
     return { code: code ?? 1, stdout: "", stderr: message };
 }
 
 function rejection(message, code) {
-    exec.log("error", "RPC refused: " + message);
+    exec.log("error", "RPC refused: " + message, "loki-rpc");
     let result = { success: false, message };
     if (code != null) result.code = code;
     return result;
@@ -217,7 +217,7 @@ function finish(job) {
     }
     result ??= failure("The RPC command did not complete");
     if (status != null && status != 0)
-        exec.log_error("RPC " + job.operation + " failed (exit " + status + ")", result.stderr || "command returned a nonzero exit status");
+        exec.log_error("RPC " + job.operation + " failed (exit " + status + ")", result.stderr || "command returned a nonzero exit status", "loki-rpc");
     if (job.sizes == null)
         clean(job.path, true);
     jobs = filter(jobs, (active) => active != job);
@@ -489,7 +489,7 @@ function shutdown() {
 function run(argv, library_dir, permission) {
     let id = getenv("LOKI_RPC_SESSION");
     if (!valid_session(id) || !allowed(argv, permission)) {
-        exec.log("error", "RPC dispatch refused: The RPC operation is not allowed");
+        exec.log("error", "RPC dispatch refused: The RPC operation is not allowed", "loki-rpc");
         warn("The RPC operation is not allowed\n");
         return 1;
     }
@@ -500,7 +500,7 @@ function run(argv, library_dir, permission) {
     if (connection != null)
         connection.disconnect();
     if (!authorized) {
-        exec.log("error", "RPC dispatch refused: The RPC session is not authorized");
+        exec.log("error", "RPC dispatch refused: The RPC session is not authorized", "loki-rpc");
         warn("The RPC session is not authorized\n");
         return 1;
     }

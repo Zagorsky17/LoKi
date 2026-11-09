@@ -144,12 +144,12 @@ function background(argv) {
 // The level goes into the tag the page reads alerts from and into the syslog priority.
 const PRIORITIES = { info: "info", warn: "warning", error: "err" };
 
-function log(level, message) {
+function log(level, message, tag) {
     level = common.as_string(level);
-    status([ "logger", "-t", "loki", "-p", "user." + (PRIORITIES[level] ?? "notice"), "[" + level + "] " + common.as_string(message) ]);
+    status([ "logger", "-t", tag ?? "loki", "-p", "user." + (PRIORITIES[level] ?? "notice"), "[" + level + "] " + common.as_string(message) ]);
 }
 
-function log_error(context, message) {
+function log_error(context, message, tag) {
     let detail = "diagnostic details unavailable";
     try {
         let mask = require("diagnostics.mask");
@@ -162,7 +162,7 @@ function log_error(context, message) {
     }
     catch (e) {}
     detail = substr(trim(replace(detail, /[[:cntrl:]]+/g, " ")), 0, 4096) || "no diagnostic output";
-    log("error", context + ": " + detail);
+    log("error", context + ": " + detail, tag);
     return detail;
 }
 

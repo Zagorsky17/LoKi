@@ -51,7 +51,7 @@ function clash(fn) {
             return 0;
         }
         catch (e) {
-            warn(exec.log_error("Clash API refused", e.message), "\n");
+            warn(exec.log_error("Clash API refused", e.message, "loki-rpc"), "\n");
             return 1;
         }
     };
@@ -252,7 +252,7 @@ function main(argv, lib) {
     try {
         let status = name == "rpc_dispatch" ? require("service.rpc").run(slice(argv, 2), lib, argv[1]) : dispatch(argv, lib);
         if (status != 0 && name != "initd_status")
-            exec.log("error", "Command " + name + " failed (exit " + status + ")");
+            exec.log("error", "Command " + name + " failed (exit " + status + ")", name == "rpc_dispatch" || read_allowed(argv) ? "loki-rpc" : "loki");
         return status;
     }
     catch (e) {
