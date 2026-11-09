@@ -2,7 +2,7 @@
 
 [Русский](README.ru.md) · English · [简体中文](README.zh.md)
 
-> **LoKi 2.0.0 beta.** Software checks have passed on Linux. Initial real-router acceptance and failure recovery still need testing.
+> **LoKi 2.0.1 beta.** Software checks have passed on Linux. Initial real-router acceptance and failure recovery still need testing.
 
 Rule-based traffic routing for OpenWrt with the dedicated loki-core engine.
 
@@ -16,7 +16,7 @@ Connect to the router over SSH as `root` and run one command:
 (set -o pipefail; wget -O - https://raw.githubusercontent.com/Zagorsky17/LoKi/main/install-beta.sh | sh)
 ```
 
-The LoKi `2.0.0` kit includes core `1.14.4-r10` for OpenWrt 24.10/IPK and 25.12/APK on `aarch64_cortex-a53`. For Cudy WR3000S running OpenWrt 25.12, use the [installation guide (Russian)](INSTALL-CUDY-WR3000S-25.ru.md) and the complete verified kit from the [release](https://github.com/Zagorsky17/LoKi/releases/tag/2.0.0).
+The LoKi `2.0.1` kit includes core `1.14.4-r10` for OpenWrt 24.10/IPK and 25.12/APK on `aarch64_cortex-a53`. For Cudy WR3000S running OpenWrt 25.12, use the [installation guide (Russian)](INSTALL-CUDY-WR3000S-25.ru.md) and the complete verified kit from the [release](https://github.com/Zagorsky17/LoKi/releases/tag/2.0.1).
 
 A standalone preflight is mandatory before installation. SSH and LuCI use the same component engine, checking package contents, SHA256, compatibility, file ownership and resources before changes. Stop LoKi before beta updates or removal; updating a stopped service does not start it automatically.
 

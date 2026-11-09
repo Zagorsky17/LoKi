@@ -56,20 +56,20 @@ main() {
     case "$release" in
         24.10|24.10.*)
             version=24.10
-            archive_sha=87327a8f430e1796624c37e852815603c0e7457078f83f907acc84374f137c52
-            manifest_sha=2bbf0b8d48cdaf9111520b20b54b8e00007cecc35f5a267fa03c5dbefecca8ba
-            expected_bytes=25501443
-            kit_bytes=46938798
-            package_bytes=13284695
+            archive_sha=0dca8bf823528b1da9a26592698a71e152149c9b4fa3cf8ab022d51bbca3455e
+            manifest_sha=f50eff8fdeedc58a1f3cd0031d25ca4f2e2324040d3e53ef959c6b1f356bd5c5
+            expected_bytes=25501436
+            kit_bytes=46938791
+            package_bytes=13284688
             payload_bytes=36596111
             ;;
         25.12|25.12.*)
             version=25.12
-            archive_sha=c9f1163d5bb9cb7c286802b63ff3660e7c8422852227a5687dea5122980741c9
-            manifest_sha=60330a1e5a35778af13f4d50fa6944852bcbbd781fffaf0f157ecfeb929de48f
-            expected_bytes=25487033
-            kit_bytes=46956028
-            package_bytes=13299617
+            archive_sha=42e7266a238184d415caf029441740cdaf4a8d02ccef9688d69f164e37926a77
+            manifest_sha=19f88372de8c3cf71e276026e95322041c619667fb75dec67ce47c11f37f8fd6
+            expected_bytes=25487056
+            kit_bytes=46956031
+            package_bytes=13299620
             payload_bytes=36601458
             ;;
         *) fail 'Эта бета поддерживает OpenWrt 24.10 и 25.12.' ;;
