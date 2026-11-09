@@ -170,4 +170,21 @@ t.test("while the installer runs the service is busy with it and takes no action
     t.eq(ui.begin("start", "initd", me).status, 0);
 });
 
+t.test("a failed init command records its stderr without subscription credentials", () => {
+    fresh();
+    fixture.seed({ subscription_url: [ { ".name": "sub", url: "https://example.com/private-token" } ] });
+    let begun = ui.begin("start", "ui", me);
+    stub.commands([
+        [ "env LOKI_UI_ACTION_TRACKED=1 /etc/init.d/loki start", { status: 1,
+            stdout: "Runtime error: unavailable module for https://example.com/private-token\n" } ],
+        [ "logger", {} ]
+    ]);
+    ui.worker("start", begun.job_id, "");
+    let lines = join("\n", stub.command_lines());
+    stub.restore();
+    t.contains(lines, "Runtime error: unavailable module");
+    t.excludes(lines, "private-token");
+    t.eq([ job(begun.job_id).running, job(begun.job_id).success ], [ false, false ]);
+});
+
 t.done();
