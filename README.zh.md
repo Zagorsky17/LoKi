@@ -53,7 +53,7 @@ r5 的合成测试覆盖部分 sing-box/Xray JSON、SIP008、Clash YAML 和原�
 
 ## LoKi 内核
 
-loki-core 以 `core/upstream.env` 固定的 `ushan0v/sing-box-forkop` 为基础，继承订阅提供者、连接格式解析和 DNS 扩展。LoKi 的补丁位于 `core/patches/`。当前构建为 `1.14.4-r10`，技术软件包名为 `loki-core`。软件包、服务、命令、UCI 与路径的重命名已实现；不支持其他应用的配置。
+loki-core 以 `core/upstream.env` 固定的 `ushan0v/sing-box-forkop` 为基础，继承订阅提供者、连接格式解析和 DNS 扩展。LoKi 的补丁位于 `core/patches/`。当前构建为 `1.14.4-r11`，技术软件包名为 `loki-core`。软件包、服务、命令、UCI 与路径的重命名已实现；不支持其他应用的配置。
 
 r10 内核增加了有大小和时间限制的 HTTPS 下载器，用于获取 LoKi 的公开发布文件。它检查重定向目标和响应限制，不读取代理配置。请按通用安装说明操作；内核下载器不能代替软件包安装程序。
 

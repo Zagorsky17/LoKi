@@ -246,7 +246,11 @@ function worker(action, job_id, reason) {
     let argv = [ "env", "LOKI_UI_ACTION_TRACKED=1", constants.LOKI_SERVICE_INIT, action ];
     if (reason != null && reason != "")
         push(argv, reason);
-    finish(action, job_id, exec.status(argv));
+    let result = exec.combined(argv, 65536);
+    if (result.status != 0)
+        exec.log_error("Service " + action + " failed (exit " + result.status + ")",
+            result.output_limit ? "command output exceeded its limit" : result.output || "the init command returned no diagnostic output");
+    finish(action, job_id, result.status);
 }
 
 function response(success, job_id, message) {

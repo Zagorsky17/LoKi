@@ -319,7 +319,11 @@ async function handleServiceRuntimeAction(action: ServiceRuntimeAction) {
     }
   } catch (e) {
     logger.error('[DIAGNOSTIC]', `handleServiceRuntimeAction(${action})`, e);
-    showToast(serviceActionFailureMessage(action), 'error');
+    const reason = e instanceof Error ? e.message.trim() : '';
+    showToast(
+      serviceActionFailureMessage(action) + (reason ? `: ${reason}` : ''),
+      'error',
+    );
     setDiagnosticActionLoading(action, false);
   } finally {
     void refreshRuntimeUiStateNow();

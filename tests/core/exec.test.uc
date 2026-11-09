@@ -48,10 +48,12 @@ t.test("log tags the message with its level and gives syslog the matching priori
     exec.log("warn", "loki-core is slow");
     exec.log("error", "loki-core is gone");
     exec.log("info", "loki-core is back");
+    exec.log("error", "RPC transport failed", "loki-rpc");
     t.eq(stub.command_lines(), [
         "logger -t loki -p user.warning [warn] loki-core is slow",
         "logger -t loki -p user.err [error] loki-core is gone",
-        "logger -t loki -p user.info [info] loki-core is back"
+        "logger -t loki -p user.info [info] loki-core is back",
+        "logger -t loki-rpc -p user.err [error] RPC transport failed"
     ]);
     stub.restore();
 });

@@ -1,5 +1,7 @@
 let t = require("t");
 let stub = require("stub");
+let command_stub = stub.commands;
+stub.commands = (handlers) => command_stub([ ...handlers, [ "logger", {} ] ]);
 let fs = require("fs");
 let ubus = require("ubus");
 let uloop = require("uloop");

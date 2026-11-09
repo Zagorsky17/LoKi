@@ -84,11 +84,11 @@ output.write_bytes(b'synthetic module source asset')
             exporter.write_text('''from pathlib import Path
 import sys
 packages, output, version = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3]
-assert version == '1.14.4-r10'
+assert version == '1.14.4-r11'
 assert packages.joinpath('core.ipk').read_bytes() == b'ipk'
 assert all(Path(p).read_bytes() == b'binary' for p in sys.argv[4:])
 output.mkdir()
-(output / 'loki-core_1.14.4-r10_base_x86_64.bin').write_bytes(b'binary')
+(output / 'loki-core_1.14.4-r11_base_x86_64.bin').write_bytes(b'binary')
 ''' if not binary_failure else 'raise SystemExit(31)\n')
             go = binary / 'go'
             go.write_text('#!/bin/sh\nprintf "go' + (recipe / 'GO_VERSION').read_text().strip() + '\\n"\n')
@@ -143,8 +143,8 @@ chmod +x "$1/build.sh"
             asset_digest = hashlib.sha256(b'synthetic module source asset').hexdigest()
             self.assertEqual({p.name for p in output.iterdir()},
                 {'core.ipk', 'core.apk', 'core-release.json', 'SHA256SUMS',
-                 'loki-core_1.14.4-r10_base_x86_64.bin',
-                 'core-source-1.14.4-r10.tar.gz', f'core-module-sources-1.14.4-r10-{asset_digest}.tar.gz'})
+                 'loki-core_1.14.4-r11_base_x86_64.bin',
+                 'core-source-1.14.4-r11.tar.gz', f'core-module-sources-1.14.4-r11-{asset_digest}.tar.gz'})
             self.assertTrue(all(p.stat().st_mode & 0o022 == 0 for p in output.iterdir()),
                             'release artifacts must not inherit a writable caller umask')
             self.assertEqual(json.loads((output / 'core-release.json').read_text())['tag'], '2.0.0')
@@ -156,7 +156,7 @@ chmod +x "$1/build.sh"
                     LOKI_TEST_PREPARED=str(work / 'prepared')), capture_output=True, text=True)
                 self.assertEqual(repeated.returncode, 0, repeated.stderr)
                 assets = {p.name for p in output.glob('core-module-sources-*.tar.gz')}
-                self.assertEqual(assets, {f'core-module-sources-1.14.4-r10-{hashlib.sha256(data).hexdigest()}.tar.gz'
+                self.assertEqual(assets, {f'core-module-sources-1.14.4-r11-{hashlib.sha256(data).hexdigest()}.tar.gz'
                                         for data in (b'synthetic module source asset', b'another module source asset')})
                 subprocess.run(['sha256sum', '--check', 'SHA256SUMS'], cwd=output, check=True, capture_output=True)
 

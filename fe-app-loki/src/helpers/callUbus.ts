@@ -1,5 +1,6 @@
 import { alignLuciRpcTimeout } from './alignLuciRpcTimeout';
 import { withTimeout } from './withTimeout';
+import { logger } from '../loki/services/logger.service';
 
 type UbusCallResult<T> =
   | { success: true; data: T }
@@ -71,6 +72,9 @@ export async function callUbus<T>(options: {
     last = await callUbusOnce<T>(options);
   }
 
+  if (!last.success) {
+    logger.error('[RPC]', `${options.object}.${options.method}`, last.message);
+  }
   return last;
 }
 

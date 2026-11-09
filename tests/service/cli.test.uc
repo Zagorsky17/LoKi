@@ -6,7 +6,8 @@ let cli = require("service.cli");
 function run(argv, status) {
     stub.commands([ [ () => true, { status: status ?? 0 } ] ]);
     let result = stub.capture(() => cli.main(argv, "/lib"));
-    result.commands = stub.command_lines();
+    result.logs = filter(stub.command_lines(), (line) => index(line, "logger ") == 0);
+    result.commands = filter(stub.command_lines(), (line) => index(line, "logger ") != 0);
     stub.restore();
     return result;
 }
@@ -133,6 +134,16 @@ t.test("retry hooks cannot be dispatched by either RPC role", () => {
         t.eq(cli.read_allowed(args), false);
         t.eq(cli.write_allowed(args), false);
     }
+});
+
+t.test("command exceptions leave a masked system-log reason and a nonzero status", () => {
+    cli.COMMANDS.logging_probe = { run: () => die("Unavailable module for https://example.com/private-token") };
+    let result = run([ "logging_probe", "private-argument" ]);
+    delete cli.COMMANDS.logging_probe;
+    t.eq(result.result, 1);
+    t.contains(join("\n", result.logs), "logger -t loki -p user.err [error] Command logging_probe");
+    t.excludes(join("\n", result.logs), "private-token");
+    t.excludes(join("\n", result.logs), "private-argument");
 });
 
 t.done();

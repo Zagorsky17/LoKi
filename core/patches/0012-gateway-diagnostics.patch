@@ -1,0 +1,445 @@
+diff --git a/common/lokigateway/server_linux.go b/common/lokigateway/server_linux.go
+--- a/common/lokigateway/server_linux.go
++++ b/common/lokigateway/server_linux.go
+@@ -5,10 +5,11 @@
+ 	"context"
+ 	"crypto/tls"
+ 	"errors"
+-	"io"
++	"fmt"
+ 	"log"
+ 	"net"
+ 	"net/http"
++	"os"
+ 	"strconv"
+ 	"strings"
+ 	"sync"
+@@ -90,7 +91,7 @@
+ 		TLSConfig:         &tls.Config{MinVersion: tls.VersionTLS12, Certificates: []tls.Certificate{identity}, NextProtos: []string{"http/1.1"}},
+ 		TLSNextProto:      map[string]func(*http.Server, *tls.Conn, http.Handler){},
+ 		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 70 * time.Second, WriteTimeout: 70 * time.Second,
+-		IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16384, ErrorLog: log.New(io.Discard, "", 0)}
++		IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16384, ErrorLog: log.New(os.Stderr, "loki gateway HTTPS: ", 0)}
+ 	stopped := make(chan struct{})
+ 	go func() {
+ 		defer close(stopped)
+@@ -117,7 +118,7 @@
+ 	}
+ 	g.client.CloseIdleConnections()
+ 	if err != nil && !errors.Is(err, http.ErrServerClosed) {
+-		return errGatewayListener
++		return fmt.Errorf("%w: %w", errGatewayListener, err)
+ 	}
+ 	return nil
+ }
+@@ -140,7 +141,7 @@
+ 	for _, address := range cfg.Listen {
+ 		listener, err := net.Listen("tcp", address)
+ 		if err != nil {
+-			return errGatewayListener
++			return fmt.Errorf("%w: %w", errGatewayListener, err)
+ 		}
+ 		defer listener.Close()
+ 		listeners = append(listeners, listener)
+diff --git a/common/lokigateway/transport.go b/common/lokigateway/transport.go
+--- a/common/lokigateway/transport.go
++++ b/common/lokigateway/transport.go
+@@ -19,6 +19,7 @@
+ 
+ 	"github.com/coder/websocket"
+ 	"github.com/sagernet/sing-box/common/lokicontroller"
++	boxlog "github.com/sagernet/sing-box/log"
+ )
+ 
+ const controllerURL = "http://loki-controller"
+@@ -53,7 +54,8 @@
+ 	}
+ }
+ 
+-func failure(w http.ResponseWriter, status int) {
++func failure(w http.ResponseWriter, status int, reason string) {
++	boxlog.Error("gateway request refused: ", reason, " (HTTP ", status, ")")
+ 	http.Error(w, http.StatusText(status), status)
+ }
+ 
+@@ -128,7 +130,7 @@
+ 	g.lifecycle.Lock()
+ 	if g.closed {
+ 		g.lifecycle.Unlock()
+-		failure(w, http.StatusServiceUnavailable)
++		failure(w, http.StatusServiceUnavailable, "gateway-stopping")
+ 		return
+ 	}
+ 	g.handlers.Add(1)
+@@ -144,12 +146,12 @@
+ 	}
+ 	origin, ok := g.origin(r)
+ 	if !ok {
+-		failure(w, http.StatusForbidden)
++		failure(w, http.StatusForbidden, "origin-not-allowed")
+ 		return
+ 	}
+ 	for _, header := range []string{"Authorization", "Proxy-Authorization", "X-HTTP-Method-Override", "X-Method-Override"} {
+ 		if len(r.Header.Values(header)) != 0 {
+-			failure(w, http.StatusBadRequest)
++			failure(w, http.StatusBadRequest, "authentication-or-method-override-header")
+ 			return
+ 		}
+ 	}
+@@ -160,17 +162,17 @@
+ 		methods := r.Header.Values("Access-Control-Request-Method")
+ 		headers := r.Header.Values("Access-Control-Request-Headers")
+ 		if len(methods) != 1 || len(headers) > 1 {
+-			failure(w, http.StatusBadRequest)
++			failure(w, http.StatusBadRequest, "invalid-preflight-headers")
+ 			return
+ 		}
+ 		if _, ok := classify(methods[0], r.URL, false); !ok {
+-			failure(w, http.StatusForbidden)
++			failure(w, http.StatusForbidden, "preflight-method-not-allowed")
+ 			return
+ 		}
+ 		if len(headers) == 1 {
+ 			for _, header := range strings.Split(strings.ToLower(headers[0]), ",") {
+ 				if name := strings.TrimSpace(header); name != "x-loki-csrf" && name != "content-type" {
+-					failure(w, http.StatusForbidden)
++					failure(w, http.StatusForbidden, "preflight-header-not-allowed")
+ 					return
+ 				}
+ 			}
+@@ -183,43 +185,43 @@
+ 	stream := len(r.Header.Values("Upgrade")) != 0
+ 	if stream && (len(r.Header.Values("Upgrade")) != 1 || !strings.EqualFold(r.Header.Get("Upgrade"), "websocket") ||
+ 		len(r.Header.Values("Sec-WebSocket-Protocol")) != 0 || !validWebSocketUpgrade(r)) {
+-		failure(w, http.StatusBadRequest)
++		failure(w, http.StatusBadRequest, "invalid-websocket-upgrade")
+ 		return
+ 	}
+ 	op, ok := classify(r.Method, r.URL, stream)
+ 	if !ok {
+-		failure(w, http.StatusForbidden)
++		failure(w, http.StatusForbidden, "endpoint-or-method-not-allowed")
+ 		return
+ 	}
+ 	if op.write && (len(r.Header.Values("X-Loki-CSRF")) != 1 || r.Header.Get("X-Loki-CSRF") != "1") {
+-		failure(w, http.StatusForbidden)
++		failure(w, http.StatusForbidden, "csrf-header-required")
+ 		return
+ 	}
+ 	session := sessionCookie(r)
+ 	if session == "" {
+-		failure(w, http.StatusUnauthorized)
++		failure(w, http.StatusUnauthorized, "session-cookie-required")
+ 		return
+ 	}
+ 	select {
+ 	case g.requests <- struct{}{}:
+ 		defer func() { <-g.requests }()
+ 	default:
+-		failure(w, http.StatusServiceUnavailable)
++		failure(w, http.StatusServiceUnavailable, "request-limit-busy")
+ 		return
+ 	}
+ 	// The panel and its API share one permission boundary; read-only LuCI uses fixed RPC.
+ 	allowed, err := g.authorize(r.Context(), session, true)
+ 	if err != nil {
+-		failure(w, http.StatusServiceUnavailable)
++		failure(w, http.StatusServiceUnavailable, "session-check-unavailable")
+ 		return
+ 	}
+ 	if !allowed {
+-		failure(w, http.StatusForbidden)
++		failure(w, http.StatusForbidden, "session-access-denied")
+ 		return
+ 	}
+ 	body, ok := requestBody(r)
+ 	if !ok {
+-		failure(w, http.StatusBadRequest)
++		failure(w, http.StatusBadRequest, "invalid-request-body")
+ 		return
+ 	}
+ 	if stream {
+@@ -328,7 +330,7 @@
+ 	defer cancel()
+ 	upstream, err := http.NewRequestWithContext(ctx, r.Method, controllerURL+strings.TrimPrefix(r.URL.RequestURI(), apiPrefix), bytes.NewReader(body))
+ 	if err != nil {
+-		failure(w, http.StatusBadGateway)
++		failure(w, http.StatusBadGateway, "controller-request-invalid")
+ 		return
+ 	}
+ 	upstream.Header.Set("Authorization", "Bearer "+g.secret)
+@@ -337,22 +339,22 @@
+ 	}
+ 	response, err := g.client.Do(upstream)
+ 	if err != nil {
+-		failure(w, http.StatusServiceUnavailable)
++		failure(w, http.StatusServiceUnavailable, "controller-unavailable")
+ 		return
+ 	}
+ 	defer response.Body.Close()
+ 	if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusNoContent || response.Header.Get("Content-Encoding") != "" {
+-		failure(w, http.StatusBadGateway)
++		failure(w, http.StatusBadGateway, "controller-response-status-or-encoding")
+ 		return
+ 	}
+ 	payload, err := io.ReadAll(io.LimitReader(response.Body, responseLimit+1))
+ 	if err != nil || len(payload) > responseLimit {
+-		failure(w, http.StatusBadGateway)
++		failure(w, http.StatusBadGateway, "controller-response-read-or-size")
+ 		return
+ 	}
+ 	if response.StatusCode == http.StatusNoContent {
+ 		if len(payload) != 0 {
+-			failure(w, http.StatusBadGateway)
++			failure(w, http.StatusBadGateway, "unexpected-controller-response-body")
+ 			return
+ 		}
+ 		w.WriteHeader(http.StatusNoContent)
+@@ -362,7 +364,7 @@
+ 		payload, err = projectConfigs(payload)
+ 	}
+ 	if err != nil || !g.safePayload(payload, session) {
+-		failure(w, http.StatusBadGateway)
++		failure(w, http.StatusBadGateway, "unsafe-controller-response")
+ 		return
+ 	}
+ 	w.Header().Set("Content-Type", "application/json")
+@@ -374,7 +376,7 @@
+ 	case g.streams <- struct{}{}:
+ 		defer func() { <-g.streams }()
+ 	default:
+-		failure(w, http.StatusServiceUnavailable)
++		failure(w, http.StatusServiceUnavailable, "stream-limit-busy")
+ 		return
+ 	}
+ 	dialCtx, stopDial := context.WithTimeout(r.Context(), 3*time.Second)
+@@ -383,13 +385,14 @@
+ 	})
+ 	stopDial()
+ 	if err != nil {
+-		failure(w, http.StatusServiceUnavailable)
++		failure(w, http.StatusServiceUnavailable, "controller-stream-unavailable")
+ 		return
+ 	}
+ 	defer upstream.CloseNow()
+ 	pattern := strings.NewReplacer("[", "\\[", "]", "\\]").Replace(r.Header.Get("Origin"))
+ 	downstream, err := websocket.Accept(w, r, &websocket.AcceptOptions{OriginPatterns: []string{pattern}})
+ 	if err != nil {
++		boxlog.Error("gateway stream refused: websocket-handshake-failed")
+ 		return
+ 	}
+ 	defer downstream.CloseNow()
+@@ -405,13 +408,23 @@
+ 		defer func() { done <- struct{}{} }()
+ 		for {
+ 			kind, data, err := upstream.Read(ctx)
+-			if err != nil || kind != websocket.MessageText || !g.safePayload(data, session) {
++			if err != nil {
++				if ctx.Err() == nil && websocket.CloseStatus(err) != websocket.StatusNormalClosure && websocket.CloseStatus(err) != websocket.StatusGoingAway {
++					boxlog.Error("gateway stream failed: controller-read-failed")
++				}
++				return
++			}
++			if kind != websocket.MessageText || !g.safePayload(data, session) {
++				boxlog.Error("gateway stream refused: unsafe-controller-payload")
+ 				return
+ 			}
+ 			writeCtx, stop := context.WithTimeout(ctx, 5*time.Second)
+ 			err = downstream.Write(writeCtx, kind, data)
+ 			stop()
+ 			if err != nil {
++				if ctx.Err() == nil {
++					boxlog.Error("gateway stream failed: browser-write-failed")
++				}
+ 				return
+ 			}
+ 		}
+@@ -420,7 +433,14 @@
+ 		defer workers.Done()
+ 		defer func() { done <- struct{}{} }()
+ 		// Streams carry server events only; a client data frame ends the connection.
+-		downstream.Read(ctx)
++		_, _, err := downstream.Read(ctx)
++		if ctx.Err() == nil {
++			if err == nil {
++				boxlog.Error("gateway stream refused: client-data-not-allowed")
++			} else if websocket.CloseStatus(err) != websocket.StatusNormalClosure && websocket.CloseStatus(err) != websocket.StatusGoingAway {
++				boxlog.Error("gateway stream failed: browser-read-failed")
++			}
++		}
+ 	}()
+ 	ticker := time.NewTicker(g.recheckEvery)
+ 	defer ticker.Stop()
+@@ -432,9 +452,14 @@
+ 			return
+ 		case <-ticker.C:
+ 			allowed, err := g.authorize(ctx, session, true)
+-			if err != nil || !allowed {
++			if err != nil {
++				boxlog.Error("gateway stream refused: session-check-unavailable")
+ 				return
+ 			}
+-		}
+-	}
+-}
++			if !allowed {
++				boxlog.Error("gateway stream refused: session-access-denied")
++				return
++			}
++		}
++	}
++}
+diff --git a/common/lokigateway/static.go b/common/lokigateway/static.go
+--- a/common/lokigateway/static.go
++++ b/common/lokigateway/static.go
+@@ -87,43 +87,43 @@
+ 	if r.TLS == nil || g.origins[r.Host] == nil || r.Method != http.MethodGet && r.Method != http.MethodHead ||
+ 		r.URL.RawQuery != "" || r.URL.ForceQuery || r.ContentLength > 0 || len(r.TransferEncoding) != 0 ||
+ 		len(r.Header.Values("Authorization")) != 0 || len(r.Header.Values("Proxy-Authorization")) != 0 {
+-		failure(w, http.StatusForbidden)
++		failure(w, http.StatusForbidden, "asset-request-not-allowed")
+ 		return
+ 	}
+ 	sites := r.Header.Values("Sec-Fetch-Site")
+ 	if len(sites) > 1 || len(sites) == 1 && sites[0] != "same-origin" && sites[0] != "same-site" && sites[0] != "none" {
+-		failure(w, http.StatusForbidden)
++		failure(w, http.StatusForbidden, "asset-site-not-allowed")
+ 		return
+ 	}
+ 	origins := r.Header.Values("Origin")
+ 	if len(origins) > 1 || len(origins) == 1 && !g.origins[r.Host][origins[0]] {
+-		failure(w, http.StatusForbidden)
++		failure(w, http.StatusForbidden, "asset-origin-not-allowed")
+ 		return
+ 	}
+ 	session := sessionCookie(r)
+ 	if session == "" {
+-		failure(w, http.StatusUnauthorized)
++		failure(w, http.StatusUnauthorized, "session-cookie-required")
+ 		return
+ 	}
+ 	select {
+ 	case g.requests <- struct{}{}:
+ 		defer func() { <-g.requests }()
+ 	default:
+-		failure(w, http.StatusServiceUnavailable)
++		failure(w, http.StatusServiceUnavailable, "request-limit-busy")
+ 		return
+ 	}
+ 	allowed, err := g.authorize(r.Context(), session, true)
+ 	if err != nil {
+-		failure(w, http.StatusServiceUnavailable)
++		failure(w, http.StatusServiceUnavailable, "session-check-unavailable")
+ 		return
+ 	}
+ 	if !allowed {
+-		failure(w, http.StatusForbidden)
++		failure(w, http.StatusForbidden, "session-access-denied")
+ 		return
+ 	}
+ 	name, contentType, ok := assetName(r.URL.EscapedPath())
+ 	if !ok || g.assets == nil {
+-		failure(w, http.StatusNotFound)
++		failure(w, http.StatusNotFound, "asset-not-allowed-or-unavailable")
+ 		return
+ 	}
+ 	var named os.FileInfo
+@@ -135,23 +135,23 @@
+ 		prefix += part
+ 		named, err = g.assets.Lstat(prefix)
+ 		if err != nil || named.Mode()&os.ModeSymlink != 0 {
+-			failure(w, http.StatusNotFound)
++			failure(w, http.StatusNotFound, "asset-path-unavailable-or-linked")
+ 			return
+ 		}
+ 		if prefix != name {
+ 			if !named.IsDir() || named.Mode().Perm()&0o022 != 0 {
+-				failure(w, http.StatusNotFound)
++				failure(w, http.StatusNotFound, "asset-directory-unsafe")
+ 				return
+ 			}
+ 			if _, ok := statIdentity(named); !ok {
+-				failure(w, http.StatusNotFound)
++				failure(w, http.StatusNotFound, "asset-directory-owner-unverified")
+ 				return
+ 			}
+ 		}
+ 	}
+ 	file, err := g.assets.OpenFile(name, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+ 	if err != nil {
+-		failure(w, http.StatusNotFound)
++		failure(w, http.StatusNotFound, "asset-open-failed")
+ 		return
+ 	}
+ 	defer file.Close()
+@@ -159,12 +159,12 @@
+ 	if err != nil || !info.Mode().IsRegular() || !os.SameFile(info, named) ||
+ 		info.Size() <= 0 || info.Size() > assetLimit ||
+ 		info.Mode().Perm()&0o022 != 0 {
+-		failure(w, http.StatusNotFound)
++		failure(w, http.StatusNotFound, "asset-file-unsafe")
+ 		return
+ 	}
+ 	owner, ok := statIdentity(info)
+ 	if !ok || owner.Nlink != 1 {
+-		failure(w, http.StatusNotFound)
++		failure(w, http.StatusNotFound, "asset-owner-or-link-count-unsafe")
+ 		return
+ 	}
+ 	w.Header().Set("Content-Type", contentType)
+diff --git a/common/lokigateway/logging_linux_test.go b/common/lokigateway/logging_linux_test.go
+new file mode 100644
+--- /dev/null
++++ b/common/lokigateway/logging_linux_test.go
+@@ -0,0 +1,51 @@
++package lokigateway
++
++import (
++	"bytes"
++	"context"
++	"errors"
++	"net"
++	"net/http/httptest"
++	"strings"
++	"testing"
++
++	boxlog "github.com/sagernet/sing-box/log"
++)
++
++func TestGatewayRefusalIsLoggedWithoutRequestSecrets(t *testing.T) {
++	var output bytes.Buffer
++	factory := boxlog.NewDefaultFactory(context.Background(), boxlog.Formatter{DisableColors: true}, &output, "", nil, false)
++	if err := factory.Start(); err != nil {
++		t.Fatal(err)
++	}
++	defer factory.Close()
++	previous := boxlog.StdLogger()
++	boxlog.SetStdLogger(factory.Logger())
++	defer boxlog.SetStdLogger(previous)
++	request := httptest.NewRequest("GET", "https://router.example/private-url?token=synthetic-token", nil)
++	request.Header.Set("Cookie", "sysauth_https=synthetic-session")
++	request.Header.Set("Authorization", "Bearer synthetic-key")
++	response := httptest.NewRecorder()
++	(&gateway{}).ServeHTTP(response, request)
++	if response.Code != 403 || !strings.Contains(output.String(), "gateway request refused: origin-not-allowed (HTTP 403)") {
++		t.Fatalf("refusal has no diagnostic: status=%d log=%q", response.Code, output.String())
++	}
++	for _, secret := range []string{"private-url", "synthetic-token", "synthetic-session", "synthetic-key"} {
++		if strings.Contains(output.String(), secret) {
++			t.Fatal("request secret reached the log")
++		}
++	}
++}
++
++func TestGatewayListenerRetainsSystemCause(t *testing.T) {
++	_, identity, _ := fileIdentityForTest(t)
++	listener, err := net.Listen("tcp", "127.0.0.1:0")
++	if err != nil {
++		t.Fatal(err)
++	}
++	listener.Close()
++	err = serveGateway(context.Background(), &gateway{client: controllerClient()}, identity, listener)
++	if !errors.Is(err, errGatewayListener) || !errors.Is(err, net.ErrClosed) {
++		t.Fatalf("listener system cause was lost: %v", err)
++	}
++}

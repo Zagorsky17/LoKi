@@ -144,9 +144,26 @@ function background(argv) {
 // The level goes into the tag the page reads alerts from and into the syslog priority.
 const PRIORITIES = { info: "info", warn: "warning", error: "err" };
 
-function log(level, message) {
+function log(level, message, tag) {
     level = common.as_string(level);
-    status([ "logger", "-t", "loki", "-p", "user." + (PRIORITIES[level] ?? "notice"), "[" + level + "] " + common.as_string(message) ]);
+    status([ "logger", "-t", tag ?? "loki", "-p", "user." + (PRIORITIES[level] ?? "notice"), "[" + level + "] " + common.as_string(message) ]);
 }
 
-return { command_line, run, status, ok, capture, capture_parallel, combined, deadline, output, feed, background, log };
+function log_error(context, message, tag) {
+    let detail = "diagnostic details unavailable";
+    try {
+        let mask = require("diagnostics.mask");
+        let uci = require("core.uci");
+        let settings = uci.get_all("loki", "settings") ?? {};
+        let config = common.read_json_file(common.option(settings, "config_path", ""));
+        detail = mask.text(message, mask.hosts(config), [],
+            mask.credentials([ config, uci.section_objects("loki") ]));
+        detail = require("service.gateway_secret").redactor()(detail);
+    }
+    catch (e) {}
+    detail = substr(trim(replace(detail, /[[:cntrl:]]+/g, " ")), 0, 4096) || "no diagnostic output";
+    log("error", context + ": " + detail, tag);
+    return detail;
+}
+
+return { command_line, run, status, ok, capture, capture_parallel, combined, deadline, output, feed, background, log, log_error };

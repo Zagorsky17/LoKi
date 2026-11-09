@@ -134,7 +134,7 @@ describe('service action alerts', () => {
     await flush();
 
     expect(mocks.showToast).toHaveBeenCalledWith(
-      'Failed to start the service',
+      'Failed to start the service: Another service action is already running',
       'error',
     );
   });

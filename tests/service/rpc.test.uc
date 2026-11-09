@@ -9,6 +9,8 @@ let common = require("core.common");
 const SID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const OTHER = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 let clients = [];
+let commands = stub.commands;
+stub.commands = (handlers) => commands([ ...handlers, [ "logger", {} ] ]);
 
 function fresh() {
     uloop.__reset();
@@ -780,6 +782,18 @@ t.test("diagnostics acknowledge immediately and remain pollable beyond an HTTP s
     complete(0);
     common.monotonic_ms = real_time;
     t.eq(value.replied.code, 0);
+});
+
+t.test("a request refused before execution logs its reason without its arguments or session", () => {
+    let rpc = fresh();
+    stub.commands([ [ "logger", {} ] ]);
+    let result = rpc.prepare(request([ "start", "synthetic-private-argument" ]), "rpc_write");
+    let lines = join("\n", stub.command_lines());
+    stub.restore();
+    t.eq(result.success, false);
+    t.contains(lines, "RPC refused: The RPC operation is not allowed");
+    t.excludes(lines, "synthetic-private-argument");
+    t.excludes(lines, SID);
 });
 
 t.done();

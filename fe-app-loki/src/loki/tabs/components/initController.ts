@@ -237,19 +237,12 @@ export function initController(): void {
         icon,
         text,
         loading: live && state.action === action,
-        disabled: blocked || action !== 'check',
+        disabled: blocked,
         onClick,
       });
 
     part(root, 'components-actions').replaceChildren(
       E('b', {}, _('Available actions')),
-      E(
-        'p',
-        {},
-        _(
-          'Package changes are disabled in this development build until preflight and recovery are implemented.',
-        ),
-      ),
       button(
         'check',
         renderDownloadIcon24,
@@ -261,7 +254,7 @@ export function initController(): void {
         icon: renderDownloadIcon24,
         text: _('Update LoKi'),
         classNames: ['cbi-button-apply'],
-        disabled: true,
+        disabled: blocked || !canUpdate,
         onClick: () => {
           if (state.checkResult?.success && state.checkResult.available) {
             ui.showModal(

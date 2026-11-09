@@ -116,6 +116,7 @@ fail() { # fail EXIT CODE TEXT [HINT]...
 	shift 3
 	for hint in "$@"; do [ -z "$hint" ] || joined="${joined:+$joined. }$hint"; done
 	log "error ($code): $text${joined:+ | $joined}"
+	logger -t loki -p user.err "[error] Installer $MODE refused: $code (exit $status)" 2>/dev/null || true
 	if [ "$code" = interrupted ]; then
 		say '[!]' "$C_WARN" "$text" >&2
 	else
