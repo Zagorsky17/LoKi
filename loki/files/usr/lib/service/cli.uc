@@ -201,10 +201,26 @@ function dispatch(argv, lib) {
 }
 
 // The RPC broker validates before spawning, and the child rechecks before dispatch.
-function read_allowed(argv) {
-    for (let arg in argv)
-        if (type(arg) != "string" || length(arg) > 65536 || index(arg, chr(0)) >= 0 || match(arg, /[[:cntrl:]]/))
+function valid_arguments(argv) {
+    if (type(argv) != "array" || length(argv) == 0 || length(argv) > 5)
+        return false;
+    let bytes = 0;
+    for (let i = 0; i < length(argv); i++) {
+        let arg = argv[i];
+        if (type(arg) != "string" || index(arg, chr(0)) >= 0)
             return false;
+        bytes += length(arg);
+        // Only report text carries formatting; the executable still receives one fixed argv item.
+        let checked = argv[0] == "report" && length(argv) == 3 && i == 2 ? replace(arg, /[\t\r\n]/g, "") : arg;
+        if (match(checked, /[[:cntrl:]]/))
+            return false;
+    }
+    return bytes <= 65536;
+}
+
+function read_allowed(argv) {
+    if (!valid_arguments(argv))
+        return false;
     let name = argv[0];
     if (length(argv) == 1 && index([ "check_service", "check_dns", "check_traffic", "check_logs", "clash_summary",
         "get_status", "get_system_info", "get_ui_state", "get_core_features", "show_version" ], name) >= 0)
@@ -227,6 +243,8 @@ function read_allowed(argv) {
 }
 
 function write_allowed(argv) {
+    if (!valid_arguments(argv))
+        return false;
     if (read_allowed(argv))
         return true;
     let name = argv[0];
@@ -261,4 +279,4 @@ function main(argv, lib) {
     }
 }
 
-return { main, dispatch, read_allowed, write_allowed, COMMANDS };
+return { main, dispatch, valid_arguments, read_allowed, write_allowed, COMMANDS };

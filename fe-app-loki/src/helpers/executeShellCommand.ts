@@ -16,6 +16,7 @@ interface ExecuteShellCommandResponse {
 
 const MAX_RESULT_BYTES = 4 * 1024 * 1024;
 const RESULT_CHUNK_BYTES = 32768;
+let largeRequest = Promise.resolve();
 
 async function collectResult(method: string, id: string) {
   if (!/^[a-f0-9]{64}$/.test(id)) throw new Error('Invalid RPC result');
@@ -106,10 +107,17 @@ async function waitResult(method: string, id: string, deadline: number) {
 export function readOnlyLokiArgs(args: string[]): boolean {
   if (
     args.some(
-      (arg) =>
+      (arg, index) =>
         arg.length > 65536 ||
         Array.from(arg).some(
-          (char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127,
+          (char) =>
+            (char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127) &&
+            !(
+              args[0] === 'report' &&
+              args.length === 3 &&
+              index === 2 &&
+              '\t\r\n'.includes(char)
+            ),
         ),
     )
   ) {
@@ -166,10 +174,33 @@ export async function executeShellCommand({
   args,
   timeout = COMMAND_TIMEOUT,
 }: ExecuteShellCommandParams): Promise<ExecuteShellCommandResponse> {
+  const deadline = Date.now() + (timeout ?? 180000);
+  let release: (() => void) | undefined;
+  // The broker permits one large result at a time, including its final release.
+  if (
+    command === '/usr/bin/loki' &&
+    ([
+      'report',
+      'show_config',
+      'show_sing_box_config',
+      'check_logs',
+      'installer_log',
+    ].includes(args[0]) ||
+      (args[0] === 'clash_api' &&
+        args[1] === 'GET' &&
+        ['/proxies', '/providers/proxies', '/connections'].includes(args[2])))
+  ) {
+    const previous = largeRequest;
+    largeRequest = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await previous;
+  }
   try {
     if (command === '/usr/bin/loki') {
+      if (Date.now() >= deadline)
+        throw new Error('The RPC request timed out before execution');
       const method = readOnlyLokiArgs(args) ? 'rpc_read' : 'rpc_write';
-      const deadline = Date.now() + (timeout ?? 180000);
       const prepared = await callUbus<{
         success: boolean;
         id?: string;
@@ -178,7 +209,7 @@ export async function executeShellCommand({
         object: 'loki',
         method: `${method}_prepare`,
         params: { argv: args },
-        timeoutMs: Math.min(timeout ?? 15000, 15000),
+        timeoutMs: Math.min(15000, Math.max(1, deadline - Date.now())),
         retryUnavailable: false,
         nobatch: true,
       });
@@ -249,5 +280,7 @@ export async function executeShellCommand({
     const code = typeof error?.code === 'number' ? error.code : 1;
 
     return { stdout: '', stderr: error?.message, code };
+  } finally {
+    release?.();
   }
 }

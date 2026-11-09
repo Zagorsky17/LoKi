@@ -208,38 +208,36 @@ export function showSubscriptionUrlSettingsModal(
     );
   // A remote subscription keeps its headers, none included; others are offered the defaults, carried
   // only once the address becomes a URL. The dialog opens without them too.
-  return loadDefaultSubscriptionHeaders()
-    .catch(() => [] as string[])
-    .then((headers: string[]) =>
-      showChildItemSettingsModal(sectionId, itemValue, option, {
-        typeName: 'subscription_url',
-        valueOption: 'url',
-        keys: ['url', ...subscriptionUrlSettingsKeys()],
-        itemNode,
-        defaults: (inputValue: string) =>
-          Object.assign(
-            defaultSubscriptionUrlSettings(
-              storedRemote ? [] : headers,
-              nextSubscriptionTag(sectionId, option),
-            ),
-            { url: inputValue },
+  return loadDefaultSubscriptionHeaders().then((headers: string[]) =>
+    showChildItemSettingsModal(sectionId, itemValue, option, {
+      typeName: 'subscription_url',
+      valueOption: 'url',
+      keys: ['url', ...subscriptionUrlSettingsKeys()],
+      itemNode,
+      defaults: (inputValue: string) =>
+        Object.assign(
+          defaultSubscriptionUrlSettings(
+            storedRemote ? [] : headers,
+            nextSubscriptionTag(sectionId, option),
           ),
-        addOptions: addSubscriptionUrlItemOptions,
-        title: () =>
-          tag ? _('Subscription: %s').format(tag) : _('Subscription settings'),
-        afterSave: (
-          itemId: string,
-          _inputValue: string,
-          settings: ChildSettings,
-          existing: boolean,
-        ) => {
-          if (existing && !isRemoteSubscriptionSource(settings.url)) {
-            cleanupRemoteSubscriptionUrlSettings(itemId);
-          } else if (existing && !storedRemote) {
-            applyRemoteSubscriptionUrlSettings(itemId, settings);
-          }
-          updateDynamicListItemLabel(itemNode, `${settings.tag || ''}`.trim());
-        },
-      }),
-    );
+          { url: inputValue },
+        ),
+      addOptions: addSubscriptionUrlItemOptions,
+      title: () =>
+        tag ? _('Subscription: %s').format(tag) : _('Subscription settings'),
+      afterSave: (
+        itemId: string,
+        _inputValue: string,
+        settings: ChildSettings,
+        existing: boolean,
+      ) => {
+        if (existing && !isRemoteSubscriptionSource(settings.url)) {
+          cleanupRemoteSubscriptionUrlSettings(itemId);
+        } else if (existing && !storedRemote) {
+          applyRemoteSubscriptionUrlSettings(itemId, settings);
+        }
+        updateDynamicListItemLabel(itemNode, `${settings.tag || ''}`.trim());
+      },
+    }),
+  );
 }
