@@ -171,7 +171,10 @@ t.test("while the installer runs the service is busy with it and takes no action
 });
 
 t.test("a failed init command records its stderr without subscription credentials", () => {
-    fresh();
+    let directory = fresh();
+    let storage = require("core.cache_path");
+    let validate = storage.validate;
+    storage.validate = () => directory + "/controller.secret";
     fixture.seed({ subscription_url: [ { ".name": "sub", url: "https://example.com/private-token" } ] });
     let begun = ui.begin("start", "ui", me);
     stub.commands([
@@ -182,6 +185,7 @@ t.test("a failed init command records its stderr without subscription credential
     ui.worker("start", begun.job_id, "");
     let lines = join("\n", stub.command_lines());
     stub.restore();
+    storage.validate = validate;
     t.contains(lines, "Runtime error: unavailable module");
     t.excludes(lines, "private-token");
     t.eq([ job(begun.job_id).running, job(begun.job_id).success ], [ false, false ]);
