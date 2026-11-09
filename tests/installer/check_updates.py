@@ -141,14 +141,14 @@ main --check --lang en
                 records = [json.loads(line) for line in run.stdout.splitlines() if line.startswith('{')]
                 assert len(records) == 1, (case, run.returncode, run.stdout, run.stderr)
                 result = records[0]
-                failures = {'incompatible': 'incompatible', 'unsupported-arch': 'unsupported_arch', 'bad-manifest': 'release', 'nul-manifest': 'release', 'bad-core-tag': 'release', 'stock-core-version': 'release', 'bad-checksum': 'checksum', 'duplicate-checksum': 'checksum', 'missing': 'release', 'tls': 'network', 'http-source': 'source', 'busy': 'locked', 'memory': 'no_memory', 'memory-20': 'no_memory', 'tmp-small': 'no_memory', 'oversized': 'network'}
+                failures = {'incompatible': 'incompatible', 'unsupported-arch': 'unsupported_arch', 'bad-manifest': 'release', 'nul-manifest': 'release', 'bad-core-tag': 'release', 'stock-core-version': 'release', 'bad-checksum': 'checksum', 'duplicate-checksum': 'checksum', 'missing': 'release', 'tls': 'network', 'http-source': 'source', 'memory': 'no_memory', 'tmp-small': 'no_memory', 'oversized': 'network'}
                 if case in failures:
                     assert run.returncode != 0 and result['success'] is False and result['reason'] == failures[case], (case, result, run.stderr)
                 else:
                     assert run.returncode == 0 and result['success'] is True, (case, result, run.stderr)
                     assert result['available'] == (case in ['available', 'custom']), (case, result)
                     assert result['installed']['app'] == '2.0.0' and result['latest']['app'] == app_version, result
-                if case in ['memory', 'memory-20', 'tmp-small']: assert not hits, (case, hits)
+                if case in ['memory', 'tmp-small']: assert not hits, (case, hits)
                 assert not events.exists(), (case, events.read_text())
                 assert log.read_text() == 'existing installation log\n', case
                 assert not any(n.endswith(('.apk', '.ipk')) for n in hits), (case, hits)

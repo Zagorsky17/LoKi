@@ -40,14 +40,11 @@ LOG=${LOKI_INSTALL_LOG:-/dev/null}
 LOCK_DIR=/var/lock/loki-install.lock
 OUR_PACKAGES="loki luci-app-loki luci-i18n-loki-ru loki-core"
 # The other packages known to install /usr/bin/loki-core; any other package that owns it counts too.
-FOREIGN_CORES=''
 # What loki-core provides: a package that needs it stays when a foreign core goes.
 CORE_PROVIDES=''
 # What a core outside the package managers leaves: LoKi 1.0.x's binary builds and the installer
 # of EikeiDev/OpenWRT-sing-box-extended, whose wrapper runs the core from /usr/libexec.
-FOREIGN_CORE_FILES=''
 # LoKi 1.0.x's own state about its cores, and the backups its updater left when it failed.
-LEGACY_FILES=''
 # What the builds of the core speak, by the variants of its build.sh: tiny, what base adds to it,
 # and what full adds to base (full_adds).
 TINY_HAS='VLESS, Trojan, Shadowsocks, Hysteria, Hysteria2, TUIC, SOCKS, HTTP'
@@ -63,7 +60,7 @@ WORK='' LOCKED=0
 PM='' PM_DB='' EXT='' ARCH='' RELEASE='' FLASH_MOUNT=/ FLASH_FS=''
 LOKI_OLD='' APP_OLD='' I18N_OLD='' CORE_OLD='' CORE_OLD_VARIANT='' CONFIG_VERSION='' FORK_URL=''
 LOKI_ENABLED=0 LOKI_RUNNING=0 STARTED=0
-FOREIGN_PKGS='' FOREIGN_WORLD='' FOREIGN_FILES='' LEFTOVERS=''
+FOREIGN_WORLD='' LEFTOVERS=''
 F_VERSION='' F_TAG='' F_CORE_MIN='' C_VERSION='' C_TAG='' C_LOKI_MIN=''
 I18N=0 NEED_LOKI=0 NEED_APP=0 NEED_I18N=0
 CORE_ACTION=none CORE_VARIANT='' CORE_REINSTALL=0
@@ -428,17 +425,7 @@ provided() { # an installed package is or provides $1
 		END { exit !found }' "$WORK/db"
 }
 
-file_owner() { # the installed package that owns file $1
-	if [ "$PM" = apk ]; then
-		awk -v f="${1#/}" '/^P:/ { n = substr($0, 3) } /^F:/ { d = substr($0, 3) } /^R:/ { if (d "/" substr($0, 3) == f) { print n; exit } }' /lib/apk/db/installed
-	else
-		grep -l -x -F "$1" /usr/lib/opkg/info/*.list 2>/dev/null | head -n 1 | sed 's|.*/||; s|\.list$||'
-	fi
-}
 
-in_world() {
-	[ "$PM" = apk ] && grep -q -E "^$1([<>=~].*)?\$" /etc/apk/world 2>/dev/null
-}
 
 world_drop() { # remove the exact lines given from /etc/apk/world
 	[ "$PM" = apk ] && [ -n "$*" ] || return 0
@@ -446,29 +433,6 @@ world_drop() { # remove the exact lines given from /etc/apk/world
 		cat "$WORK/world" >/etc/apk/world
 }
 
-dependents() { # the installed packages in $1 and every installed package that needs one of them
-	awk -F '\t' -v set=" $1 " -v keep=" $OUR_PACKAGES " -v stays=" $CORE_PROVIDES " '
-		function names(s, out,    n, i, a, w) {
-			gsub(/\([^)]*\)/, "", s); gsub(/[,|]/, " ", s)
-			n = split(s, a, " ")
-			for (i = 1; i <= n; i++) { w = a[i]; sub(/[<>=~].*/, "", w); if (w != "" && w !~ /^!/) out[w] = 1 }
-		}
-		{ name[NR] = $1; deps[NR] = $3; prov[NR] = $4; if (index(set, " " $1 " ")) rm[$1] = 1 }
-		END {
-			do {
-				changed = 0
-				split("", gone)
-				for (i = 1; i <= NR; i++) if (name[i] in rm) { gone[name[i]] = 1; names(prov[i], gone) }
-				n = split(stays, kept, " "); for (j = 1; j <= n; j++) delete gone[kept[j]]
-				for (i = 1; i <= NR; i++) {
-					if ((name[i] in rm) || index(keep, " " name[i] " ")) continue
-					split("", need); names(deps[i], need)
-					for (w in need) if (w in gone) { rm[name[i]] = 1; changed = 1; break }
-				}
-			} while (changed)
-			for (i = 1; i <= NR; i++) if (name[i] in rm) printf "%s ", name[i]
-		}' "$WORK/db"
-}
 
 needed_by() { # needed_by NAME...: the installed packages other than LoKi's that depend on one of NAMES
 	awk -F '\t' -v want=" $* " -v ours=" $OUR_PACKAGES " '
@@ -559,9 +523,15 @@ dep_names() { # the package names a Depends field lists
 # --- downloads ------------------------------------------------------------------------------
 
 fetch() { # fetch URL FILE [ACCEPT]: 0; 2 when the server answered with an HTTP error, 3 when that was GitHub's rate limit; 1 when it was not reached
-	local status
-	wget -T 30 ${3:+"--header=Accept: $3"} -O "$2" "$1" 2>"$WORK/fetch.log"
+	local status metadata=0
+	case "$2" in *.json|*.sums|*.release) metadata=1 ;; esac
+	if [ "$metadata" = 1 ]; then
+		if [ "$(mem_available_kb)" -lt 6144 ] || [ "$(free_kb /tmp)" -lt 4096 ]; then fail 1 no_memory 'Not enough memory for release metadata'; fi
+	fi
+	( if [ "$metadata" = 1 ]; then ulimit -f 4096 || exit 1; fi
+	wget -T 30 ${3:+"--header=Accept: $3"} -O "$2" "$1" ) 2>"$WORK/fetch.log"
 	status=$?
+	if [ "$metadata" = 1 ] && [ -f "$2" ] && [ "$(wc -c <"$2")" -gt 2097152 ]; then return 1; fi
 	cat "$WORK/fetch.log" >>"$LOG"
 	# uclient-fetch exits 8 when the server answers with an error, which it names unless -q, 4 when it
 	# is not reached; GitHub's API answers 403 or 429 once an address spent its requests
@@ -596,7 +566,7 @@ release_url() { # release_url REPO TAG FILE: FILE at the mirror, TAG empty for t
 	if [ -n "$2" ]; then
 		printf '%s/%s/releases/download/%s/%s' "$MIRROR" "$1" "$2" "$3"
 	else
-		printf '%s/%s/releases/download/$RELEASE_TAG/%s' "$MIRROR" "$1" "$3"
+		printf '%s/%s/releases/download/%s/%s' "$MIRROR" "$1" "$RELEASE_TAG" "$3"
 	fi
 }
 
@@ -619,7 +589,7 @@ checksum_of() { # exactly one canonical SHA256 entry for this asset
 
 verify() { # verify FILE SUMS: 0 matches, 1 differs, 2 SUMS has no line for it
 	local expected
-	expected=$(checksum_of "${1##*/}" "$2")
+	expected=$(checksum_of "${3:-${1##*/}}" "$2")
 	[ -n "$expected" ] || return 2
 	[ "$(sha256sum "$1" | cut -d ' ' -f 1)" = "$expected" ]
 }
@@ -633,7 +603,7 @@ network_hint() {
 	host=${host#*://}
 	host=${host%%/*}
 	host=${host%:*}
-	if [ "$LOKI_ENABLED" = 0 ] && pidof loki-core >/dev/null 2>&1; then
+	if [ "${LOKI_ENABLED:-}" = 0 ] && pidof loki-core >/dev/null 2>&1; then
 		t 'Another application runs sing-box, and the internet of the router may go through it: stop it and run the installer again' \
 			'Работает sing-box другого приложения, и интернет роутера может идти через него: остановите его и запустите установщик снова'
 	elif ! resolves "$host"; then
@@ -785,7 +755,7 @@ loki_status() { # running or enabled, from the installed LoKi
 }
 
 read_state() {
-	local name file owner
+	local name
 	refresh_db
 	LOKI_OLD=$(pkg_version loki)
 	# every release of LoKi names this project; a fork built under its package names names its own
@@ -796,7 +766,7 @@ read_state() {
 	CORE_OLD=$(pkg_version loki-core)
 	[ -z "$CORE_OLD" ] || CORE_OLD_VARIANT=$(cat /usr/share/loki-core/variant 2>/dev/null)
 	[ ! -f /etc/config/loki ] || CONFIG_VERSION=$(uci -q get loki.settings.config_version)
-	loki_status
+	[ "$MODE" = check ] || loki_status
 
 	for name in $OUR_PACKAGES; do
 		[ -z "$(pkg_version "$name")" ] || [ "$(pkg_url "$name")" = "https://github.com/$LOKI_REPO" ] ||
@@ -863,6 +833,9 @@ fetch_release() { # fetch_release loki|core: the latest release's manifest, and 
 	3) rate_limited ;;
 	*) fail 1 network "$(t 'Cannot download the information on the %s release' 'Не удалось скачать сведения о релизе %s' "$name")" "$(network_hint)" ;;
 	esac
+	url=$(asset_url "$1" SHA256SUMS)
+	if [ -z "$url" ] || ! download "$url" "$WORK/$1.sums" application/octet-stream; then fail 1 release 'Missing SHA256SUMS'; fi
+	verify "$manifest" "$WORK/$1.sums" "$manifest_file" || fail 1 checksum 'Release manifest checksum mismatch'
 	read_manifest "$manifest" "$package" >"$WORK/$1.fields" ||
 		fail 1 release "$(t 'Cannot read the information on the %s release' 'Не удалось прочитать сведения о релизе %s' "$name")" \
 			"$(t 'Download the latest install.sh' 'Скачайте свежий install.sh')"
@@ -1060,32 +1033,12 @@ check_packages() {
 	step check "$(t 'Checking the packages' 'Проверка пакетов')"
 	plan_removals
 	check_dependencies
-	plan_ip_swap
 	check_space
 	check_config
 	preflight
 }
 
 # apk keeps an ip-full an older LoKi pulled in, as it is the new one's ip: ip-tiny replaces it
-plan_ip_swap() { :; }
-
-check_dependencies() { # what the feeds give of DEPS_MISSING, simulated: DEPS_KB of it installed
-	local out="$WORK/deps" hint=''
-	[ -n "$DEPS_MISSING" ] || return 0
-	# the feed indexes, the package manager reading them and, for opkg, the packages its
-	# simulation downloads, beside the downloads already in /tmp
-	if [ "$PM" = apk ]; then enough_ram 19456 dependencies; else enough_ram 10240 dependencies; fi
-	update_lists
-	[ "$LISTS_FAILED" = 0 ] || hint=$(network_hint)
-	# shellcheck disable=SC2086
-	if [ "$PM" = apk ]; then
-		capture "$out" apk add --simulate $DEPS_MISSING
-	else
-		capture "$out" opkg --noaction install $DEPS_MISSING
-	fi || fail 1 check "$(t '%s cannot install %s: %s' '%s не может установить %s: %s' "$PM" "$(commas "$DEPS_MISSING")" "$(pm_errors "$out")")" "$hint"
-	DEPS_KB=$(installed_kb "$out")
-	log "dependencies: $DEPS_KB KB installed"
-}
 
 installed_kb() { # installed_kb SIMULATION: what the packages a simulated installation adds take installed
 	local lists
@@ -1315,21 +1268,6 @@ stop_services() {
 	stop_cores
 }
 
-remove_files() { :; }
-
-predelete_core() { # apk upgrades by writing beside the old file: make room first, a compressed copy in RAM
-	[ "$PREDELETE_CORE" = 1 ] || return 0
-	# /tmp is RAM, and its df counts what tmpfs may grow to: MemAvailable is what is free
-	if [ $(($(file_kb /usr/bin/loki-core) / 2 + 16384)) -lt "$(mem_available_kb)" ] &&
-		gzip -1 -c /usr/bin/loki-core >"$WORK/loki-core.old.gz" 2>/dev/null; then
-		log "a compressed copy of the old core is in RAM until the transaction ends"
-	else
-		rm -f "$WORK/loki-core.old.gz"
-		log "no copy of the old core: RAM is short"
-	fi
-	rm -f /usr/bin/loki-core
-	log "removed the old core to make room for the new one"
-}
 
 restore_core() {
 	[ "$PREDELETE_CORE" = 1 ] && [ ! -e /usr/bin/loki-core ] && [ -f "$WORK/loki-core.old.gz" ] || return 0
@@ -1371,48 +1309,8 @@ dropped() { # dropped LINES: "name version" of each package installed before and
 		!($1 in now) && !($1 in skip) { print $1 " " $2 }' "$WORK/db" "$WORK/db.before" | sort
 }
 
-orphans() { # orphans NAME...: those of NAMES opkg pulled in beside the image that nothing installed needs
-	local rom=/rom/usr/lib/opkg/status
-	[ -f "$rom" ] || rom=/dev/null
-	awk -F '\t' -v want=" $* " '
-		function names(s, out,    n, i, a, w) {
-			gsub(/\([^)]*\)/, "", s); gsub(/[,|]/, " ", s)
-			n = split(s, a, " ")
-			for (i = 1; i <= n; i++) { w = a[i]; sub(/[<>=~].*/, "", w); if (w != "") out[w] = 1 }
-		}
-		FILENAME == ARGV[1] { if (/^Package: /) image[substr($0, 10)] = 1; next }
-		FILENAME == ARGV[2] { if (/^Package: /) p = substr($0, 10); else if ($0 == "Auto-Installed: yes") auto[p] = 1; next }
-		{ installed[$1] = 1; provides[$1] = $4; names($3, needed) }
-		END {
-			n = split(want, w, " ")
-			for (i = 1; i <= n; i++) {
-				x = w[i]
-				if (!(x in installed) || !(x in auto) || (x in image) || (x in needed)) continue
-				split("", p); names(provides[x], p); busy = 0
-				for (y in p) if (y in needed) busy = 1
-				if (!busy) printf "%s ", x
-			}
-		}' "$rom" /usr/lib/opkg/status "$WORK/db"
-}
 
 # what the packages that went pulled in: opkg's upgrade drops only its first level, apk all of it
-drop_dependencies() { :; }
-
-# a package opkg installs by name is the person's: the dependencies count as pulled in, like apk's
-pulled_in() {
-	[ "$PM" = opkg ] && [ -n "$*" ] || return 0
-	if awk -v names=" $* " '
-		/^Package: / { ours = index(names, " " $2 " ") > 0; auto = 0 }
-		ours && $0 == "Status: install user installed" { $0 = "Status: install ok installed" }
-		ours && $0 == "Auto-Installed: yes" { auto = 1 }
-		ours && $0 == "" { if (!auto) print "Auto-Installed: yes"; ours = 0 }
-		{ print }
-		END { if (ours && !auto) print "Auto-Installed: yes" }' /usr/lib/opkg/status >/usr/lib/opkg/status.loki; then
-		mv /usr/lib/opkg/status.loki /usr/lib/opkg/status
-	else
-		rm -f /usr/lib/opkg/status.loki
-	fi
-}
 
 transaction() {
 	local out="$WORK/transaction" name status=0 order before
@@ -1441,7 +1339,6 @@ transaction() {
 		fi
 		# shellcheck disable=SC2086
 		[ "$status" != 0 ] || [ "$#" = 0 ] || perform "$out" detached opkg install $OPKG_FLAGS "$@" || status=$?
-		[ "$status" != 0 ] || drop_dependencies
 	fi
 	refresh_db
 	gone "$before"
@@ -1570,7 +1467,6 @@ apply() {
 	backup_config
 	install_dependencies
 	stop_services
-	remove_files
 	predelete_core
 	step install "$(t 'Installing packages: %s' 'Установка пакетов: %s' "$(package_names)")"
 	transaction
@@ -1644,7 +1540,7 @@ uninstall() {
 	if [ "$PM" = apk ]; then
 		perform "$out" detached apk del $APK_OFFLINE $packages
 	else
-		perform "$out" detached opkg remove $packages && drop_dependencies
+		perform "$out" detached opkg remove $packages
 	fi
 	# opkg leaves the directories it emptied
 	find /usr/lib/loki /usr/share/loki /usr/share/loki-core /www/luci-static/resources/view/loki -type d 2>/dev/null |
@@ -1753,11 +1649,59 @@ check_updates() {
 	finish 0
 }
 
+check_dependencies() { # what the feeds give of DEPS_MISSING, simulated: DEPS_KB of it installed
+	local out="$WORK/deps" hint=''
+	[ -n "$DEPS_MISSING" ] || return 0
+	# the feed indexes, the package manager reading them and, for opkg, the packages its
+	# simulation downloads, beside the downloads already in /tmp
+	if [ "$PM" = apk ]; then enough_ram 19456 dependencies; else enough_ram 10240 dependencies; fi
+	update_lists
+	[ "$LISTS_FAILED" = 0 ] || hint=$(network_hint)
+	# shellcheck disable=SC2086
+	if [ "$PM" = apk ]; then
+		capture "$out" apk add --simulate $DEPS_MISSING
+	else
+		capture "$out" opkg --noaction install $DEPS_MISSING
+	fi || fail 1 check "$(t '%s cannot install %s: %s' '%s не может установить %s: %s' "$PM" "$(commas "$DEPS_MISSING")" "$(pm_errors "$out")")" "$hint"
+	DEPS_KB=$(installed_kb "$out")
+	log "dependencies: $DEPS_KB KB installed"
+}
+
+pulled_in() {
+	[ "$PM" = opkg ] && [ -n "$*" ] || return 0
+	if awk -v names=" $* " '
+		/^Package: / { ours = index(names, " " $2 " ") > 0; auto = 0 }
+		ours && $0 == "Status: install user installed" { $0 = "Status: install ok installed" }
+		ours && $0 == "Auto-Installed: yes" { auto = 1 }
+		ours && $0 == "" { if (!auto) print "Auto-Installed: yes"; ours = 0 }
+		{ print }
+		END { if (ours && !auto) print "Auto-Installed: yes" }' /usr/lib/opkg/status >/usr/lib/opkg/status.loki; then
+		mv /usr/lib/opkg/status.loki /usr/lib/opkg/status
+	else
+		rm -f /usr/lib/opkg/status.loki
+	fi
+}
+
+predelete_core() { # apk upgrades by writing beside the old file: make room first, a compressed copy in RAM
+	[ "$PREDELETE_CORE" = 1 ] || return 0
+	# /tmp is RAM, and its df counts what tmpfs may grow to: MemAvailable is what is free
+	if [ $(($(file_kb /usr/bin/loki-core) / 2 + 16384)) -lt "$(mem_available_kb)" ] &&
+		gzip -1 -c /usr/bin/loki-core >"$WORK/loki-core.old.gz" 2>/dev/null; then
+		log "a compressed copy of the old core is in RAM until the transaction ends"
+	else
+		rm -f "$WORK/loki-core.old.gz"
+		log "no copy of the old core: RAM is short"
+	fi
+	rm -f /usr/bin/loki-core
+	log "removed the old core to make room for the new one"
+}
+
 main() {
-	local item url
 	parse_args "$@"
+	if [ "$MODE" = check ]; then exec 3>&1; exec 1>&2; LOG=/dev/null; fi
 	pick_language
 	setup_output
+	[ -z "$MIRROR" ] || valid_mirror "$MIRROR" || fail 1 source 'The release source must use a valid HTTPS URL'
 	[ "$ASK_VARIANT" = 0 ] || [ -n "$BAD_ARG" ] || may_ask || BAD_ARG=variant_tty
 	[ -z "$BAD_ARG" ] || usage_error
 	log "install.sh $* ($(date))"
@@ -1767,8 +1711,6 @@ main() {
 	detect_package_manager
 	WORK=$(mktemp -d /tmp/loki-install.XXXXXX) || fail 1 no_memory "$(t 'Cannot create a directory in /tmp' 'Не удалось создать папку в /tmp')"
 	if [ "$MODE" = check ]; then
-		exec 3>&1
-		exec 1>&2
 		INTERACTIVE=0
 		identify_system
 		read_state
@@ -1776,10 +1718,6 @@ main() {
 		fetch_release core
 		decide_loki
 		decide_core
-		for item in loki core; do
-			url=$(asset_url "$item" SHA256SUMS)
-			[ -n "$url" ] && download "$url" "$WORK/$item.sums" application/octet-stream || fail 1 release 'Missing SHA256SUMS'
-		done
 		check_updates
 		finish 0
 	fi
