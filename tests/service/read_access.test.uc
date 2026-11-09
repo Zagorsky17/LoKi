@@ -34,7 +34,8 @@ t.test("the reader refuses writes, raw exports and malformed argument forms befo
         let result = stub.capture(() => rpc.run(args, "/lib", "rpc_read"));
         t.ok(result.result != 0, sprintf("%J", args));
     }
-    t.eq(commands, []);
+    t.eq(filter(commands, (argv) => argv[0] != "logger"), []);
+    t.ok(length(commands) > 0, "refused requests leave syslog evidence");
     stub.restore();
 });
 

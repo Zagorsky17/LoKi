@@ -70,7 +70,8 @@ t.test("retired control commands and Tailscale transport paths are unavailable",
         t.contains(t.throws(() => clash.request("GET", path, "")).message, "not allowlisted", path);
     let commands = stub.command_lines();
     stub.restore();
-    t.eq(commands, []);
+    t.eq(filter(commands, (line) => index(line, "logger ") != 0), []);
+    t.excludes(join("\n", commands), "synthetic-private-key");
 });
 
 t.test("JSON outbounds cannot restore endpoint protocols or the legacy WireGuard outbound", () => {
