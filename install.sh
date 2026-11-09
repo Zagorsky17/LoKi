@@ -775,12 +775,12 @@ read_state() {
 	CORE_OLD=$(pkg_version loki-core)
 	[ -z "$CORE_OLD" ] || CORE_OLD_VARIANT=$(cat /usr/share/loki-core/variant 2>/dev/null)
 	[ ! -f /etc/config/loki ] || CONFIG_VERSION=$(uci -q get loki.settings.config_version)
-	[ "$MODE" = check ] || loki_status
 
 	for name in $OUR_PACKAGES; do
 		[ -z "$(pkg_version "$name")" ] || [ "$(pkg_url "$name")" = "https://github.com/$LOKI_REPO" ] ||
 			fail 1 ownership "$(t 'A package named %s belongs to another project' 'Пакет с именем %s принадлежит другому проекту' "$name")"
 	done
+	[ "$MODE" = check ] || loki_status
 	[ "$MODE" != install ] || ! pidof sing-box >/dev/null 2>&1 ||
 		fail 1 conflict "$(t 'Stop the other sing-box application before installing LoKi' 'Перед установкой LoKi остановите другое приложение sing-box')"
 }
@@ -1523,7 +1523,7 @@ starts_over() { # LoKi starts from its default config: a first install, a config
 
 uninstall() {
 	local packages='' name file out="$WORK/remove" before='' users
-	refresh_db
+	read_state
 	# podkop and the like stay beside LoKi on its core, which provides sing-box: the core goes with them
 	users=$(needed_by loki-core "$CORE_PROVIDES")
 	for name in luci-i18n-loki-ru luci-app-loki loki loki-core; do

@@ -46,9 +46,11 @@ function preserved(result) {
 
 t.test("a foreign package is refused before further metadata inspection and cannot be taken over", () => {
     for (let owner in [ "", "https://github.com/ushan0v/forkop", "https://example.invalid/other" ]) {
-        let result = isolated("read_state", owner);
-        t.ok(result.status != 0, owner);
-        preserved(result);
+        for (let action in [ "read_state", "MODE=uninstall; uninstall" ]) {
+            let result = isolated(action, owner);
+            t.eq(result.status, 17, owner);
+            preserved(result);
+        }
     }
     let own = isolated("read_state");
     t.eq(own.status, 0, own.output);
