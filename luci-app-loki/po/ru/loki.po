@@ -1145,9 +1145,6 @@ msgstr "ОС"
 msgid "Output Network Interface"
 msgstr "Выходной сетевой интерфейс"
 
-msgid "Package changes are disabled in this development build until preflight and recovery are implemented."
-msgstr "Изменения пакетов в этой сборке разработки отключены до реализации проверки среды и восстановления после ошибки."
-
 msgid "Parallel"
 msgstr "Параллельно"
 

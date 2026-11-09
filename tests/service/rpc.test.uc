@@ -9,6 +9,8 @@ let common = require("core.common");
 const SID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const OTHER = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 let clients = [];
+let commands = stub.commands;
+stub.commands = (handlers) => commands([ ...handlers, [ "logger", {} ] ]);
 
 function fresh() {
     uloop.__reset();

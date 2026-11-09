@@ -6,7 +6,8 @@ let cli = require("service.cli");
 function run(argv, status) {
     stub.commands([ [ () => true, { status: status ?? 0 } ] ]);
     let result = stub.capture(() => cli.main(argv, "/lib"));
-    result.commands = stub.command_lines();
+    result.logs = filter(stub.command_lines(), (line) => index(line, "logger ") == 0);
+    result.commands = filter(stub.command_lines(), (line) => index(line, "logger ") != 0);
     stub.restore();
     return result;
 }
@@ -140,9 +141,9 @@ t.test("command exceptions leave a masked system-log reason and a nonzero status
     let result = run([ "logging_probe", "private-argument" ]);
     delete cli.COMMANDS.logging_probe;
     t.eq(result.result, 1);
-    t.contains(join("\n", result.commands), "logger -t loki -p user.err [error] Command logging_probe");
-    t.excludes(join("\n", result.commands), "private-token");
-    t.excludes(join("\n", result.commands), "private-argument");
+    t.contains(join("\n", result.logs), "logger -t loki -p user.err [error] Command logging_probe");
+    t.excludes(join("\n", result.logs), "private-token");
+    t.excludes(join("\n", result.logs), "private-argument");
 });
 
 t.done();

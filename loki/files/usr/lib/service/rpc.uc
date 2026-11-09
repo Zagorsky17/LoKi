@@ -30,7 +30,15 @@ let loaded = false;
 let epoch = "";
 
 function failure(message, code) {
+    exec.log("error", "RPC failed: " + message);
     return { code: code ?? 1, stdout: "", stderr: message };
+}
+
+function rejection(message, code) {
+    exec.log("error", "RPC refused: " + message);
+    let result = { success: false, message };
+    if (code != null) result.code = code;
+    return result;
 }
 
 function valid_session(id) {
@@ -183,7 +191,7 @@ function finish(job) {
     job.finished = true;
     if (job.timer != null)
         job.timer.cancel();
-    let result = failure("The RPC command did not complete");
+    let result;
     if (job.timed_out)
         result = failure("The RPC command timed out", 124);
     else if (job.uncertain)
@@ -207,6 +215,9 @@ function finish(job) {
             }
         }
     }
+    result ??= failure("The RPC command did not complete");
+    if (status != null && status != 0)
+        exec.log_error("RPC " + job.operation + " failed (exit " + status + ")", result.stderr || "command returned a nonzero exit status");
     if (job.sizes == null)
         clean(job.path, true);
     jobs = filter(jobs, (active) => active != job);
@@ -303,9 +314,9 @@ function prepare(request, permission) {
     let args = request.args;
     if (type(args) != "object" || length(filter(keys(args), (key) => key != "argv" && key != "ubus_rpc_session")) > 0 ||
         !valid_session(args.ubus_rpc_session) || !allowed(args.argv, permission))
-        return { success: false, message: "The RPC operation is not allowed" };
+        return rejection("The RPC operation is not allowed");
     if (!storage())
-        return { success: false, message: "The private RPC journal is unavailable" };
+        return rejection("The private RPC journal is unavailable");
     for (let job in jobs)
         if (job.recovered && completion_status(job) != null)
             finish(job);
@@ -314,14 +325,14 @@ function prepare(request, permission) {
     if (length(allocated) >= MAX_JOBS || (large && length(filter(allocated, (job) => job.large)) > 0) ||
         length(filter(allocated, (job) => job.session == args.ubus_rpc_session)) >= MAX_SESSION_JOBS ||
         (permission == "rpc_read" && length(filter(allocated, (job) => job.permission == "rpc_read")) >= MAX_READ_JOBS))
-        return { success: false, message: "The RPC command limit is busy", code: 16 };
+        return rejection("The RPC command limit is busy", 16);
     let hash = digest(args.argv);
     let source = fs.open(paths.entropy, "r");
     let entropy = source == null ? null : source.read(16);
     if (source != null)
         source.close();
     if (hash == null || length(entropy ?? "") != 16)
-        return { success: false, message: "The RPC request could not be prepared" };
+        return rejection("The RPC request could not be prepared");
     let id = replace(epoch, /-/g, "");
     for (let i = 0; i < 16; i++)
         id += sprintf("%02x", ord(entropy, i));
@@ -329,10 +340,10 @@ function prepare(request, permission) {
         operation: args.argv[0], large, limit: large ? MAX_LARGE_OUTPUT_BYTES : MAX_OUTPUT_BYTES,
         deadline: common.monotonic_ms() + PREPARE_TTL_MS, finished: false, timed_out: false };
     if (!fs.mkdir(job.path, 0700))
-        return { success: false, message: "The RPC request could not be allocated" };
+        return rejection("The RPC request could not be allocated");
     if (!save(job, "prepared")) {
         clean(job.path);
-        return { success: false, message: "The RPC request could not be recorded" };
+        return rejection("The RPC request could not be recorded");
     }
     push(reservations, job);
     job.timer = uloop.timer(PREPARE_TTL_MS, () => release(job));
@@ -344,16 +355,16 @@ function result(request, permission) {
     if (type(args) != "object" || length(filter(keys(args), (key) => index([ "id", "part", "offset", "ubus_rpc_session" ], key) < 0)) > 0 ||
         !valid_session(args.ubus_rpc_session) || type(args.id) != "string" || match(args.id, /^[a-f0-9]{64}$/) == null ||
         index([ "status", "stdout", "stderr", "release" ], args.part) < 0 || type(args.offset) != "int" || args.offset < 0)
-        return { success: false, message: "The RPC result request is not allowed" };
+        return rejection("The RPC result request is not allowed");
     if (!storage())
-        return { success: false, message: "The private RPC journal is unavailable" };
+        return rejection("The private RPC journal is unavailable");
     let job = filter([ ...jobs, ...results, ...reservations ], (entry) => entry.id == args.id && entry.session == args.ubus_rpc_session && entry.permission == permission)[0];
     if (job == null)
-        return { success: false, message: "The RPC result is unavailable" };
+        return rejection("The RPC result is unavailable");
     let now = common.monotonic_ms();
     if (job.phase == "prepared" && job.deadline <= now || job.finished && job.expires <= now) {
         release(job);
-        return { success: false, message: "The RPC result expired; check the operation status" };
+        return rejection("The RPC result expired; check the operation status");
     }
     if (!job.finished && job.phase != "prepared" && completion_status(job) != null)
         finish(job);
@@ -362,22 +373,22 @@ function result(request, permission) {
             job.uncertain ? { success: true, pending: false, response: failure("The RPC outcome is unknown; resources await verified recovery", 125) } :
             { success: true, pending: true };
     if (!job.finished)
-        return { success: false, message: "The RPC command is still running" };
+        return rejection("The RPC command is still running");
     if (args.part == "release") {
         if (args.offset != 0)
-            return { success: false, message: "The RPC result offset is invalid" };
+            return rejection("The RPC result offset is invalid");
         release(job);
         return { success: true };
     }
     if (job.sizes == null)
-        return { success: false, message: "The RPC result has no separate output" };
+        return rejection("The RPC result has no separate output");
     if (args.offset > job.sizes[args.part])
-        return { success: false, message: "The RPC result offset is invalid" };
+        return rejection("The RPC result offset is invalid");
     let file = fs.open(job.path + "/" + args.part, "r");
     if (file == null || file.seek(args.offset) == null) {
         if (file != null)
             file.close();
-        return { success: false, message: "The RPC result could not be read" };
+        return rejection("The RPC result could not be read");
     }
     let chunk = file.read(CHUNK_BYTES) ?? "";
     file.close();
@@ -478,6 +489,7 @@ function shutdown() {
 function run(argv, library_dir, permission) {
     let id = getenv("LOKI_RPC_SESSION");
     if (!valid_session(id) || !allowed(argv, permission)) {
+        exec.log("error", "RPC dispatch refused: The RPC operation is not allowed");
         warn("The RPC operation is not allowed\n");
         return 1;
     }
@@ -488,6 +500,7 @@ function run(argv, library_dir, permission) {
     if (connection != null)
         connection.disconnect();
     if (!authorized) {
+        exec.log("error", "RPC dispatch refused: The RPC session is not authorized");
         warn("The RPC session is not authorized\n");
         return 1;
     }

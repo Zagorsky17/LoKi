@@ -1627,10 +1627,6 @@ msgstr ""
 msgid "Output Network Interface"
 msgstr ""
 
-#: fe-app-loki/src/loki/tabs/components/initController.ts:251
-msgid "Package changes are disabled in this development build until preflight and recovery are implemented."
-msgstr ""
-
 #: fe-app-loki/src/loki/cbi/dnsServers.ts:88
 msgid "Parallel"
 msgstr ""

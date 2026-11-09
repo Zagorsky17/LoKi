@@ -247,17 +247,9 @@ function worker(action, job_id, reason) {
     if (reason != null && reason != "")
         push(argv, reason);
     let result = exec.combined(argv, 65536);
-    if (result.status != 0) {
-        let mask = require("diagnostics.mask");
-        let settings = uci.get_all(CONFIG_NAME, "settings") ?? {};
-        let config = common.read_json_file(common.option(settings, "config_path", ""));
-        let detail = mask.text(result.output, mask.hosts(config), [],
-            mask.credentials([ config, uci.section_objects(CONFIG_NAME) ]));
-        detail = require("service.gateway_secret").redactor()(detail);
-        detail = trim(replace(detail, /[[:cntrl:]]+/g, " "));
-        exec.log("error", "Service " + action + " failed (exit " + result.status + "): " +
-            (result.output_limit ? "command output exceeded its limit" : substr(detail || "the init command returned no diagnostic output", 0, 4096)));
-    }
+    if (result.status != 0)
+        exec.log_error("Service " + action + " failed (exit " + result.status + ")",
+            result.output_limit ? "command output exceeded its limit" : result.output || "the init command returned no diagnostic output");
     finish(action, job_id, result.status);
 }
 

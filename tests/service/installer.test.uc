@@ -6,6 +6,8 @@ let ubus = require("ubus");
 let uloop = require("uloop");
 let common = require("core.common");
 let installer = require("service.installer");
+let commands = stub.commands;
+stub.commands = (handlers) => commands([ ...handlers, [ "logger", {} ] ]);
 
 let me = common.own_pid();
 const MIRROR = "https://10.0.2.2:18090";

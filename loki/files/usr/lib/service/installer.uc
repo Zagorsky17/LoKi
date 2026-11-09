@@ -619,11 +619,15 @@ function run(id) {
             exit_code = 1;
         state = { ...state, check_result, exit: exit_code, finished_at: common.now_seconds(),
             changed: state.action != "check" && package_signature() != packages_before };
+        if (exit_code != 0)
+            exec.log("error", "Installer " + state.action + " failed (exit " + exit_code + ")" +
+                (check_result?.reason ? ": " + check_result.reason : "; see the installer log"));
         write_state(state);
         uloop.timer(LINGER_MS, () => uloop.end());
     }
 
     function fail_with(lines) {
+        exec.log_error("Installer " + state.action + " refused", join("", lines));
         append_output(join("", lines));
         finish(1);
     }

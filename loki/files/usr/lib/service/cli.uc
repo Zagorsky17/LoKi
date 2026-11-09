@@ -18,6 +18,7 @@ function reply(fn) {
             return 0;
         }
         catch (e) {
+            exec.log_error("Operation refused", e.message);
             print(sprintf("%J\n", { success: false, message: e.message }));
             return 1;
         }
@@ -35,6 +36,8 @@ function json(fn) {
 function action_reply(fn) {
     return function(args) {
         let result = fn(...args);
+        if (!result.success)
+            exec.log_error("Operation refused", result.message || result.detail || result.reason || "operation returned no reason");
         print(sprintf("%J\n", result));
         return result.success ? 0 : 1;
     };
@@ -48,7 +51,7 @@ function clash(fn) {
             return 0;
         }
         catch (e) {
-            warn(e.message, "\n");
+            warn(exec.log_error("Clash API refused", e.message), "\n");
             return 1;
         }
     };
@@ -245,7 +248,17 @@ function write_allowed(argv) {
 }
 
 function main(argv, lib) {
-    return argv[0] == "rpc_dispatch" ? require("service.rpc").run(slice(argv, 2), lib, argv[1]) : dispatch(argv, lib);
+    let name = argv[0] == "rpc_dispatch" ? "rpc_dispatch" : COMMANDS[argv[0]] != null ? argv[0] : "unknown";
+    try {
+        let status = name == "rpc_dispatch" ? require("service.rpc").run(slice(argv, 2), lib, argv[1]) : dispatch(argv, lib);
+        if (status != 0 && name != "initd_status")
+            exec.log("error", "Command " + name + " failed (exit " + status + ")");
+        return status;
+    }
+    catch (e) {
+        warn(exec.log_error("Command " + name + " failed", e.message), "\n");
+        return 1;
+    }
 }
 
 return { main, dispatch, read_allowed, write_allowed, COMMANDS };

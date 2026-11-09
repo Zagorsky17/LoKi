@@ -149,4 +149,21 @@ function log(level, message) {
     status([ "logger", "-t", "loki", "-p", "user." + (PRIORITIES[level] ?? "notice"), "[" + level + "] " + common.as_string(message) ]);
 }
 
-return { command_line, run, status, ok, capture, capture_parallel, combined, deadline, output, feed, background, log };
+function log_error(context, message) {
+    let detail = "diagnostic details unavailable";
+    try {
+        let mask = require("diagnostics.mask");
+        let uci = require("core.uci");
+        let settings = uci.get_all("loki", "settings") ?? {};
+        let config = common.read_json_file(common.option(settings, "config_path", ""));
+        detail = mask.text(message, mask.hosts(config), [],
+            mask.credentials([ config, uci.section_objects("loki") ]));
+        detail = require("service.gateway_secret").redactor()(detail);
+    }
+    catch (e) {}
+    detail = substr(trim(replace(detail, /[[:cntrl:]]+/g, " ")), 0, 4096) || "no diagnostic output";
+    log("error", context + ": " + detail);
+    return detail;
+}
+
+return { command_line, run, status, ok, capture, capture_parallel, combined, deadline, output, feed, background, log, log_error };
