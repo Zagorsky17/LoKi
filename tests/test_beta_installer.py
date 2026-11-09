@@ -67,6 +67,10 @@ pathlib.Path(args[args.index('-O')+1]).write_bytes(data)
             source = source.replace('/etc/openwrt_release', str(home/'openwrt_release')).replace('/proc/meminfo', str(home/'meminfo'))
             source = source.replace('/tmp/loki-beta.XXXXXX', str(home/'loki-beta.XXXXXX'))
             source = source.replace('DOWNLOAD_SECONDS=35', 'DOWNLOAD_SECONDS=1')
+            # Standalone BusyBox applets bypass PATH; replace only these dependency calls in the fixture.
+            source = source.replace('exec wget ', 'exec '+shlex.quote(str(binaries/'wget'))+' ')
+            source = source.replace('$(id -u)', '$('+shlex.quote(str(binaries/'id'))+' -u)')
+            source = source.replace('df -Pk /tmp', shlex.quote(str(binaries/'df'))+' -Pk /tmp')
             source = source.rsplit('\nmain "$@"', 1)[0]
             source += '\nPATH='+shlex.quote(str(binaries))+':/usr/bin:/bin\nexport PATH\nmain "$@"\n'
             script = home/'installer.sh'
@@ -75,7 +79,7 @@ pathlib.Path(args[args.index('-O')+1]).write_bytes(data)
                        DOWNLOAD_CASE=options.get('download', ''), PREFLIGHT_STATUS=str(options.get('preflight', 0)),
                        WORKER_STATUS=str(options.get('worker', 0)), TMP_FREE=str(options.get('space', 204800)),
                        FAKE_UID=str(options.get('uid', 0)))
-            process = subprocess.run([shutil.which('busybox'), 'ash', str(script)], env=env, capture_output=True, text=True, timeout=8)
+            process = subprocess.run([shutil.which('busybox'), 'ash', '-c', '(set -o pipefail; cat "$1" | sh)', 'beta', str(script)], env=env, capture_output=True, text=True, timeout=8)
             recorded = events.read_text().splitlines() if events.exists() else []
             preserved = [p for p in home.glob('loki-beta.*') if p.is_dir()]
             self.assertTrue(all(p.stat().st_mode & 0o777 == 0o700 for p in preserved))

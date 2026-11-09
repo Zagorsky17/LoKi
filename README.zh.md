@@ -10,6 +10,12 @@ LoKi 是面向 OpenWrt 的规则路由应用，使用专用 loki-core 内核。
 
 ## 测试版安装
 
+通过 SSH 以 `root` 连接路由器，执行一条命令：
+
+```sh
+(set -o pipefail; wget -O - https://raw.githubusercontent.com/Zagorsky17/LoKi/main/install-beta.sh | sh)
+```
+
 LoKi `2.0.0` 套件包含 `1.14.4-r10` 内核，支持 `aarch64_cortex-a53` 架构上的 OpenWrt 24.10/IPK 和 25.12/APK。Cudy WR3000S / OpenWrt 25.12 用户请使用[俄文安装指南](INSTALL-CUDY-WR3000S-25.ru.md)及[发布页面](https://github.com/Zagorsky17/LoKi/releases/tag/2.0.0)中的完整校验套件。
 
 安装前必须单独运行预检。SSH 与 LuCI 使用相同的组件事务引擎，在修改前检查软件包内容、SHA256、兼容性、文件所有者和资源。测试版更新或卸载前请先停止 LoKi；更新已停止的服务不会自动启动服务。
