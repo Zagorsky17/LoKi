@@ -135,4 +135,14 @@ t.test("retry hooks cannot be dispatched by either RPC role", () => {
     }
 });
 
+t.test("command exceptions leave a masked system-log reason and a nonzero status", () => {
+    cli.COMMANDS.logging_probe = { run: () => die("Unavailable module for https://example.com/private-token") };
+    let result = run([ "logging_probe", "private-argument" ]);
+    delete cli.COMMANDS.logging_probe;
+    t.eq(result.result, 1);
+    t.contains(join("\n", result.commands), "logger -t loki -p user.err [error] Command logging_probe");
+    t.excludes(join("\n", result.commands), "private-token");
+    t.excludes(join("\n", result.commands), "private-argument");
+});
+
 t.done();

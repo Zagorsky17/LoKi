@@ -782,4 +782,16 @@ t.test("diagnostics acknowledge immediately and remain pollable beyond an HTTP s
     t.eq(value.replied.code, 0);
 });
 
+t.test("a request refused before execution logs its reason without its arguments or session", () => {
+    let rpc = fresh();
+    stub.commands([ [ "logger", {} ] ]);
+    let result = rpc.prepare(request([ "start", "synthetic-private-argument" ]), "rpc_write");
+    let lines = join("\n", stub.command_lines());
+    stub.restore();
+    t.eq(result.success, false);
+    t.contains(lines, "RPC refused: The RPC operation is not allowed");
+    t.excludes(lines, "synthetic-private-argument");
+    t.excludes(lines, SID);
+});
+
 t.done();
