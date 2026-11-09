@@ -47,15 +47,7 @@ function valid_session(id) {
 }
 
 function allowed(argv, permission) {
-    if (type(argv) != "array" || length(argv) == 0 || length(argv) > 5)
-        return false;
-    let bytes = 0;
-    for (let value in argv) {
-        if (type(value) != "string" || match(value, /[[:cntrl:]]/) || index(value, chr(0)) >= 0)
-            return false;
-        bytes += length(value);
-    }
-    return bytes <= MAX_ARGUMENT_BYTES &&
+    return cli.valid_arguments(argv) &&
         (permission == "rpc_read" ? cli.read_allowed(argv) : permission == "rpc_write" && cli.write_allowed(argv));
 }
 

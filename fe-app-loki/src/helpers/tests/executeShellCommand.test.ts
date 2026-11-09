@@ -77,6 +77,145 @@ it('routes snapshots, diagnostics and checks through prepared read RPC', async (
   expect(fs.exec).not.toHaveBeenCalled();
 });
 
+it('queues the dashboard snapshots until the exclusive large result has been released', async () => {
+  let active = false;
+  let finishFirst!: () => void;
+  let entered!: () => void;
+  const started = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const finish = new Promise<void>((resolve) => {
+    finishFirst = resolve;
+  });
+  let invocations = 0;
+  mocks.callUbus.mockImplementation(async (options) => {
+    if (options.method.endsWith('_prepare')) {
+      if (active)
+        return {
+          success: true,
+          data: {
+            success: false,
+            code: 16,
+            message: 'The RPC command limit is busy',
+          },
+        };
+      active = true;
+    }
+    if (options.method === 'rpc_read' && ++invocations === 1) {
+      entered();
+      await finish;
+    }
+    if (options.params.part === 'release') active = false;
+    return protocol(options);
+  });
+  const first = executeShellCommand({
+    command: '/usr/bin/loki',
+    args: ['clash_api', 'GET', '/proxies', ''],
+  });
+  await started;
+  const second = executeShellCommand({
+    command: '/usr/bin/loki',
+    args: ['clash_api', 'GET', '/providers/proxies', ''],
+  });
+  finishFirst();
+  expect(
+    (await Promise.all([first, second])).map((reply) => reply.code),
+  ).toEqual([0, 0]);
+  expect(active).toBe(false);
+});
+
+it('routes formatted report text through the read role without granting controls in other arguments', async () => {
+  const args = ['report', 'masked', '✓ Service — OK\n\tDNS: OK\r\n'];
+  expect(readOnlyLokiArgs(args)).toBe(true);
+  await executeShellCommand({ command: '/usr/bin/loki', args });
+  expect(mocks.callUbus).toHaveBeenCalledWith(
+    expect.objectContaining({
+      method: 'rpc_read_prepare',
+      params: { argv: args },
+    }),
+  );
+  for (const invalid of [
+    ['report', 'masked\n', 'text'],
+    ['report', 'masked', 'text\0'],
+    ['report', 'masked', 'text\x1b[31m'],
+    ['report', 'masked', 'text\x7f'],
+    ['get_ui_state\n'],
+  ])
+    expect(readOnlyLokiArgs(invalid)).toBe(false);
+});
+
+it('lets a service action finish while a large snapshot is waiting', async () => {
+  let entered!: () => void;
+  let finishRead!: () => void;
+  const started = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const finish = new Promise<void>((resolve) => {
+    finishRead = resolve;
+  });
+  mocks.callUbus.mockImplementation(async (options) => {
+    if (options.method === 'rpc_read') {
+      entered();
+      await finish;
+    }
+    return protocol(options);
+  });
+  const read = executeShellCommand({
+    command: '/usr/bin/loki',
+    args: ['clash_api', 'GET', '/proxies', ''],
+  });
+  await started;
+  try {
+    expect(
+      (
+        await executeShellCommand({
+          command: '/usr/bin/loki',
+          args: ['enable'],
+        })
+      ).code,
+    ).toBe(0);
+  } finally {
+    finishRead();
+    await read;
+  }
+});
+
+it('does not start a queued request after its deadline and releases the queue', async () => {
+  vi.useFakeTimers();
+  let entered!: () => void;
+  let finishFirst!: () => void;
+  const started = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const finish = new Promise<void>((resolve) => {
+    finishFirst = resolve;
+  });
+  let invocations = 0;
+  mocks.callUbus.mockImplementation(async (options) => {
+    if (options.method === 'rpc_read' && ++invocations === 1) {
+      entered();
+      await finish;
+    }
+    return protocol(options);
+  });
+  const args = ['clash_api', 'GET', '/proxies', ''];
+  const first = executeShellCommand({ command: '/usr/bin/loki', args });
+  await started;
+  const expired = executeShellCommand({
+    command: '/usr/bin/loki',
+    args,
+    timeout: 10,
+  });
+  vi.setSystemTime(Date.now() + 20);
+  finishFirst();
+  expect((await first).code).toBe(0);
+  expect((await expired).stderr).toContain('timed out before execution');
+  expect(invocations).toBe(1);
+  expect(
+    (await executeShellCommand({ command: '/usr/bin/loki', args })).code,
+  ).toBe(0);
+});
+
 it('keeps mutations, active GET probes and raw exports behind prepared write RPC', async () => {
   for (const args of [
     ['installer_start', 'update', '', '0', 'ru'],

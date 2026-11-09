@@ -11,6 +11,8 @@ import {
 import { modalOptionFormValue } from '../../../cbi/modal';
 import { E } from '../../../../helpers/element';
 import { nextNumberedName } from '../../../../helpers/nextNumberedName';
+import { executeShellCommand } from '../../../../helpers/executeShellCommand';
+import { logger } from '../../../services/logger.service';
 import { subscriptionOverrideKeys } from './overrides';
 
 export let defaultSubscriptionHeaderLines: string[] = [];
@@ -22,11 +24,15 @@ export function loadDefaultSubscriptionHeaders() {
     return defaultSubscriptionHeadersPromise;
   }
 
-  defaultSubscriptionHeadersPromise = fs
-    .exec('/usr/bin/loki', ['get_subscription_default_headers'])
+  defaultSubscriptionHeadersPromise = executeShellCommand({
+    command: '/usr/bin/loki',
+    args: ['get_subscription_default_headers'],
+  })
     .then((response) => {
       if (response.code) {
-        throw new Error(_('Failed to load default subscription headers'));
+        throw new Error(
+          response.stderr || _('Failed to load default subscription headers'),
+        );
       }
 
       const parsed = JSON.parse(response.stdout || '[]');
@@ -41,6 +47,11 @@ export function loadDefaultSubscriptionHeaders() {
     })
     .catch((error) => {
       defaultSubscriptionHeadersPromise = null;
+      logger.error(
+        'SECTIONS',
+        'Failed to load default subscription headers',
+        error,
+      );
       throw error;
     });
 
