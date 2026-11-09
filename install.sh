@@ -570,11 +570,20 @@ release_url() { # release_url REPO TAG FILE: FILE at the mirror, TAG empty for t
 	fi
 }
 
+valid_asset_url() {
+	local prefix="$API_URL/repos/$LOKI_REPO/releases/assets/" asset
+	asset=${1#"$prefix"}
+	[ "$asset" != "$1" ] || return 1
+	case "$asset" in '' | *[!0-9]*) return 1 ;; esac
+}
+
 asset_url() { # asset_url loki|core FILE: where FILE of the release is, empty when the release has none
+	local url
 	if [ -n "$MIRROR" ]; then
 		if [ "$1" = core ]; then release_url "$CORE_REPO" "$C_TAG" "$2"; else release_url "$LOKI_REPO" "$F_TAG" "$2"; fi
 	else
-		jsonfilter -i "$WORK/$1.release" -e "@.assets[@.name=\"$2\"].url" 2>/dev/null
+		url=$(jsonfilter -i "$WORK/$1.release" -e "@.assets[@.name=\"$2\"].url" 2>/dev/null)
+		valid_asset_url "$url" && printf '%s' "$url"
 	fi
 }
 

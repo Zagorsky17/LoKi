@@ -75,7 +75,7 @@ if sys.argv[1:] == ['--fetch-go-source']:
     raise SystemExit(0)
 source, output, *binaries = map(Path, sys.argv[1:])
 assert source.joinpath('build.sh').is_file()
-assert binaries and all(path.read_bytes() == b'binary' for path in binaries)
+assert len(binaries) == 1 and all(path.read_bytes() == b'binary' for path in binaries)
 output.write_bytes(b'synthetic module source asset')
 ''' if not source_failure else "import sys\nif sys.argv[1:] != ['--fetch-go-source']: raise SystemExit(23)\n")
             if fetch_failure:
@@ -109,8 +109,9 @@ while [ "$#" -gt 0 ]; do
         *) shift ;;
     esac
 done
-mkdir -p "$output/build"
+mkdir -p "$output/build/alias"
 printf binary > "$output/build/sing-box"
+printf binary > "$output/build/alias/sing-box"
 [ "$only" = 0 ] || exit 0
 printf ipk > "$output/core.ipk"
 printf apk > "$output/core.apk"
@@ -190,7 +191,7 @@ chmod +x "$1/build.sh"
             if not missing:
                 assets.append({'name': 'core-release.json', 'url': 'https://elsewhere.invalid/core-manifest' if bad_url else
                                'https://api.github.com/repos/Zagorsky17/LoKi/releases/assets/2'})
-            (work / 'listing.json').write_text(json.dumps({'assets': assets}))
+            (work / 'listing.json').write_text(json.dumps([{'assets': assets}]))
             binary = work / 'bin'
             binary.mkdir()
             jsonfilter = binary / 'jsonfilter'
@@ -199,6 +200,8 @@ import json, re, sys
 args = sys.argv[1:]
 data = json.load(open(args[args.index('-i') + 1]))
 expression = args[args.index('-e') + 1]
+if expression == '@[0]':
+    print(json.dumps(data[0])); raise SystemExit(0)
 if expression.startswith('@.assets'):
     name = re.search(r'name="([^"]+)"', expression)[1]
     value = next((asset['url'] for asset in data['assets'] if asset['name'] == name), None)
@@ -215,7 +218,7 @@ if value is not None:
             repos = '\n'.join(re.findall(r'^(?:LOKI_REPO|CORE_REPO)=.*$', INSTALLER, re.M))
             functions = '\n'.join(shell_function(name) for name in (
                 'release_url', 'valid_mirror', 'valid_asset_url', 'asset_url', 'valid_release_version',
-                'checksum_of', 'verify_named', 'fetch_or_fail', 'read_manifest', 'fetch_release'))
+                'checksum_of', 'verify', 'fetch_or_fail', 'read_manifest', 'fetch_release'))
             script = repos + '\n' + functions + '''
 API_URL=https://api.github.com
 MIRROR=''
@@ -228,9 +231,9 @@ rate_limited() { exit 3; }
 download() {
     printf '%s\n' "$1" >> "$WORK/downloads"
     case "$1" in
-        https://api.github.com/repos/Zagorsky17/LoKi/releases/latest) cp "$WORK/listing.json" "$2" ;;
+        https://api.github.com/repos/Zagorsky17/LoKi/releases?per_page=1) cp "$WORK/listing.json" "$2" ;;
         https://api.github.com/repos/Zagorsky17/LoKi/releases/assets/2|https://mirror.test/Zagorsky17/LoKi/releases/latest/download/core-release.json) cp "$WORK/manifest.json" "$2" ;;
-        https://api.github.com/repos/Zagorsky17/LoKi/releases/assets/3|https://mirror.test/Zagorsky17/LoKi/releases/download/2.0.0/SHA256SUMS) cp "$WORK/sums" "$2" ;;
+        https://api.github.com/repos/Zagorsky17/LoKi/releases/assets/3|https://mirror.test/Zagorsky17/LoKi/releases/latest/download/SHA256SUMS) cp "$WORK/sums" "$2" ;;
         *) return 2 ;;
     esac
 }

@@ -32,8 +32,9 @@ def main():
             def do_GET(self):
                 name = self.path.rsplit('/', 1)[-1]
                 hits.append(name)
+                if '/releases/assets/' in self.path and name.isdigit(): name = list(assets)[int(name)-1]
                 data = assets.get(name)
-                if name == 'releases?per_page=1': data = json.dumps([{'assets': [{'name': n, 'url': f'https://127.0.0.1:{self.server.server_port}/'+n} for n in assets]}]).encode()
+                if name == 'releases?per_page=1': data = json.dumps([{'assets': [{'name': n, 'url': f'https://127.0.0.1:{self.server.server_port}/repos/Zagorsky17/LoKi/releases/assets/{i}'} for i,n in enumerate(assets,1)]}]).encode()
                 if data is None:
                     self.send_error(404)
                 else:
