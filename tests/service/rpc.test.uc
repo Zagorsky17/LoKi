@@ -98,7 +98,7 @@ t.test("unknown fields, executable/env injection, malformed SID and input limits
         { ubus_rpc_session: "root" }, { ubus_rpc_session: null }, { permission: "rpc_write" } ])
         t.ok(start(rpc, request([ "show_version" ], extra), "rpc_read").code != 0, sprintf("%J", extra));
     for (let args in [ [], null, {}, [ 1 ], [ "show_version", "extra" ], [ "show_version" + chr(0) ],
-        [ "report", "masked", "\n" ], [ "rpc_dispatch", "rpc_write", "enable" ], [ "installer_run", "id" ],
+        [ "report", "masked", chr(27) ], [ "rpc_dispatch", "rpc_write", "enable" ], [ "installer_run", "id" ],
         [ "report", "masked", body_bytes(rpc.MAX_ARGUMENT_BYTES) ] ])
         t.ok(start(rpc, request(args), "rpc_read").code != 0, "malformed args");
     t.eq(uloop.__processes(), []);
@@ -123,6 +123,20 @@ t.test("a trusted worker gets fixed argv and a clean environment, with private o
     complete(0, "masked output", "", "0");
     t.eq(value.replied, { code: 0, stdout: "masked output", stderr: "" });
     t.eq(fs.stat(job_path()), null);
+});
+
+t.test("formatted diagnostic reports keep whitespace as one argument and reject other controls", () => {
+    let rpc = fresh();
+    let checks = "Service: OK\n\tDNS: OK\r\n";
+    let value = request([ "report", "masked", checks ]);
+    t.eq(start(rpc, value, "rpc_read"), null);
+    t.eq(slice(uloop.__processes()[0].args, 8), [ "report", "masked", checks ]);
+    complete(0, "masked report");
+    t.eq(value.replied.code, 0);
+    for (let args in [ [ "report", "masked\n", "text" ], [ "report", "masked", "text" + chr(0) ],
+        [ "report", "masked", "text" + chr(27) ], [ "report", "masked", "text" + chr(127) ],
+        [ "show_version\n" ] ])
+        t.ok(start(rpc, request(args), "rpc_read").code != 0);
 });
 
 t.test("signal-style exit zero without a completion marker is a failure and cannot replay a response", () => {
