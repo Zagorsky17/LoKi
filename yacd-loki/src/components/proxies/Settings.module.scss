@@ -1,0 +1,99 @@
+.panel {
+  width: 340px;
+  // 让内容跟着弹层收缩，宽度不够时不要顶出横向滚动条
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.stackedRow {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.rowLabel {
+  font-size: 0.8rem;
+  color: var(--color-text);
+  line-height: 1.35;
+}
+
+.rowControl {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.inputWrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.input {
+  width: 100%;
+  padding: 8px 26px 8px 10px;
+  border: 1px solid var(--color-card-border);
+  border-radius: 10px;
+  background: var(--color-track);
+  color: var(--color-text);
+  font-family: inherit;
+  font-size: 0.78rem;
+  outline: none;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+
+  &::placeholder {
+    color: var(--color-text-secondary);
+    opacity: 0.7;
+  }
+
+  &:focus {
+    border-color: var(--color-focus-blue);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+  }
+}
+
+.clearBtn {
+  position: absolute;
+  right: 8px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  padding: 0;
+  line-height: 1;
+  font-size: 15px;
+  display: flex;
+  align-items: center;
+
+  &:hover {
+    color: var(--color-text);
+  }
+}
+
+.divider {
+  height: 1px;
+  background-color: var(--color-separator);
+  border: none;
+  margin: 2px 0;
+}

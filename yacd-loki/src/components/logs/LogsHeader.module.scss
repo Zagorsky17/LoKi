@@ -1,0 +1,33 @@
+/**
+ * 只放日志页特有的东西，顶栏本身的样式在 shared/PageHeader.module.scss。
+ * DOM 顺序即桌面端视觉顺序（标题 · 级别 · 搜索 · 操作），
+ * 窄屏把操作钮提到第一行，级别和搜索并排到第二行。
+ */
+
+.levelSelect {
+  min-width: 104px;
+
+  @media (max-width: 768px) {
+    order: 4;
+    min-width: 88px;
+    max-width: 110px;
+  }
+}
+
+.search {
+  @media (max-width: 768px) {
+    order: 3;
+  }
+}
+
+.actions {
+  @media (max-width: 768px) {
+    order: 1;
+  }
+}
+
+.rowBreak {
+  @media (max-width: 768px) {
+    order: 2;
+  }
+}

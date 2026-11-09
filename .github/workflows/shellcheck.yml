@@ -1,0 +1,59 @@
+name: Differential ShellCheck
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - 'rc/**'
+    paths:
+      - 'build.sh'
+      - 'install.sh'
+      - 'preflight.sh'
+      - 'loki/files/etc/init.d/**'
+      - 'luci-app-loki/root/etc/uci-defaults/**'
+      - 'tests/**/*.sh'
+      - 'core/**/*.sh'
+      - '.github/workflows/shellcheck.yml'
+  pull_request:
+    branches:
+      - main
+      - 'rc/**'
+    paths:
+      - 'build.sh'
+      - 'install.sh'
+      - 'preflight.sh'
+      - 'loki/files/etc/init.d/**'
+      - 'luci-app-loki/root/etc/uci-defaults/**'
+      - 'tests/**/*.sh'
+      - 'core/**/*.sh'
+      - '.github/workflows/shellcheck.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  shellcheck:
+    name: Differential ShellCheck
+    runs-on: ubuntu-24.04
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5.0.0
+
+      - name: Install ShellCheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+
+      - name: ShellCheck
+        shell: bash
+        run: |
+          mapfile -d '' scripts < <(
+            find . -type f \
+              \( -name '*.sh' -o -path './build.sh' -o -path './install.sh' \
+                 -o -path './loki/files/etc/init.d/*' \
+                 -o -path './luci-app-loki/root/etc/uci-defaults/*' \) \
+              -print0
+          )
+          shellcheck --severity=error "${scripts[@]}"

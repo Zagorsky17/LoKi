@@ -1,0 +1,11 @@
+.overlay {
+  background-color: rgba(0, 0, 0, 0.6);
+}
+.cnt {
+  background-color: var(--bg-modal);
+  color: var(--color-text);
+  line-height: 1.4;
+  box-shadow:
+    rgba(0, 0, 0, 0.12) 0px 4px 4px,
+    rgba(0, 0, 0, 0.24) 0px 16px 32px;
+}

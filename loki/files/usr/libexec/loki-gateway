@@ -1,0 +1,37 @@
+#!/bin/sh
+
+# Keep delayed LAN/TLS preparation out of the resident state service and routing startup.
+[ "$#" -eq 0 ] || exit 2
+child=
+stopping=0
+stop() {
+    stopping=1
+    # Preparation and delay have no shutdown work; TERM can be lost before child exec.
+    if [ -n "$child" ]; then
+        kill -KILL "$child" 2>/dev/null
+        wait "$child" 2>/dev/null
+    fi
+}
+trap stop TERM INT
+
+while [ "$stopping" -eq 0 ]; do
+    /usr/bin/ucode -L /usr/lib/loki -e '
+        try { require("service.gateway").prepare(); }
+        catch (e) { warn(e.message, "\n"); exit(1); }
+    ' &
+    child=$!
+    [ "$stopping" -eq 0 ] || kill -KILL "$child" 2>/dev/null
+    wait "$child" 2>/dev/null
+    prepared=$?
+    child=
+    [ "$stopping" -eq 0 ] || break
+    if [ "$prepared" -eq 0 ]; then
+        exec /usr/bin/loki-core gateway
+    fi
+    /bin/sleep 30 &
+    child=$!
+    [ "$stopping" -eq 0 ] || kill -KILL "$child" 2>/dev/null
+    wait "$child" 2>/dev/null
+    child=
+done
+exit 0

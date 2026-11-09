@@ -1,0 +1,195 @@
+.page {
+  color: var(--color-text);
+  padding: 16px 16px 32px;
+
+  @media (min-width: 768px) {
+    padding: 28px 40px 48px;
+  }
+}
+
+.pageHeader {
+  margin-bottom: 24px;
+}
+
+.eyebrow {
+  margin: 0 0 4px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--color-text-secondary);
+}
+
+.pageTitle {
+  margin: 0;
+  font-size: 2rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  color: var(--color-text-highlight);
+}
+
+.grid {
+  display: grid;
+  gap: 20px;
+  grid-template-columns: 1fr;
+
+  @media (min-width: 768px) {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  padding: 20px;
+  border: 1px solid var(--color-separator);
+  border-radius: 16px;
+  background-color: var(--color-bg-card);
+  box-shadow: var(--shadow-card);
+  min-width: 0;
+}
+
+.trafficCard {
+  @media (min-width: 768px) {
+    grid-column: span 2;
+  }
+}
+
+.cardLabel {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
+
+.cardTitle {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--color-text-highlight);
+}
+
+.cardSubtitle {
+  margin: 2px 0 0;
+  font-size: 0.8125rem;
+  color: var(--color-text-secondary);
+}
+
+/* 大号数值 + 小号单位 */
+.value {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-top: 10px;
+  font-size: 2.25rem;
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-highlight);
+}
+
+.unit {
+  font-size: 0.875rem;
+  font-weight: 600;
+  font-style: normal;
+  color: var(--color-text-secondary);
+}
+
+.meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+  font-size: 0.8125rem;
+  color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* 实时流量卡片 */
+.cardHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.legend {
+  display: flex;
+  gap: 28px;
+}
+
+.legendItem {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  /* 固定列宽 + 右对齐，速率位数变化时数字不会推着标签左右抖动 */
+  min-width: 104px;
+
+  @media (min-width: 768px) {
+    align-items: flex-end;
+  }
+}
+
+.legendLabel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8125rem;
+  color: var(--color-text-secondary);
+}
+
+.legendValue {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  margin-top: 4px;
+  font-size: 1.5rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-highlight);
+}
+
+.chart {
+  height: 220px;
+  margin-top: 16px;
+}
+
+.memoryChart {
+  height: 96px;
+  margin-top: 12px;
+}
+
+.metaRows {
+  margin-top: 16px;
+  border-top: 1px solid var(--color-separator);
+}
+
+.metaRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  font-size: 0.8125rem;
+  color: var(--color-text-secondary);
+
+  & + & {
+    border-top: 1px solid var(--color-separator);
+  }
+}
+
+.metaValue {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text);
+}

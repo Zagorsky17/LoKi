@@ -1,0 +1,196 @@
+name: Backend CI
+
+on:
+  pull_request:
+    paths:
+      - 'loki/files/**'
+      - 'loki/Makefile'
+      - 'build.sh'
+      - 'build_candidate_manifest.py'
+      - 'prepare_candidate.py'
+      - 'tests/**'
+      - 'core/**'
+      - 'install.sh'
+      - 'preflight.sh'
+      - 'preflight.uc'
+      # The packaging checks read the LuCI app's package scripts and bundle.
+      - 'luci-app-loki/**'
+      - 'fe-app-loki/licenses/**'
+      - '.github/workflows/build.yml'
+      - '.github/workflows/backend-ci.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'loki/files/**'
+      - 'loki/Makefile'
+      - 'build.sh'
+      - 'build_candidate_manifest.py'
+      - 'prepare_candidate.py'
+      - 'tests/**'
+      - 'core/**'
+      - 'install.sh'
+      - 'preflight.sh'
+      - 'preflight.uc'
+      - 'luci-app-loki/**'
+      - 'fe-app-loki/licenses/**'
+      - '.github/workflows/build.yml'
+      - '.github/workflows/backend-ci.yml'
+
+jobs:
+  native-uci:
+    name: Native UCI (${{ matrix.openwrt }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        openwrt: ['24.10', '25.12']
+    steps:
+      - uses: actions/checkout@v5.0.0
+      - name: Build isolated native UCI
+        shell: bash
+        env:
+          OPENWRT_BRANCH: ${{ matrix.openwrt }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential busybox cmake git libjson-c-dev pkg-config
+          case "$OPENWRT_BRANCH" in
+            24.10)
+              uci_revision=16ff0badbde7e17ec3bd1f827ffe45922956cf86
+              ubox_revision=49056d178f42da98048a5d4c23f83a6f6bc6dd80 ;;
+            25.12)
+              uci_revision=66127cd76c5d0bd46d5a90302cc6110f53a4e2f8
+              ubox_revision=7dd127841e82eb1cfb61185da37dde7b9bd9ba6d ;;
+            *) exit 1 ;;
+          esac
+          native_root="$RUNNER_TEMP/native-uci"
+          prefix="$native_root/prefix"
+          mkdir -p "$prefix"
+          for component in libubox uci ucode; do
+            repository="https://github.com/openwrt/$component.git"
+            case "$component" in
+              libubox) revision="$ubox_revision" ;;
+              uci) revision="$uci_revision" ;;
+              ucode)
+                revision=be92ebd706339fd4a848b88ee516b1ac4eb62ef8
+                repository=https://github.com/jow-/ucode.git ;;
+            esac
+            source_dir="$native_root/$component"
+            git init "$source_dir"
+            git -C "$source_dir" fetch --depth 1 "$repository" "$revision"
+            git -C "$source_dir" checkout --detach "$revision"
+            test "$(git -C "$source_dir" rev-parse HEAD)" = "$revision"
+            options=(-DCMAKE_INSTALL_PREFIX="$prefix" -DCMAKE_INSTALL_LIBDIR=lib
+              -DCMAKE_PREFIX_PATH="$prefix" -DCMAKE_INSTALL_RPATH="$prefix/lib")
+            if [ "$component" = ucode ]; then
+              options+=(-DUBUS_SUPPORT=OFF -DUCI_SUPPORT=ON -DULOOP_SUPPORT=OFF
+                -DRTNL_SUPPORT=OFF -DNL80211_SUPPORT=OFF -DDEBUG_SUPPORT=OFF
+                -DLIB_SEARCH_PATH="$prefix/lib/ucode/*.so")
+            else
+              options+=(-DBUILD_LUA=OFF -DBUILD_EXAMPLES=OFF)
+            fi
+            cmake -S "$source_dir" -B "$source_dir/build" "${options[@]}"
+            cmake --build "$source_dir/build" --parallel 2
+            cmake --install "$source_dir/build"
+          done
+          echo "$prefix/bin" >> "$GITHUB_PATH"
+      - name: Check real staged UCI and existing regressions
+        shell: bash
+        run: |
+          python3 -B tests/test_preflight_native_uci.py
+          python3 -B tests/test_preflight_cli.py
+          python3 -B tests/test_preflight_dependency_budget.py
+          LOKI_TEST_NATIVE_UCI=1 python3 -B tests/test_prepare_candidate.py
+          python3 -B tests/test_update_lock.py
+          python3 -B tests/test_update_journal.py
+          python3 -B tests/test_component_transaction.py
+          python3 -B tests/test_preflight_deadline.py
+          python3 -B tests/test_preflight_core.py
+          python3 -B tests/test_preflight_pending_uci.py
+          python3 -B tests/test_runtime_snapshot.py
+          tests/run.sh
+
+  backend-checks:
+    name: Backend Runtime Checks
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5.0.0
+
+      - name: Build ucode
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential busybox cmake curl git libjson-c-dev openssl pkg-config zstd
+          git clone --depth 1 --branch v0.0.20250529 https://github.com/jow-/ucode.git /tmp/ucode
+          cmake -S /tmp/ucode -B /tmp/ucode/build \
+            -DUBUS_SUPPORT=OFF \
+            -DUCI_SUPPORT=OFF \
+            -DULOOP_SUPPORT=OFF
+          cmake --build /tmp/ucode/build --parallel
+          sudo cmake --install /tmp/ucode/build
+          sudo ldconfig
+          command -v ucode
+          ucode -e 'print("ucode ready\n")'
+
+      - name: Check ucode syntax
+        shell: bash
+        run: |
+          find loki/files/usr/lib -name '*.uc' -print0 | xargs -0 -n1 ucode -c -o /dev/null
+          find loki/files/usr/lib -name '*.uc' -print0 | xargs -0 -n1 ucode -S -c -o /dev/null
+
+      - name: Run tests
+        shell: bash
+        run: |
+          tests/run.sh
+          python3 -B tests/test_cold_boot_init.py
+          python3 -B tests/test_gateway_bootstrap.py
+          python3 -B tests/test_watch_recovery.py
+          python3 -B tests/test_lifecycle_lock.py
+          python3 -B tests/test_core_check_deadline.py
+          python3 -B tests/test_preflight_deadline.py
+
+      - name: Check standalone preflight boundary
+        run: python3 -B tests/test_preflight_cli.py
+
+      - name: Check bounded service discovery
+        run: python3 -B tests/test_preflight_services.py
+
+      - name: Check bounded listener discovery
+        run: python3 -B tests/test_preflight_listeners.py
+
+      - name: Check bounded process discovery
+        run: python3 -B tests/test_preflight_processes.py
+
+      - name: Check bounded resource snapshots
+        run: python3 -B tests/test_preflight_resources.py
+
+      - name: Check exact dependency resource budget
+        run: python3 -B tests/test_preflight_dependency_budget.py
+
+      - name: Check native preflight namespace scope
+        run: sudo env PATH=/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin python3 -B tests/test_preflight_scope.py
+
+      - name: Check bounded policy rule and route discovery
+        shell: bash
+        run: |
+          parent_ns=$(readlink /proc/self/ns/net)
+          sudo unshare --net -- python3 -B tests/test_preflight_rules.py --prepare "$parent_ns" "$(id -un)"
+
+      - name: Check candidate manifest boundaries
+        run: python3 -B tests/test_preflight_manifest.py
+
+      - name: Check offline candidate preparation
+        env:
+          LOKI_TEST_NATIVE_UCI: '0'
+        run: python3 -B tests/test_prepare_candidate.py
+
+      - name: Check SDK download integrity
+        run: python3 -m unittest discover -s tests/packaging -p 'test_*.py'
+
+      - name: Check cached generator equivalence
+        run: python3 tests/bench_bytecode.py
+
+      - name: Check update metadata over loopback HTTPS
+        run: python3 tests/installer/check_updates.py

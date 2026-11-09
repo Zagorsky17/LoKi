@@ -1,0 +1,127 @@
+import type { ClashAPIConfig } from '~/types';
+
+export type ClashAPIConfigWithAddedAt = ClashAPIConfig & { addedAt?: number };
+export type StateApp = {
+  selectedClashAPIConfigIndex: number;
+  clashAPIConfigs: ClashAPIConfigWithAddedAt[];
+
+  latencyTestUrl: string;
+  latencyTestTimeout: number;
+  // when true, group latency tests use the group's backend-configured testUrl,
+  // falling back to latencyTestUrl; single-proxy/provider tests always use latencyTestUrl
+  preferBackendLatencyTestUrl: boolean;
+  // client-side timeout (ms) for a proxy-provider health check; see PROVIDER_HEALTHCHECK_TIMEOUT
+  providerHealthcheckTimeout: number;
+  selectedChartStyleIndex: number;
+  theme: string;
+
+  collapsibleIsOpen: Record<string, boolean>;
+  proxySortBy: string;
+  hideUnavailableProxies: boolean;
+  autoCloseOldConns: boolean;
+  logStreamingPaused: boolean;
+  proxiesLayout: string;
+  proxyGroupByProvider: boolean;
+};
+
+export type ClashTunConfig = {
+  enable: boolean;
+  device?: string;
+  stack: string;
+  'dns-hijack': string[];
+  'auto-route': boolean;
+};
+
+export type ClashGeneralConfig = {
+  port: number;
+  'socks-port': number;
+  'mixed-port': number;
+  'redir-port': number;
+  'tproxy-port': number;
+  'mitm-port'?: number;
+  'allow-lan': boolean;
+  'interface-name'?: string;
+  mode: string;
+  'mode-list'?: string[];
+  'log-level': string;
+  sniffing?: boolean;
+  tun?: ClashTunConfig;
+};
+
+export type TunPartial<T> = {
+  [P in keyof T]?: NonNullable<T[P]> extends ClashTunConfig ? TunPartial<NonNullable<T[P]>> : T[P];
+};
+
+///// store.proxies
+
+type LatencyHistory = Array<{ time: string; delay: number }>;
+type PrimitiveProxyType = 'Shadowsocks' | 'Snell' | 'Socks5' | 'Http' | 'Vmess';
+
+/** 后端要么整个不给（provider 上是可选的），要么四个字段一起给 */
+export type SubscriptionInfo = {
+  Download: number;
+  Upload: number;
+  Total: number;
+  Expire: number;
+};
+export type ProxyItem = {
+  name: string;
+  type: PrimitiveProxyType;
+  udp: boolean;
+  xudp?: boolean;
+  tfo: boolean;
+  history: LatencyHistory;
+  providerName?: string;
+  all?: string[];
+  now?: string;
+  hidden?: boolean;
+  // group-only fields (Selector/URLTest/Fallback/LoadBalance) from GET /proxies
+  // set by URLTest/Fallback groups to the manually-fixed member name; cleared by the
+  // backend via a latency test at /group/{name}/delay
+  fixed?: string;
+  testUrl?: string;
+  expectedStatus?: string;
+  // extra latency history keyed by test URL — its keys are the URLs the backend tests against
+  extra?: Record<string, { alive?: boolean; history?: LatencyHistory }>;
+};
+export type ProxiesMapping = Record<string, ProxyItem>;
+export type DelayMapping = Record<
+  string,
+  { number?: number; failed?: boolean; testing?: boolean; updatedAt?: number }
+>;
+
+export type ProxyProvider = {
+  name: string;
+  type: 'Proxy';
+  updatedAt: string;
+  vehicleType: 'HTTP' | 'File' | 'Compatible';
+  proxies: Array<ProxyItem>;
+  subscriptionInfo?: SubscriptionInfo;
+};
+
+export type FormattedProxyProvider = Omit<ProxyProvider, 'proxies'> & {
+  proxies: string[];
+};
+
+///// store.configs
+
+export type StateConfigs = {
+  configs: ClashGeneralConfig;
+  haveFetchedConfig: boolean;
+};
+
+///// store.modals
+
+//////
+
+export type State = {
+  app: StateApp;
+  configs: StateConfigs;
+};
+
+export type GetStateFn = () => State;
+export interface DispatchFn {
+  (msg: string, change: (s: State) => void): void;
+  // thunk：原样返回 action 的返回值，异步 thunk 可以把结果交回调用方
+  <T>(action: (dispatch: DispatchFn, getState: GetStateFn) => T): T;
+}

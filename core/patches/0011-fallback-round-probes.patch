@@ -1,0 +1,77 @@
+diff --git a/protocol/group/fallback.go b/protocol/group/fallback.go
+index 4505153..fc9c474 100644
+--- a/protocol/group/fallback.go
++++ b/protocol/group/fallback.go
+@@ -814,15 +814,32 @@ func (s *Fallback) PerformUpdateCheck() {
+ func (s *Fallback) checkCandidates(ctx context.Context, candidates []fallbackCandidate, maxAge time.Duration) (map[string]uint16, error) {
+ 	resultMap := make(map[string]uint16)
+ 	results := make([]fallbackCheckResult, len(candidates))
++	representative := make([]int, len(candidates))
++	firstByMember := make(map[string]int, len(candidates))
+ 	b, _ := batch.New(ctx, batch.WithConcurrencyNum[any](10))
+ 	for index, candidate := range candidates {
+ 		results[index].candidate = candidate
++		member := MemberTag(candidate.outbound)
++		if first, exists := firstByMember[member]; exists {
++			representative[index] = first
++			continue
++		}
++		firstByMember[member] = index
++		representative[index] = index
+ 		b.Go(candidate.tag, func() (any, error) {
+-			results[index].delay, results[index].at, results[index].err = s.coordinator.Check(ctx, s.link, s.expectedStatus, MemberTag(candidate.outbound), candidate.outbound, s.timeout, maxAge)
++			results[index].delay, results[index].at, results[index].err = s.coordinator.Check(ctx, s.link, s.expectedStatus, member, candidate.outbound, s.timeout, maxAge)
+ 			return nil, nil
+ 		})
+ 	}
+ 	b.Wait()
++	// A completed fast probe must still be shared by every member in this sweep.
++	for index, first := range representative {
++		if first != index {
++			results[index].delay = results[first].delay
++			results[index].at = results[first].at
++			results[index].err = results[first].err
++		}
++	}
+ 
+ 	s.access.Lock()
+ 	oldSelected := s.selected
+diff --git a/protocol/group/fallback_test.go b/protocol/group/fallback_test.go
+index dbba99a..c24890a 100644
+--- a/protocol/group/fallback_test.go
++++ b/protocol/group/fallback_test.go
+@@ -773,12 +773,30 @@ func TestFallbackAcceptsGroupMembersAndSharesTheirChecks(t *testing.T) {
+ 		t.Fatalf("unexpected members: %v", all)
+ 	}
+ 
++	for round := 1; round <= 20; round++ {
++		fallback.checkOutbounds(context.Background(), 0)
++		if selectedTag(fallback) != inner.Tag() {
++			t.Fatalf("the group member was not selected: %q", selectedTag(fallback))
++		}
++		if dials := inner.dialCount + node.dialCount; dials != round {
++			t.Fatalf("the same node was probed more than once in round %d: %d", round, dials)
++		}
++	}
++	delays, err := fallback.URLTest(context.Background())
++	if err != nil || len(delays) != 2 || delays[inner.Tag()] != delays[node.Tag()] {
++		t.Fatalf("both members must share the URL test result: %v, %v", delays, err)
++	}
++	if dials := inner.dialCount + node.dialCount; dials != 21 {
++		t.Fatalf("URL test probed the same node more than once: %d", dials)
++	}
++	inner.setAvailable(false)
++	node.setAvailable(false)
+ 	fallback.checkOutbounds(context.Background(), 0)
+-	if selectedTag(fallback) != inner.Tag() {
+-		t.Fatalf("the group member was not selected: %q", selectedTag(fallback))
++	if dials := inner.dialCount + node.dialCount; dials != 22 {
++		t.Fatalf("failed checks probed the same node more than once: %d", dials)
+ 	}
+-	if dials := inner.dialCount + node.dialCount; dials != 1 {
+-		t.Fatalf("the same node was probed once per referencing member: %d", dials)
++	if fallback.health[inner.Tag()].alive || fallback.health[node.Tag()].alive {
++		t.Fatal("a shared failed check did not mark both members unavailable")
+ 	}
+ }
+ 

@@ -1,0 +1,455 @@
+diff --git a/cmd/sing-box/cmd_release_fetch.go b/cmd/sing-box/cmd_release_fetch.go
+new file mode 100644
+--- /dev/null
++++ b/cmd/sing-box/cmd_release_fetch.go
+@@ -0,0 +1,117 @@
++// Modified for LoKi on 2026-11-07: download release inputs without loading routing configuration.
++package main
++
++import (
++	"context"
++	"errors"
++	"io"
++	"net"
++	"net/http"
++	"net/url"
++	"os"
++	"regexp"
++	"strings"
++	"time"
++
++	"github.com/spf13/cobra"
++)
++
++const releaseByteLimit = 512 << 20
++
++var releaseAPIPath = regexp.MustCompile(`^/repos/Zagorsky17/LoKi/releases/(latest|[1-9][0-9]{0,19}|tags/[A-Za-z0-9][A-Za-z0-9_.~-]{0,95}|assets/[1-9][0-9]{0,19})$`)
++
++func init() {
++	var maximum int64
++	command := &cobra.Command{
++		Use:   "release-fetch URL",
++		Short: "Download a bounded public LoKi release input over HTTPS",
++		Args:  cobra.ExactArgs(1),
++		RunE: func(command *cobra.Command, args []string) error {
++			return fetchRelease(command.Context(), os.Stdout, args[0], maximum, releaseClient())
++		},
++	}
++	command.Flags().Int64Var(&maximum, "max-bytes", 0, "Maximum response bytes (required)")
++	mainCommand.AddCommand(command)
++}
++
++func releaseTarget(target *url.URL, initial bool) bool {
++	if target == nil || target.Scheme != "https" || target.Opaque != "" || target.User != nil ||
++		target.Fragment != "" || target.Port() != "" || len(target.String()) > 8192 {
++		return false
++	}
++	if initial {
++		return target.Host == "api.github.com" && target.RawQuery == "" && !target.ForceQuery &&
++			target.RawPath == "" && releaseAPIPath.MatchString(target.Path)
++	}
++	switch target.Host {
++	case "api.github.com", "github.com", "objects.githubusercontent.com", "release-assets.githubusercontent.com":
++		return true
++	default:
++		return false
++	}
++}
++
++func releaseClient() *http.Client {
++	return &http.Client{
++		Timeout: 120 * time.Second,
++		Transport: &http.Transport{
++			DialContext:            (&net.Dialer{Timeout: 10 * time.Second}).DialContext,
++			ForceAttemptHTTP2:      true,
++			DisableKeepAlives:      true,
++			DisableCompression:     true,
++			TLSHandshakeTimeout:    10 * time.Second,
++			ResponseHeaderTimeout:  15 * time.Second,
++			MaxResponseHeaderBytes: 64 << 10,
++		},
++		CheckRedirect: func(request *http.Request, previous []*http.Request) error {
++			if len(previous) >= 4 || !releaseTarget(request.URL, false) {
++				return errors.New("release-redirect-refused")
++			}
++			return nil
++		},
++	}
++}
++
++// Partial stdout is never admission evidence; the caller owns its staging file and checks status.
++func fetchRelease(ctx context.Context, output io.Writer, source string, maximum int64, client *http.Client) error {
++	defer client.CloseIdleConnections()
++	if len(source) > 8192 {
++		return errors.New("release-source-invalid")
++	}
++	target, err := url.Parse(source)
++	if err != nil || !releaseTarget(target, true) {
++		return errors.New("release-source-invalid")
++	}
++	if maximum <= 0 || maximum > releaseByteLimit {
++		return errors.New("release-limit-invalid")
++	}
++	request, err := http.NewRequestWithContext(ctx, http.MethodGet, source, nil)
++	if err != nil {
++		return errors.New("release-request-failed")
++	}
++	request.Header.Set("User-Agent", "LoKi")
++	request.Header.Set("Accept", "application/vnd.github+json")
++	if strings.Contains(target.Path, "/releases/assets/") {
++		request.Header.Set("Accept", "application/octet-stream")
++	}
++	response, err := client.Do(request)
++	if err != nil {
++		return errors.New("release-request-failed")
++	}
++	if response.StatusCode != http.StatusOK || response.ContentLength > maximum ||
++		(response.Header.Get("Content-Encoding") != "" && response.Header.Get("Content-Encoding") != "identity") {
++		response.Body.Close()
++		return errors.New("release-response-refused")
++	}
++	count, copyError := io.CopyBuffer(output, io.LimitReader(response.Body, maximum), make([]byte, 32<<10))
++	var extra [1]byte
++	extraCount, endError := 0, error(nil)
++	if copyError == nil {
++		extraCount, endError = response.Body.Read(extra[:])
++	}
++	closeError := response.Body.Close()
++	if copyError != nil || closeError != nil || count == 0 || extraCount != 0 || endError != io.EOF {
++		return errors.New("release-body-incomplete")
++	}
++	return nil
++}
+diff --git a/cmd/sing-box/cmd_release_fetch_test.go b/cmd/sing-box/cmd_release_fetch_test.go
+new file mode 100644
+--- /dev/null
++++ b/cmd/sing-box/cmd_release_fetch_test.go
+@@ -0,0 +1,328 @@
++// Modified for LoKi on 2026-11-07: exercise the release downloader's independent entry point.
++package main
++
++import (
++	"bytes"
++	"context"
++	"crypto/ecdsa"
++	"crypto/elliptic"
++	"crypto/rand"
++	"crypto/tls"
++	"crypto/x509"
++	"errors"
++	"io"
++	"log"
++	"math/big"
++	"net"
++	"net/http"
++	"net/http/httptest"
++	"net/url"
++	"os"
++	"os/exec"
++	"path/filepath"
++	"strings"
++	"sync/atomic"
++	"testing"
++	"time"
++)
++
++func TestReleaseFetchCommandAvailable(t *testing.T) {
++	command, _, err := mainCommand.Find([]string{"release-fetch"})
++	if err != nil || command == nil || command.Name() != "release-fetch" {
++		t.Fatal("the independent release-fetch command is unavailable")
++	}
++}
++
++func TestReleaseFetchSources(t *testing.T) {
++	for _, source := range []string{
++		"http://api.github.com/repos/Zagorsky17/LoKi/releases/latest",
++		"https://api.github.com.evil.invalid/repos/Zagorsky17/LoKi/releases/latest",
++		"https://api.github.com/repos/other/LoKi/releases/latest",
++		"https://api.github.com/repos/Zagorsky17/other/releases/latest",
++		"https://user:synthetic-secret@api.github.com/repos/Zagorsky17/LoKi/releases/latest",
++		"https://api.github.com:443/repos/Zagorsky17/LoKi/releases/latest",
++		"https://api.github.com/repos/Zagorsky17/LoKi/releases/latest?synthetic-secret",
++		"https://api.github.com/repos/Zagorsky17/LoKi/releases/latest#synthetic-secret",
++		"https://api.github.com/repos/Zagorsky17/LoKi/releases/assets/0",
++		"https://api.github.com/repos/Zagorsky17/LoKi/releases/tags/../latest",
++		"https://api.github.com/repos/Zagorsky17/LoKi/releases/%6catest",
++		"https://api.github.com/repos/Zagorsky17/LoKi/releases/latest\x00synthetic-secret",
++		strings.Repeat("x", 8193),
++	} {
++		var output bytes.Buffer
++		err := fetchRelease(context.Background(), &output, source, 8, releaseClient())
++		if err == nil || err.Error() != "release-source-invalid" || output.Len() != 0 {
++			t.Fatal("an invalid source was not refused with a fixed empty result")
++		}
++	}
++	for _, suffix := range []string{"latest", "42", "tags/2.0.0", "assets/123"} {
++		target, _ := url.Parse("https://api.github.com/repos/Zagorsky17/LoKi/releases/" + suffix)
++		if !releaseTarget(target, true) {
++			t.Fatal("a canonical release endpoint was refused")
++		}
++	}
++}
++
++func releaseFixture(t *testing.T, handler http.HandlerFunc) *http.Client {
++	t.Helper()
++	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
++	if err != nil {
++		t.Fatal(err)
++	}
++	template := &x509.Certificate{SerialNumber: big.NewInt(1), NotBefore: time.Now().Add(-time.Hour),
++		NotAfter: time.Now().Add(time.Hour), IsCA: true, BasicConstraintsValid: true,
++		KeyUsage:    x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
++		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
++		DNSNames:    []string{"api.github.com", "github.com", "objects.githubusercontent.com", "release-assets.githubusercontent.com"}}
++	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
++	if err != nil {
++		t.Fatal(err)
++	}
++	certificate, err := x509.ParseCertificate(der)
++	if err != nil {
++		t.Fatal(err)
++	}
++	pool := x509.NewCertPool()
++	pool.AddCert(certificate)
++	server := httptest.NewUnstartedServer(handler)
++	server.Config.ErrorLog = log.New(io.Discard, "", 0)
++	server.TLS = &tls.Config{Certificates: []tls.Certificate{{Certificate: [][]byte{der}, PrivateKey: key}}}
++	server.StartTLS()
++	t.Cleanup(server.Close)
++	client := releaseClient()
++	transport := client.Transport.(*http.Transport)
++	transport.TLSClientConfig = &tls.Config{RootCAs: pool}
++	transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
++		return (&net.Dialer{}).DialContext(ctx, network, server.Listener.Addr().String())
++	}
++	t.Cleanup(client.CloseIdleConnections)
++	return client
++}
++
++const releaseTestSource = "https://api.github.com/repos/Zagorsky17/LoKi/releases/assets/1"
++
++func TestReleaseFetchHTTPS(t *testing.T) {
++	for _, test := range []struct {
++		name           string
++		status         int
++		body, encoding string
++		streamed       bool
++		maximum        int64
++		ok             bool
++	}{
++		{name: "exact", status: 200, body: "12345678", maximum: 8, ok: true},
++		{name: "chunked-exact", status: 200, body: "12345678", streamed: true, maximum: 8, ok: true},
++		{name: "too-large-header", status: 200, body: "123456789", maximum: 8},
++		{name: "too-large-chunked", status: 200, body: "123456789", streamed: true, maximum: 8},
++		{name: "empty", status: 200, maximum: 8},
++		{name: "not-found", status: 404, body: "synthetic-secret", maximum: 8},
++		{name: "partial", status: 206, body: "123", maximum: 8},
++		{name: "compressed", status: 200, body: "123", encoding: "gzip", maximum: 8},
++		{name: "zero-budget", status: 200, body: "123", maximum: 0},
++		{name: "negative-budget", status: 200, body: "123", maximum: -1},
++		{name: "excessive-budget", status: 200, body: "123", maximum: releaseByteLimit + 1},
++	} {
++		t.Run(test.name, func(t *testing.T) {
++			var hits atomic.Int32
++			client := releaseFixture(t, func(w http.ResponseWriter, r *http.Request) {
++				hits.Add(1)
++				if r.Method != "GET" || r.Header.Get("Accept") != "application/octet-stream" || r.Header.Get("User-Agent") != "LoKi" || r.Header.Get("Authorization") != "" {
++					t.Error("unexpected release request headers")
++				}
++				if test.encoding != "" {
++					w.Header().Set("Content-Encoding", test.encoding)
++				}
++				w.WriteHeader(test.status)
++				if test.streamed {
++					w.(http.Flusher).Flush()
++				}
++				io.WriteString(w, test.body)
++			})
++			var output bytes.Buffer
++			err := fetchRelease(context.Background(), &output, releaseTestSource, test.maximum, client)
++			if (err == nil) != test.ok || (test.ok && output.String() != test.body) {
++				t.Fatalf("unexpected bounded download result: %v, bytes=%d", err, output.Len())
++			}
++			if output.Len() > int(max(test.maximum, 0)) || (err != nil && strings.Contains(err.Error(), "synthetic-secret")) {
++				t.Fatal("download exceeded its budget or exposed response data")
++			}
++			if test.maximum <= 0 || test.maximum > releaseByteLimit {
++				if hits.Load() != 0 {
++					t.Fatal("invalid limits reached the network")
++				}
++			}
++		})
++	}
++}
++
++func TestReleaseFetchRedirects(t *testing.T) {
++	for _, target := range []string{
++		"https://release-assets.githubusercontent.com/download?token=synthetic-secret",
++		"http://api.github.com/unsafe?token=synthetic-secret",
++		"https://foreign.invalid/unsafe?token=synthetic-secret",
++		"https://api.github.com:8443/unsafe?token=synthetic-secret",
++		"https://user:synthetic-secret@api.github.com/unsafe",
++	} {
++		var hits atomic.Int32
++		client := releaseFixture(t, func(w http.ResponseWriter, r *http.Request) {
++			hits.Add(1)
++			if r.URL.Path != "/download" {
++				http.Redirect(w, r, target, http.StatusFound)
++				return
++			}
++			io.WriteString(w, "verified")
++		})
++		var forbidden atomic.Int32
++		transport := client.Transport.(*http.Transport)
++		dial := transport.DialContext
++		transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
++			if address != "api.github.com:443" && address != "release-assets.githubusercontent.com:443" {
++				forbidden.Add(1)
++				return nil, errors.New("synthetic-secret")
++			}
++			return dial(ctx, network, address)
++		}
++		var output bytes.Buffer
++		err := fetchRelease(context.Background(), &output, releaseTestSource, 8, client)
++		allowed := strings.HasPrefix(target, "https://release-assets.githubusercontent.com/")
++		if (err == nil) != allowed || forbidden.Load() != 0 || hits.Load() != map[bool]int32{true: 2, false: 1}[allowed] {
++			t.Fatal("redirect policy failed before the next network connection")
++		}
++		if allowed && output.String() != "verified" {
++			t.Fatal("a permitted HTTPS redirect lost data")
++		}
++		if err != nil && (output.Len() != 0 || strings.Contains(err.Error(), "synthetic-secret")) {
++			t.Fatal("refused redirect leaked data")
++		}
++	}
++	var hits atomic.Int32
++	client := releaseFixture(t, func(w http.ResponseWriter, r *http.Request) {
++		hits.Add(1)
++		http.Redirect(w, r, "https://api.github.com/loop", http.StatusFound)
++	})
++	var output bytes.Buffer
++	if fetchRelease(context.Background(), &output, releaseTestSource, 8, client) == nil || hits.Load() != 4 || output.Len() != 0 {
++		t.Fatal("redirect chains were not bounded before a fifth request")
++	}
++}
++
++func TestReleaseFetchTLSAndTimeout(t *testing.T) {
++	for _, failure := range []string{"untrusted", "hostname", "timeout", "headers", "truncated"} {
++		t.Run(failure, func(t *testing.T) {
++			client := releaseFixture(t, func(w http.ResponseWriter, r *http.Request) {
++				if failure == "timeout" {
++					time.Sleep(200 * time.Millisecond)
++				}
++				if failure == "headers" {
++					w.Header().Set("X-Oversized", strings.Repeat("x", 128<<10))
++				}
++				if failure == "truncated" {
++					w.Header().Set("Content-Length", "8")
++				}
++				io.WriteString(w, "123")
++			})
++			transport := client.Transport.(*http.Transport)
++			if failure == "untrusted" {
++				transport.TLSClientConfig.RootCAs = x509.NewCertPool()
++			}
++			if failure == "hostname" {
++				transport.TLSClientConfig.ServerName = "foreign.invalid"
++			}
++			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
++			defer cancel()
++			if failure == "timeout" {
++				client.Timeout = 50 * time.Millisecond
++			}
++			var output bytes.Buffer
++			err := fetchRelease(ctx, &output, releaseTestSource, 8, client)
++			if err == nil || !strings.HasPrefix(err.Error(), "release-") || strings.Contains(err.Error(), "https:") {
++				t.Fatal("TLS, timeout or incomplete response did not fail with a fixed reason")
++			}
++		})
++	}
++}
++
++type releaseTestRoundTrip func(*http.Request) (*http.Response, error)
++
++func (f releaseTestRoundTrip) RoundTrip(request *http.Request) (*http.Response, error) {
++	return f(request)
++}
++
++type releaseTestBody struct {
++	io.Reader
++	closeError error
++	closes     int
++}
++
++func (body *releaseTestBody) Close() error {
++	body.closes++
++	return body.closeError
++}
++
++type releaseTestWriteError struct{}
++
++func (releaseTestWriteError) Write([]byte) (int, error) {
++	return 0, errors.New("synthetic-secret")
++}
++
++type releaseTestReadError struct{}
++
++func (releaseTestReadError) Read([]byte) (int, error) {
++	return 0, errors.New("synthetic-secret")
++}
++
++func TestReleaseFetchIO(t *testing.T) {
++	for _, failure := range []string{"read", "write", "close"} {
++		t.Run(failure, func(t *testing.T) {
++			body := &releaseTestBody{Reader: strings.NewReader("123")}
++			if failure == "read" {
++				body.Reader = io.MultiReader(body.Reader, releaseTestReadError{})
++			}
++			if failure == "close" {
++				body.closeError = errors.New("synthetic-secret")
++			}
++			var output bytes.Buffer
++			var writer io.Writer = &output
++			if failure == "write" {
++				writer = releaseTestWriteError{}
++			}
++			client := releaseClient()
++			client.Transport = releaseTestRoundTrip(func(request *http.Request) (*http.Response, error) {
++				return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: body, ContentLength: -1}, nil
++			})
++			err := fetchRelease(context.Background(), writer, releaseTestSource, 8, client)
++			if err == nil || err.Error() != "release-body-incomplete" || body.closes != 1 {
++				t.Fatal("an I/O failure did not close the response and return a fixed failure")
++			}
++		})
++	}
++	var hits atomic.Int32
++	client := releaseFixture(t, func(w http.ResponseWriter, r *http.Request) { hits.Add(1) })
++	ctx, cancel := context.WithCancel(context.Background())
++	cancel()
++	var output bytes.Buffer
++	if fetchRelease(ctx, &output, releaseTestSource, 8, client) == nil || output.Len() != 0 || hits.Load() != 0 {
++		t.Fatal("a cancelled download reached the server or produced output")
++	}
++}
++
++func TestReleaseFetchEntrypoint(t *testing.T) {
++	if os.Getenv("LOKI_RELEASE_FETCH_CLI_TEST") == "1" {
++		ctx, cancel := context.WithCancel(context.Background())
++		cancel()
++		mainCommand.SetArgs([]string{"-c", filepath.Join(t.TempDir(), "missing-config.json"),
++			"release-fetch", "--max-bytes", "8", releaseTestSource})
++		err := mainCommand.ExecuteContext(ctx)
++		if err == nil || err.Error() != "release-request-failed" {
++			t.Fatal("the command ignored cancellation or read proxy configuration")
++		}
++		return
++	}
++	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
++	defer cancel()
++	command := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestReleaseFetchEntrypoint$", "-test.timeout=5s")
++	command.Env = append(os.Environ(), "LOKI_RELEASE_FETCH_CLI_TEST=1", "SING_BOX_TEST_MAIN=0")
++	if output, err := command.CombinedOutput(); err != nil {
++		t.Fatalf("independent entrypoint failed: %v\n%s", err, output)
++	}
++}

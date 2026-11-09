@@ -1,0 +1,16 @@
+Public Suffix List data accompanying golang.org/x/net@v0.57.0
+
+The generated publicsuffix table identifies source revision
+d6c92f1bbb7433e5db7b8405c25d4035fb8ff376, dated 2026-02-06:
+https://github.com/publicsuffix/list/blob/d6c92f1bbb7433e5db7b8405c25d4035fb8ff376/public_suffix_list.dat
+
+The original list carries this notice:
+This Source Code Form is subject to the terms of the Mozilla Public
+License, v. 2.0. If a copy of the MPL was not distributed with this
+file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
+The exact list and MPL-2.0 text accompany this build in the matching
+core-module-sources-*.tar.gz asset under source-data/publicsuffix/ as
+public_suffix_list.dat and MPL-2.0.txt. The package notice bundle also
+includes the complete MPL-2.0 text. Other x/net source files retain
+their respective existing license notices; this notice concerns the list.

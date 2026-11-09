@@ -1,0 +1,838 @@
+diff --git a/adapter/dns.go b/adapter/dns.go
+index 8119097..cbcbb65 100644
+--- a/adapter/dns.go
++++ b/adapter/dns.go
+@@ -1,3 +1,4 @@
++// Modified for LoKi on 2026-11-01: connect without waiting for the other DNS family.
+ package adapter
+ 
+ import (
+@@ -18,6 +19,7 @@ type DNSRouter interface {
+ 	Exchange(ctx context.Context, message *dns.Msg, options DNSQueryOptions) (*dns.Msg, error)
+ 	ExchangeAsync(ctx context.Context, message *dns.Msg, options DNSQueryOptions, callback func(response *dns.Msg, err error))
+ 	Lookup(ctx context.Context, domain string, options DNSQueryOptions) ([]netip.Addr, error)
++	LookupStrategy(options DNSQueryOptions) C.DomainStrategy
+ 	ClearCache()
+ 	LookupReverseMapping(ip netip.Addr) (string, bool)
+ 	ResetNetwork()
+diff --git a/common/dialer/resolve.go b/common/dialer/resolve.go
+index 8fa48f6..25716e1 100644
+--- a/common/dialer/resolve.go
++++ b/common/dialer/resolve.go
+@@ -1,8 +1,10 @@
++// Modified for LoKi on 2026-11-01: connect without waiting for the other DNS family.
+ package dialer
+ 
+ import (
+ 	"context"
+ 	"net"
++	"net/netip"
+ 	"sync"
+ 	"time"
+ 
+@@ -100,15 +102,12 @@ func (d *resolveDialer) DialContext(ctx context.Context, network string, destina
+ 		return d.dialer.DialContext(ctx, network, destination)
+ 	}
+ 	ctx = log.ContextWithOverrideLevel(ctx, log.LevelDebug)
+-	addresses, err := d.router.Lookup(ctx, destination.Fqdn, d.queryOptions)
+-	if err != nil {
+-		return nil, err
+-	}
+-	if d.parallel {
+-		return N.DialParallel(ctx, d.dialer, network, destination, addresses, addresses[0].Is6(), d.fallbackDelay)
+-	} else {
++	return resolveAndConnect(ctx, d.router, destination.Fqdn, d.queryOptions, d.parallel, d.fallbackDelay, func(ctx context.Context, addresses []netip.Addr) (net.Conn, error) {
++		if d.parallel {
++			return N.DialParallel(ctx, d.dialer, network, destination, addresses, addresses[0].Is6(), d.fallbackDelay)
++		}
+ 		return N.DialSerial(ctx, d.dialer, network, destination, addresses)
+-	}
++	})
+ }
+ 
+ func (d *resolveDialer) ListenPacket(ctx context.Context, destination M.Socksaddr) (net.PacketConn, error) {
+@@ -120,15 +119,13 @@ func (d *resolveDialer) ListenPacket(ctx context.Context, destination M.Socksadd
+ 		return d.dialer.ListenPacket(ctx, destination)
+ 	}
+ 	ctx = log.ContextWithOverrideLevel(ctx, log.LevelDebug)
+-	addresses, err := d.router.Lookup(ctx, destination.Fqdn, d.queryOptions)
+-	if err != nil {
+-		return nil, err
+-	}
+-	conn, destinationAddress, err := N.ListenSerial(ctx, d.dialer, destination, addresses)
+-	if err != nil {
+-		return nil, err
+-	}
+-	return bufio.NewNATPacketConn(bufio.NewPacketConn(conn), M.SocksaddrFrom(destinationAddress, destination.Port), destination), nil
++	return resolveAndConnect(ctx, d.router, destination.Fqdn, d.queryOptions, false, d.fallbackDelay, func(ctx context.Context, addresses []netip.Addr) (net.PacketConn, error) {
++		conn, destinationAddress, err := N.ListenSerial(ctx, d.dialer, destination, addresses)
++		if err != nil {
++			return nil, err
++		}
++		return bufio.NewNATPacketConn(bufio.NewPacketConn(conn), M.SocksaddrFrom(destinationAddress, destination.Port), destination), nil
++	})
+ }
+ 
+ func (d *resolveDialer) QueryOptions() adapter.DNSQueryOptions {
+@@ -148,18 +145,15 @@ func (d *resolveParallelNetworkDialer) DialParallelInterface(ctx context.Context
+ 		return d.dialer.DialContext(ctx, network, destination)
+ 	}
+ 	ctx = log.ContextWithOverrideLevel(ctx, log.LevelDebug)
+-	addresses, err := d.router.Lookup(ctx, destination.Fqdn, d.queryOptions)
+-	if err != nil {
+-		return nil, err
+-	}
+ 	if fallbackDelay == 0 {
+ 		fallbackDelay = d.fallbackDelay
+ 	}
+-	if d.parallel {
+-		return DialParallelNetwork(ctx, d.dialer, network, destination, addresses, addresses[0].Is6(), strategy, interfaceType, fallbackInterfaceType, fallbackDelay)
+-	} else {
++	return resolveAndConnect(ctx, d.router, destination.Fqdn, d.queryOptions, d.parallel, fallbackDelay, func(ctx context.Context, addresses []netip.Addr) (net.Conn, error) {
++		if d.parallel {
++			return DialParallelNetwork(ctx, d.dialer, network, destination, addresses, addresses[0].Is6(), strategy, interfaceType, fallbackInterfaceType, fallbackDelay)
++		}
+ 		return DialSerialNetwork(ctx, d.dialer, network, destination, addresses, strategy, interfaceType, fallbackInterfaceType, fallbackDelay)
+-	}
++	})
+ }
+ 
+ func (d *resolveParallelNetworkDialer) ListenSerialInterfacePacket(ctx context.Context, destination M.Socksaddr, strategy *C.NetworkStrategy, interfaceType []C.InterfaceType, fallbackInterfaceType []C.InterfaceType, fallbackDelay time.Duration) (net.PacketConn, error) {
+@@ -171,18 +165,16 @@ func (d *resolveParallelNetworkDialer) ListenSerialInterfacePacket(ctx context.C
+ 		return d.dialer.ListenPacket(ctx, destination)
+ 	}
+ 	ctx = log.ContextWithOverrideLevel(ctx, log.LevelDebug)
+-	addresses, err := d.router.Lookup(ctx, destination.Fqdn, d.queryOptions)
+-	if err != nil {
+-		return nil, err
+-	}
+ 	if fallbackDelay == 0 {
+ 		fallbackDelay = d.fallbackDelay
+ 	}
+-	conn, destinationAddress, err := ListenSerialNetworkPacket(ctx, d.dialer, destination, addresses, strategy, interfaceType, fallbackInterfaceType, fallbackDelay)
+-	if err != nil {
+-		return nil, err
+-	}
+-	return bufio.NewNATPacketConn(bufio.NewPacketConn(conn), M.SocksaddrFrom(destinationAddress, destination.Port), destination), nil
++	return resolveAndConnect(ctx, d.router, destination.Fqdn, d.queryOptions, false, fallbackDelay, func(ctx context.Context, addresses []netip.Addr) (net.PacketConn, error) {
++		conn, destinationAddress, err := ListenSerialNetworkPacket(ctx, d.dialer, destination, addresses, strategy, interfaceType, fallbackInterfaceType, fallbackDelay)
++		if err != nil {
++			return nil, err
++		}
++		return bufio.NewNATPacketConn(bufio.NewPacketConn(conn), M.SocksaddrFrom(destinationAddress, destination.Port), destination), nil
++	})
+ }
+ 
+ func (d *resolveParallelNetworkDialer) QueryOptions() adapter.DNSQueryOptions {
+diff --git a/common/dialer/resolve_connect.go b/common/dialer/resolve_connect.go
+new file mode 100644
+index 0000000..b3e2b55
+--- /dev/null
++++ b/common/dialer/resolve_connect.go
+@@ -0,0 +1,140 @@
++// Modified for LoKi on 2026-11-01: connect without waiting for the other DNS family.
++package dialer
++
++import (
++	"context"
++	"io"
++	"net/netip"
++	"time"
++
++	"github.com/sagernet/sing-box/adapter"
++	C "github.com/sagernet/sing-box/constant"
++	E "github.com/sagernet/sing/common/exceptions"
++	N "github.com/sagernet/sing/common/network"
++)
++
++// DNS rule walks must finish before connecting; an explicit resolver can resolve each family independently.
++func resolveAndConnect[T io.Closer](ctx context.Context, router adapter.DNSRouter, domain string, options adapter.DNSQueryOptions, parallel bool, fallbackDelay time.Duration, connect func(context.Context, []netip.Addr) (T, error)) (T, error) {
++	var zero T
++	if err := ctx.Err(); err != nil {
++		return zero, err
++	}
++	strategy := C.DomainStrategyAsIS
++	if options.Transport != nil {
++		strategy = router.LookupStrategy(options)
++	}
++	if options.Transport == nil || strategy == C.DomainStrategyIPv4Only || strategy == C.DomainStrategyIPv6Only {
++		addresses, err := router.Lookup(ctx, domain, options)
++		if err != nil {
++			return zero, err
++		}
++		return connect(ctx, addresses)
++	}
++	ctx, cancel := context.WithCancel(ctx)
++	defer cancel()
++	if fallbackDelay == 0 {
++		fallbackDelay = N.DefaultFallbackDelay
++	}
++	timer := time.NewTimer(fallbackDelay)
++	defer timer.Stop()
++	timerC := timer.C
++	fallbackReady := false
++	preferred := 0
++	if strategy == C.DomainStrategyPreferIPv6 {
++		preferred = 1
++	}
++	type lookupResult struct {
++		family    int
++		addresses []netip.Addr
++		err       error
++	}
++	type connectResult struct {
++		family     int
++		connection T
++		err        error
++	}
++	type attempt struct {
++		addresses []netip.Addr
++		lookedUp  bool
++		started   bool
++		finished  bool
++	}
++	var attempts [2]attempt
++	lookups := make(chan lookupResult, 2)
++	connections := make(chan connectResult)
++	for family, lookupStrategy := range []C.DomainStrategy{C.DomainStrategyIPv4Only, C.DomainStrategyIPv6Only} {
++		query := options
++		query.LookupStrategy = lookupStrategy
++		go func(family int) {
++			addresses, err := router.Lookup(adapter.OverrideContext(ctx), domain, query)
++			lookups <- lookupResult{family, addresses, err}
++		}(family)
++	}
++	var failures []error
++	for {
++		if err := ctx.Err(); err != nil {
++			return zero, err
++		}
++		for _, family := range []int{preferred, 1 - preferred} {
++			current := &attempts[family]
++			if current.started || len(current.addresses) == 0 {
++				continue
++			}
++			other := attempts[1-family]
++			if !parallel && other.started && !other.finished {
++				continue
++			}
++			primary := attempts[preferred]
++			if family != preferred && !primary.finished && !(primary.lookedUp && len(primary.addresses) == 0) && !fallbackReady {
++				continue
++			}
++			current.started = true
++			if family == preferred && !other.started {
++				timer.Reset(fallbackDelay)
++				timerC = timer.C
++				fallbackReady = false
++			}
++			addresses := current.addresses
++			go func(family int) {
++				conn, err := connect(ctx, addresses)
++				select {
++				case connections <- connectResult{family, conn, err}:
++				case <-ctx.Done():
++					if err == nil {
++						conn.Close()
++					}
++				}
++			}(family)
++		}
++		if attempts[0].lookedUp && attempts[1].lookedUp && (len(attempts[0].addresses) == 0 || attempts[0].finished) && (len(attempts[1].addresses) == 0 || attempts[1].finished) {
++			if len(failures) == 0 {
++				return zero, E.New("empty DNS result")
++			}
++			return zero, E.Errors(failures...)
++		}
++		select {
++		case <-ctx.Done():
++			return zero, ctx.Err()
++		case <-timerC:
++			fallbackReady = true
++			timerC = nil
++		case result := <-lookups:
++			attempts[result.family].lookedUp = true
++			if result.err != nil {
++				failures = append(failures, result.err)
++			} else {
++				attempts[result.family].addresses = result.addresses
++			}
++		case result := <-connections:
++			if result.err == nil {
++				if err := ctx.Err(); err != nil {
++					result.connection.Close()
++					return zero, err
++				}
++				return result.connection, nil
++			}
++			attempts[result.family].finished = true
++			failures = append(failures, result.err)
++		}
++	}
++}
+diff --git a/common/dialer/resolve_test.go b/common/dialer/resolve_test.go
+new file mode 100644
+index 0000000..96d8926
+--- /dev/null
++++ b/common/dialer/resolve_test.go
+@@ -0,0 +1,501 @@
++// Modified for LoKi on 2026-11-01: connect without waiting for the other DNS family.
++package dialer
++
++import (
++	"context"
++	"errors"
++	"net"
++	"net/netip"
++	"sync/atomic"
++	"testing"
++	"time"
++
++	"github.com/sagernet/sing-box/adapter"
++	C "github.com/sagernet/sing-box/constant"
++	M "github.com/sagernet/sing/common/metadata"
++)
++
++type lookupRouter struct {
++	adapter.DNSRouter
++	strategy C.DomainStrategy
++	lookup   func(context.Context, C.DomainStrategy) ([]netip.Addr, error)
++}
++
++func (r *lookupRouter) LookupStrategy(options adapter.DNSQueryOptions) C.DomainStrategy {
++	if options.LookupStrategy != C.DomainStrategyAsIS {
++		return options.LookupStrategy
++	}
++	if options.Strategy != C.DomainStrategyAsIS {
++		return options.Strategy
++	}
++	return r.strategy
++}
++
++func (r *lookupRouter) Lookup(ctx context.Context, _ string, options adapter.DNSQueryOptions) ([]netip.Addr, error) {
++	strategy := options.LookupStrategy
++	if strategy == C.DomainStrategyAsIS {
++		strategy = options.Strategy
++	}
++	if strategy == C.DomainStrategyAsIS {
++		strategy = r.strategy
++	}
++	if strategy == C.DomainStrategyIPv4Only || strategy == C.DomainStrategyIPv6Only {
++		return r.lookup(ctx, strategy)
++	}
++	type result struct {
++		addresses []netip.Addr
++		err       error
++	}
++	results := make(chan result, 2)
++	for _, family := range []C.DomainStrategy{C.DomainStrategyIPv4Only, C.DomainStrategyIPv6Only} {
++		go func(family C.DomainStrategy) {
++			addresses, err := r.lookup(ctx, family)
++			results <- result{addresses, err}
++		}(family)
++	}
++	var addresses []netip.Addr
++	var failures []error
++	for range 2 {
++		result := <-results
++		addresses = append(addresses, result.addresses...)
++		failures = append(failures, result.err)
++	}
++	if len(addresses) == 0 {
++		return nil, errors.Join(failures...)
++	}
++	return addresses, nil
++}
++
++type lookupTransport struct{ adapter.DNSTransport }
++type trackedConnection struct {
++	net.Conn
++	closed atomic.Bool
++}
++
++func (c *trackedConnection) Close() error { c.closed.Store(true); return nil }
++
++type lookupDialer struct {
++	dial   func(context.Context, M.Socksaddr) (net.Conn, error)
++	packet func(context.Context, M.Socksaddr) (net.PacketConn, error)
++}
++
++func (d *lookupDialer) DialContext(ctx context.Context, _ string, address M.Socksaddr) (net.Conn, error) {
++	if err := ctx.Err(); err != nil {
++		return nil, err
++	}
++	return d.dial(ctx, address)
++}
++func (d *lookupDialer) ListenPacket(ctx context.Context, target M.Socksaddr) (net.PacketConn, error) {
++	if d.packet != nil {
++		return d.packet(ctx, target)
++	}
++	return nil, errors.New("unexpected packet listener")
++}
++
++type trackedPacket struct {
++	net.PacketConn
++	closed atomic.Bool
++}
++
++func (c *trackedPacket) Close() error { c.closed.Store(true); return nil }
++
++type interfaceLookupDialer struct{ *lookupDialer }
++
++func (d *interfaceLookupDialer) DialParallelInterface(ctx context.Context, network string, target M.Socksaddr, _ *C.NetworkStrategy, _, _ []C.InterfaceType, _ time.Duration) (net.Conn, error) {
++	return d.DialContext(ctx, network, target)
++}
++func (d *interfaceLookupDialer) ListenSerialInterfacePacket(ctx context.Context, target M.Socksaddr, _ *C.NetworkStrategy, _, _ []C.InterfaceType, _ time.Duration) (net.PacketConn, error) {
++	return d.ListenPacket(ctx, target)
++}
++
++func TestResolveDialsReadyFamilyWithoutWaitingForOtherDNS(t *testing.T) {
++	for _, prefer6 := range []bool{false, true} {
++		t.Run(map[bool]string{false: "IPv4", true: "IPv6"}[prefer6], func(t *testing.T) {
++			strategy, family := C.DomainStrategyPreferIPv4, C.DomainStrategyIPv4Only
++			address := netip.MustParseAddr("127.0.0.1")
++			if prefer6 {
++				strategy, family, address = C.DomainStrategyPreferIPv6, C.DomainStrategyIPv6Only, netip.IPv6Loopback()
++			}
++			canceled := make(chan struct{})
++			router := &lookupRouter{strategy: strategy, lookup: func(ctx context.Context, requested C.DomainStrategy) ([]netip.Addr, error) {
++				if requested == family {
++					return []netip.Addr{address}, nil
++				}
++				<-ctx.Done()
++				close(canceled)
++				return nil, ctx.Err()
++			}}
++			d := &resolveDialer{router: router, dialer: &lookupDialer{dial: func(_ context.Context, target M.Socksaddr) (net.Conn, error) {
++				if target.Addr != address {
++					t.Errorf("wrong family: %s", target)
++				}
++				return &trackedConnection{}, nil
++			}}, parallel: true, queryOptions: adapter.DNSQueryOptions{Transport: &lookupTransport{}}}
++			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
++			defer cancel()
++			start := time.Now()
++			conn, err := d.DialContext(ctx, "tcp", M.ParseSocksaddr("proxy.test:443"))
++			if err != nil {
++				t.Fatal(err)
++			}
++			conn.Close()
++			if time.Since(start) > 500*time.Millisecond {
++				t.Fatal("waited for the unavailable DNS family")
++			}
++			select {
++			case <-canceled:
++			case <-time.After(time.Second):
++				t.Fatal("unused lookup was not canceled")
++			}
++		})
++	}
++}
++
++func TestResolvePacketAndInterfacePaths(t *testing.T) {
++	for _, path := range []string{"packet", "interface-tcp", "interface-packet"} {
++		t.Run(path, func(t *testing.T) {
++			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
++			defer cancel()
++			router := &lookupRouter{strategy: C.DomainStrategyPreferIPv4, lookup: func(ctx context.Context, family C.DomainStrategy) ([]netip.Addr, error) {
++				if family == C.DomainStrategyIPv4Only {
++					return []netip.Addr{netip.MustParseAddr("127.0.0.1")}, nil
++				}
++				<-ctx.Done()
++				return nil, ctx.Err()
++			}}
++			upstream := &lookupDialer{dial: func(context.Context, M.Socksaddr) (net.Conn, error) { return &trackedConnection{}, nil },
++				packet: func(context.Context, M.Socksaddr) (net.PacketConn, error) { return &trackedPacket{}, nil }}
++			d := &resolveDialer{router: router, dialer: upstream, parallel: true, queryOptions: adapter.DNSQueryOptions{Transport: &lookupTransport{}}}
++			target := M.ParseSocksaddr("proxy.test:443")
++			var err error
++			start := time.Now()
++			if path == "packet" {
++				var conn net.PacketConn
++				conn, err = d.ListenPacket(ctx, target)
++				if conn != nil {
++					conn.Close()
++				}
++			} else {
++				wrapped := &resolveParallelNetworkDialer{
++					resolveDialer: resolveDialer{router: router, dialer: upstream, parallel: true, queryOptions: d.queryOptions},
++					dialer:        &interfaceLookupDialer{upstream},
++				}
++				if path == "interface-tcp" {
++					var conn net.Conn
++					conn, err = wrapped.DialParallelInterface(ctx, "tcp", target, nil, nil, nil, 0)
++					if conn != nil {
++						conn.Close()
++					}
++				} else {
++					var conn net.PacketConn
++					conn, err = wrapped.ListenSerialInterfacePacket(ctx, target, nil, nil, nil, 0)
++					if conn != nil {
++						conn.Close()
++					}
++				}
++			}
++			if err != nil {
++				t.Fatal(err)
++			}
++			if time.Since(start) > 500*time.Millisecond {
++				t.Fatal("waited for AAAA")
++			}
++		})
++	}
++}
++
++func TestResolveFallbackKeepsLateIPv6AfterIPv4ConnectionFails(t *testing.T) {
++	v4Failed := make(chan struct{})
++	router := &lookupRouter{strategy: C.DomainStrategyPreferIPv4, lookup: func(ctx context.Context, family C.DomainStrategy) ([]netip.Addr, error) {
++		if family == C.DomainStrategyIPv4Only {
++			return []netip.Addr{netip.MustParseAddr("127.0.0.1")}, nil
++		}
++		select {
++		case <-v4Failed:
++			return []netip.Addr{netip.IPv6Loopback()}, nil
++		case <-ctx.Done():
++			return nil, ctx.Err()
++		}
++	}}
++	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
++	defer cancel()
++	conn, err := resolveAndConnect(ctx, router, "proxy.test", adapter.DNSQueryOptions{Transport: &lookupTransport{}}, true, time.Second, func(_ context.Context, addresses []netip.Addr) (net.Conn, error) {
++		if addresses[0].Is4() {
++			close(v4Failed)
++			return nil, errors.New("IPv4 connection refused")
++		}
++		return &trackedConnection{}, nil
++	})
++	if err != nil {
++		t.Fatal(err)
++	}
++	conn.Close()
++}
++
++func TestResolveFallbackDoesNotWaitForPreferredDNS(t *testing.T) {
++	for _, delay := range []time.Duration{20 * time.Millisecond, -time.Millisecond} {
++		t.Run(delay.String(), func(t *testing.T) {
++			router := &lookupRouter{strategy: C.DomainStrategyPreferIPv4, lookup: func(ctx context.Context, family C.DomainStrategy) ([]netip.Addr, error) {
++				if family == C.DomainStrategyIPv6Only {
++					return []netip.Addr{netip.IPv6Loopback()}, nil
++				}
++				<-ctx.Done()
++				return nil, ctx.Err()
++			}}
++			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
++			defer cancel()
++			start := time.Now()
++			conn, err := resolveAndConnect(ctx, router, "proxy.test", adapter.DNSQueryOptions{Transport: &lookupTransport{}}, true, delay, func(_ context.Context, addresses []netip.Addr) (net.Conn, error) {
++				if !addresses[0].Is6() {
++					t.Errorf("expected IPv6 fallback")
++				}
++				return &trackedConnection{}, nil
++			})
++			if err != nil {
++				t.Fatal(err)
++			}
++			conn.Close()
++			maximum := 500 * time.Millisecond
++			if delay < 0 {
++				maximum = 100 * time.Millisecond
++			}
++			if elapsed := time.Since(start); elapsed < max(delay, 0) || elapsed > maximum {
++				t.Fatalf("fallback delay: %s", elapsed)
++			}
++		})
++	}
++}
++
++func TestResolvePreservesSingleFamilyAndRuleBasedLookups(t *testing.T) {
++	for _, mode := range []string{"IPv4", "IPv6", "rules", "explicit"} {
++		t.Run(mode, func(t *testing.T) {
++			options := adapter.DNSQueryOptions{Transport: &lookupTransport{}}
++			strategy := C.DomainStrategyIPv4Only
++			if mode == "IPv6" {
++				strategy = C.DomainStrategyIPv6Only
++			}
++			if mode == "explicit" {
++				strategy = C.DomainStrategyPreferIPv6
++				options.Strategy = C.DomainStrategyIPv4Only
++			}
++			if mode == "rules" {
++				options.Transport = nil
++			}
++			var calls atomic.Int32
++			router := &lookupRouter{strategy: strategy, lookup: func(_ context.Context, family C.DomainStrategy) ([]netip.Addr, error) {
++				calls.Add(1)
++				expected := C.DomainStrategyIPv4Only
++				if mode == "IPv6" {
++					expected = C.DomainStrategyIPv6Only
++				}
++				if family != expected {
++					t.Errorf("unexpected family: %v", family)
++				}
++				return []netip.Addr{netip.MustParseAddr("127.0.0.1")}, nil
++			}}
++			conn, err := resolveAndConnect(context.Background(), router, "proxy.test", options, true, 0, func(context.Context, []netip.Addr) (net.Conn, error) { return &trackedConnection{}, nil })
++			if err != nil {
++				t.Fatal(err)
++			}
++			conn.Close()
++			if calls.Load() != 1 {
++				t.Fatalf("lookup count: %d", calls.Load())
++			}
++		})
++	}
++}
++
++func TestResolveReportsBothFailuresAndHandlesCancellation(t *testing.T) {
++	for _, mode := range []string{"lookup", "connect", "empty", "canceled"} {
++		t.Run(mode, func(t *testing.T) {
++			err4, err6 := errors.New("IPv4 failed"), errors.New("IPv6 failed")
++			router := &lookupRouter{strategy: C.DomainStrategyPreferIPv4, lookup: func(_ context.Context, family C.DomainStrategy) ([]netip.Addr, error) {
++				if mode == "empty" {
++					return nil, nil
++				}
++				if mode == "lookup" {
++					if family == C.DomainStrategyIPv4Only {
++						return nil, err4
++					}
++					return nil, err6
++				}
++				if mode == "canceled" {
++					t.Error("lookup after cancellation")
++				}
++				address := netip.MustParseAddr("127.0.0.1")
++				if family == C.DomainStrategyIPv6Only {
++					address = netip.IPv6Loopback()
++				}
++				return []netip.Addr{address}, nil
++			}}
++			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
++			defer cancel()
++			if mode == "canceled" {
++				cancel()
++			}
++			_, err := resolveAndConnect(ctx, router, "proxy.test", adapter.DNSQueryOptions{Transport: &lookupTransport{}}, true, time.Second, func(_ context.Context, addresses []netip.Addr) (net.Conn, error) {
++				if mode != "connect" {
++					t.Error("unexpected connection")
++				}
++				if addresses[0].Is4() {
++					return nil, err4
++				}
++				return nil, err6
++			})
++			if err == nil {
++				t.Fatal("missing failure")
++			}
++			if (mode == "lookup" || mode == "connect") && (!errors.Is(err, err4) || !errors.Is(err, err6)) {
++				t.Fatalf("missing cause: %v", err)
++			}
++			if mode == "canceled" && !errors.Is(err, context.Canceled) {
++				t.Fatal(err)
++			}
++		})
++	}
++}
++
++func TestResolveClosesLosingConnection(t *testing.T) {
++	started4, started6 := make(chan struct{}), make(chan struct{})
++	loser := &trackedConnection{}
++	loserReturned := make(chan struct{})
++	router := &lookupRouter{strategy: C.DomainStrategyPreferIPv4, lookup: func(_ context.Context, family C.DomainStrategy) ([]netip.Addr, error) {
++		if family == C.DomainStrategyIPv4Only {
++			return []netip.Addr{netip.MustParseAddr("127.0.0.1")}, nil
++		}
++		return []netip.Addr{netip.IPv6Loopback()}, nil
++	}}
++	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
++	defer cancel()
++	conn, err := resolveAndConnect(ctx, router, "proxy.test", adapter.DNSQueryOptions{Transport: &lookupTransport{}}, true, time.Millisecond, func(ctx context.Context, addresses []netip.Addr) (net.Conn, error) {
++		if addresses[0].Is4() {
++			close(started4)
++			<-started6
++			return &trackedConnection{}, nil
++		}
++		<-started4
++		close(started6)
++		<-ctx.Done()
++		close(loserReturned)
++		return loser, nil
++	})
++	if err != nil {
++		t.Fatal(err)
++	}
++	conn.Close()
++	<-loserReturned
++	for deadline := time.Now().Add(time.Second); !loser.closed.Load(); {
++		if time.Now().After(deadline) {
++			t.Fatal("losing connection leaked")
++		}
++		time.Sleep(time.Millisecond)
++	}
++}
++
++func TestResolveFallbackDelayStartsWithPreferredConnection(t *testing.T) {
++	started := make(chan struct{})
++	var dialTime time.Time
++	router := &lookupRouter{strategy: C.DomainStrategyPreferIPv4, lookup: func(ctx context.Context, family C.DomainStrategy) ([]netip.Addr, error) {
++		if family == C.DomainStrategyIPv4Only {
++			select {
++			case <-time.After(40 * time.Millisecond):
++				return []netip.Addr{netip.MustParseAddr("127.0.0.1")}, nil
++			case <-ctx.Done():
++				return nil, ctx.Err()
++			}
++		}
++		select {
++		case <-started:
++			return []netip.Addr{netip.IPv6Loopback()}, nil
++		case <-ctx.Done():
++			return nil, ctx.Err()
++		}
++	}}
++	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
++	defer cancel()
++	conn, err := resolveAndConnect(ctx, router, "proxy.test", adapter.DNSQueryOptions{Transport: &lookupTransport{}}, true, 20*time.Millisecond, func(ctx context.Context, addresses []netip.Addr) (net.Conn, error) {
++		if addresses[0].Is4() {
++			dialTime = time.Now()
++			close(started)
++			<-ctx.Done()
++			return nil, ctx.Err()
++		}
++		if time.Since(dialTime) < 20*time.Millisecond {
++			t.Error("DNS time consumed the connection fallback delay")
++		}
++		return &trackedConnection{}, nil
++	})
++	if err != nil {
++		t.Fatal(err)
++	}
++	conn.Close()
++}
++
++func TestResolveSerialModeDoesNotRaceConnections(t *testing.T) {
++	var active atomic.Int32
++	router := &lookupRouter{strategy: C.DomainStrategyPreferIPv4, lookup: func(_ context.Context, family C.DomainStrategy) ([]netip.Addr, error) {
++		if family == C.DomainStrategyIPv4Only {
++			return []netip.Addr{netip.MustParseAddr("127.0.0.1")}, nil
++		}
++		return []netip.Addr{netip.IPv6Loopback()}, nil
++	}}
++	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
++	defer cancel()
++	conn, err := resolveAndConnect(ctx, router, "proxy.test", adapter.DNSQueryOptions{Transport: &lookupTransport{}}, false, time.Millisecond, func(_ context.Context, addresses []netip.Addr) (net.Conn, error) {
++		if active.Add(1) != 1 {
++			t.Error("serial connections overlapped")
++		}
++		defer active.Add(-1)
++		if addresses[0].Is4() {
++			time.Sleep(20 * time.Millisecond)
++			return nil, errors.New("IPv4 failed")
++		}
++		return &trackedConnection{}, nil
++	})
++	if err != nil {
++		t.Fatal(err)
++	}
++	conn.Close()
++}
++
++func TestResolveCancelsBothPendingLookups(t *testing.T) {
++	started, stopped := make(chan struct{}, 2), make(chan struct{}, 2)
++	router := &lookupRouter{strategy: C.DomainStrategyPreferIPv4, lookup: func(ctx context.Context, _ C.DomainStrategy) ([]netip.Addr, error) {
++		started <- struct{}{}
++		<-ctx.Done()
++		stopped <- struct{}{}
++		return nil, ctx.Err()
++	}}
++	ctx, cancel := context.WithCancel(context.Background())
++	defer cancel()
++	go func() { <-started; <-started; cancel() }()
++	_, err := resolveAndConnect(ctx, router, "proxy.test", adapter.DNSQueryOptions{Transport: &lookupTransport{}}, true, time.Millisecond, func(context.Context, []netip.Addr) (net.Conn, error) {
++		t.Error("unexpected connection")
++		return nil, errors.New("unexpected")
++	})
++	if !errors.Is(err, context.Canceled) {
++		t.Fatal(err)
++	}
++	for range 2 {
++		select {
++		case <-stopped:
++		case <-time.After(time.Second):
++			t.Fatal("lookup leaked")
++		}
++	}
++}
++
++func TestResolveLiteralAddressDoesNotQueryDNS(t *testing.T) {
++	target := M.ParseSocksaddr("127.0.0.1:443")
++	d := &resolveDialer{dialer: &lookupDialer{dial: func(_ context.Context, address M.Socksaddr) (net.Conn, error) {
++		if address != target {
++			t.Error(address)
++		}
++		return &trackedConnection{}, nil
++	}}}
++	conn, err := d.DialContext(context.Background(), "tcp", target)
++	if err != nil {
++		t.Fatal(err)
++	}
++	conn.Close()
++}
+diff --git a/dns/router.go b/dns/router.go
+index 5b6385f..ec77096 100644
+--- a/dns/router.go
++++ b/dns/router.go
+@@ -1,3 +1,4 @@
++// Modified for LoKi on 2026-11-01: connect without waiting for the other DNS family.
+ package dns
+ 
+ import (
+@@ -945,7 +946,7 @@ func (r *Router) exchangeWithRulesAsync(ctx context.Context, rules []adapter.DNS
+ 	}()
+ }
+ 
+-func (r *Router) resolveLookupStrategy(options adapter.DNSQueryOptions) C.DomainStrategy {
++func (r *Router) LookupStrategy(options adapter.DNSQueryOptions) C.DomainStrategy {
+ 	if options.LookupStrategy != C.DomainStrategyAsIS {
+ 		return options.LookupStrategy
+ 	}
+@@ -986,7 +987,7 @@ func filterAddressesByQueryType(addresses []netip.Addr, qType uint16) []netip.Ad
+ }
+ 
+ func (r *Router) lookupWithRules(ctx context.Context, rules []adapter.DNSRule, domain string, options adapter.DNSQueryOptions) ([]netip.Addr, error) {
+-	strategy := r.resolveLookupStrategy(options)
++	strategy := r.LookupStrategy(options)
+ 	lookupOptions := options
+ 	if strategy != C.DomainStrategyAsIS {
+ 		lookupOptions.Strategy = strategy
+diff --git a/release/forkop/package.sh b/release/forkop/package.sh
+index eca4ab7..52f71ea 100755
+--- a/release/forkop/package.sh
++++ b/release/forkop/package.sh
+@@ -1,4 +1,5 @@
+ #!/usr/bin/env bash
++# Modified for LoKi on 2026-11-01: identify the independent core build.
+ # Packages a sing-box-forkop binary for one OpenWrt architecture as .ipk and .apk.
+ # build.sh runs it once per architecture; the packages are byte-for-byte the
+ # same for the same binary, version and SOURCE_DATE_EPOCH.
+@@ -7,8 +8,8 @@ umask 022
+ 
+ PROJECT=$(cd "$(dirname "$0")/../.." && pwd)
+ PACKAGE=sing-box-forkop
+-URL=https://github.com/ushan0v/sing-box-forkop
+-MAINTAINER=ushan0v
++URL=https://github.com/Zagorsky17/LoKi
++MAINTAINER=Zagorsky17
+ LICENSE=GPL-3.0-or-later
+ DEPENDS=(ca-bundle)
+ # Every package that installs /usr/bin/sing-box. opkg removes one in the same transaction only
+@@ -49,8 +50,8 @@ fi
+ : "${SOURCE_DATE_EPOCH:=$(git -C "$PROJECT" log -1 --format=%ct)}"
+ 
+ case "$VARIANT" in
+-  base|full|tiny) DESCRIPTION="sing-box for Forkop, $VARIANT build" ;;
+-  *) DESCRIPTION="sing-box for Forkop, custom build" ;;
++  base|full|tiny) DESCRIPTION="sing-box for LoKi, $VARIANT build" ;;
++  *) DESCRIPTION="sing-box for LoKi, custom build" ;;
+ esac
+ ASSET="$OUTPUT/${PACKAGE}_${VERSION}_${VARIANT}_${ARCHITECTURE}"
+ 

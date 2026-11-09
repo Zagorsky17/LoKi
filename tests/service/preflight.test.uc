@@ -1,0 +1,954 @@
+let t = require("t");
+let stub = require("stub");
+let fs = require("fs");
+let preflight = require("service.preflight");
+let uci = require("uci");
+let scope = require("service.preflight_scope");
+
+// Real watchdog timing is covered by test_preflight_deadline.py; keep parser fixtures deterministic.
+let query_exec = require("core.exec");
+query_exec.deadline = (argv, seconds, limit) => {
+    try { return query_exec.combined(argv, limit); }
+    catch (e) { return { status: 1, output: "" }; }
+};
+
+const RULE_QUERY4 = "/usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin LC_ALL=C /sbin/ip -Numeric -j -4 rule list";
+const RULE_QUERY6 = replace(RULE_QUERY4, "-j -4", "-j -6");
+const ROUTE_QUERY4 = replace(RULE_QUERY4, "rule list", "route show table all");
+const ROUTE_QUERY6 = replace(ROUTE_QUERY4, "-j -4", "-j -6");
+const RESOURCE_QUERY = "/usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin LC_ALL=C /bin/df -Pk / /tmp";
+const NFT_QUERY = "/usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin LC_ALL=C /usr/sbin/nft -j list tables";
+const NFT_RULES_QUERY = "/usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin LC_ALL=C /usr/sbin/nft -s -j list ruleset";
+const NFT_JSON = '{"nftables":[{"metainfo":{"json_schema_version":1}}]}';
+const RESOURCE_DF = "Filesystem 1024-blocks Used Available Capacity Mounted on\nprivate-device 1000 400 500 45% /\ntmpfs 2000 100 1900 5% /tmp\n";
+
+function readonly_probes(service_reply, route4, route6) {
+    return stub.commands([[ RESOURCE_QUERY, { stdout: RESOURCE_DF } ], [ RULE_QUERY4, { stdout: "[]" } ], [ RULE_QUERY6, { stdout: "[]" } ],
+        [ ROUTE_QUERY4, { stdout: route4 ?? "[]" } ], [ ROUTE_QUERY6, { stdout: route6 ?? "[]" } ],
+        [ NFT_QUERY, { stdout: NFT_JSON } ], [ NFT_RULES_QUERY, { stdout: NFT_JSON } ],
+        [ "/usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin LC_ALL=C ubus", service_reply ]]);
+}
+
+function expected_probes(full_nft) {
+    let result = [ '/usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin LC_ALL=C ubus call service list {"verbose":true}',
+        RULE_QUERY4, RULE_QUERY4, RULE_QUERY6, RULE_QUERY6,
+        ROUTE_QUERY4, ROUTE_QUERY4, ROUTE_QUERY6, ROUTE_QUERY6, NFT_QUERY, NFT_QUERY ];
+    if (full_nft) push(result, NFT_RULES_QUERY, NFT_RULES_QUERY);
+    push(result, RESOURCE_QUERY); return result;
+}
+
+function write(path, data) {
+    fs.writefile(path, data);
+    fs.chmod(path, 0644);
+}
+
+function stanza(name, state) {
+    return "Package: " + name + "\nVersion: 1\nStatus: install ok " + (state || "installed") + "\n\n";
+}
+
+function fixture() {
+    let root = stub.tmpdir();
+    fs.chmod(root, 0755);
+    stub.real.system("umask 022; mkdir -p '" + root + "/usr/lib/opkg/info' '" + root + "/lib/apk/db'");
+    write(root + "/usr/lib/opkg/status", stanza("base-files"));
+    write(root + "/usr/lib/opkg/info/base-files.list", "/etc/banner\n");
+    return root;
+}
+
+function has(result, state, reason) {
+    return length(filter(result.observations, (item) => item.state == state && item.reason == reason)) > 0;
+}
+
+t.test("only released OpenWrt 24.10 and 25.12 satisfy the platform version check", () => {
+    for (let version in [ "24.10.0", "24.10.8", "24.10.1000", "25.12.6" ])
+        t.eq(preflight.release_status("DISTRIB_ID='OpenWrt'\nDISTRIB_RELEASE='" + version + "'\n"),
+            { state: "checked", reason: "openwrt-release-supported" });
+    for (let version in [ "23.05.5", "26.01.0", "24.10-SNAPSHOT", "25.12.6-rc1" ])
+        t.eq(preflight.release_status("DISTRIB_ID='OpenWrt'\nDISTRIB_RELEASE='" + version + "'\n"),
+            { state: "conflict", reason: "unsupported-openwrt-release" });
+    t.eq(preflight.release_status("DISTRIB_ID='ImmortalWrt'\nDISTRIB_RELEASE='25.12.6'\n"),
+        { state: "conflict", reason: "unsupported-openwrt-id" });
+    t.eq(preflight.release_status("DISTRIB_ID='OpenWrt'\nDISTRIB_RELEASE='25.12.6'\nDISTRIB_ARCH='aarch64_cortex-a53'\n"),
+        { state: "checked", reason: "openwrt-release-supported", architecture: "aarch64_cortex-a53" });
+});
+
+t.test("release metadata is parsed as data and rejects duplicates, truncation and injected syntax", () => {
+    for (let data in [ null, "", "DISTRIB_ID='OpenWrt'\n", "DISTRIB_RELEASE='24.10.8'\n",
+        "DISTRIB_ID=''\nDISTRIB_RELEASE='24.10.8'\n", "DISTRIB_ID='OpenWrt'\nDISTRIB_RELEASE=''\n",
+        "DISTRIB_ID='OpenWrt'\nDISTRIB_RELEASE='24.10.8'", "DISTRIB_ID='OpenWrt'\nDISTRIB_ID='OpenWrt'\nDISTRIB_RELEASE='24.10.8'\n",
+        "DISTRIB_ID='OpenWrt'\nDISTRIB_RELEASE='24.10.8'\nDISTRIB_RELEASE='25.12.6'\n",
+        "DISTRIB_ID='OpenWrt'\nDISTRIB_RELEASE='24.10.8'\nDISTRIB_ARCH='x86_64'\nDISTRIB_ARCH='x86_64'\n",
+        "DISTRIB_ID='OpenWrt'\nDISTRIB_RELEASE='24.10.8'\nDISTRIB_ARCH=''\n",
+        "DISTRIB_ID='OpenWrt'\nDISTRIB_RELEASE='24.10.8'\nDISTRIB_ARCH='x86_64'; touch synthetic-secret\n",
+        "DISTRIB_ID='OpenWrt'\nDISTRIB_RELEASE='24.10.8'; touch synthetic-secret\n",
+        "DISTRIB_ID='OpenWrt'\nDISTRIB_RELEASE='24.10.8'\u0000\n",
+        sprintf("%16385s", "x") ]) {
+        let status = preflight.release_status(data);
+        t.eq(status, { state: "incomplete", reason: "openwrt-release-invalid" });
+        t.excludes(sprintf("%J", status), "synthetic-secret");
+    }
+});
+
+t.test("platform file identity and unsupported release are reported without changing the host", () => {
+    let root = fixture();
+    fs.mkdir(root + "/etc", 0755);
+    let path = root + "/etc/openwrt_release";
+    let data = "DISTRIB_ID='OpenWrt'\nDISTRIB_RELEASE='24.10.8'\nDISTRIB_TARGET='x86/64'\n";
+    write(path, data);
+    readonly_probes({ stdout: "{}" });
+    let supported = preflight.collect(root);
+    stub.restore();
+    t.ok(has(supported, "checked", "openwrt-release-supported"));
+    t.ok(has(supported, "incomplete", "platform-requirements-unverified"));
+    t.eq(supported.install_allowed, false);
+    t.eq(fs.readfile(path), data);
+
+    write(path, replace(data, "24.10.8", "26.01.0"));
+    readonly_probes({ stdout: "{}" });
+    let unsupported = preflight.collect(root);
+    stub.restore();
+    t.ok(has(unsupported, "conflict", "unsupported-openwrt-release"));
+    t.eq(unsupported.install_allowed, false);
+
+    fs.rename(path, path + ".keep");
+    write(path + ".keep", "synthetic-secret\n");
+    fs.symlink(path + ".keep", path);
+    readonly_probes({ stdout: "{}" });
+    let linked = preflight.collect(root);
+    stub.restore();
+    t.ok(has(linked, "incomplete", "openwrt-release-not-regular-file"));
+    t.excludes(sprintf("%J", linked), "synthetic-secret");
+    t.eq(fs.readfile(path + ".keep"), "synthetic-secret\n");
+});
+
+t.test("status parser preserves installed packages and rejects ambiguous state", () => {
+    t.eq(preflight.packages_from_status(stanza("base-files") + stanza("old", "config-files")), [ "base-files" ]);
+    t.eq(preflight.packages_from_status(stanza("old", "not-installed")), []);
+    for (let state in [ "half-installed", "unpacked", "installed extra", "" ])
+        t.eq(preflight.packages_from_status("Package: test\nStatus: install ok " + state + "\n"), null);
+    t.eq(preflight.packages_from_status("Package: base-files\nStatus: install hold installed\n"), [ "base-files" ]);
+});
+
+t.test("status parser rejects duplicate, traversing and secret-bearing identifiers", () => {
+    for (let data in [ stanza("base-files") + stanza("base-files"),
+        "Package: test\nPackage: other\nStatus: install ok installed\n",
+        "Package: test\nStatus: install ok installed\nStatus: install ok installed\n",
+        stanza("../../secret"), stanza("x;touch /tmp/secret"), stanza("s\u0000ecret"),
+        "Package: test\n malformed\nStatus: install ok installed\n", " " + stanza("base-files"), "Broken", "" ])
+        t.eq(preflight.packages_from_status(data), null);
+});
+
+t.test("ownership parser uses exact paths and refuses incomplete grammar", () => {
+    t.eq(preflight.target_paths("/etc/config/loki.backup\n/etc/config/podkop\n/usr/bin/loki-core\n"), [ "/usr/bin/loki-core" ]);
+    for (let data in [ "", "/usr/bin/loki-core", "/etc/../usr/bin/loki-core\n", "//usr/bin/loki-core\n",
+        "/usr/bin/loki-core\n/usr/bin/loki-core\n", "/etc/secret\u0000x\n", "/etc/a\r\n" ])
+        t.eq(preflight.target_paths(data), null);
+});
+
+t.test("real metadata reads are bounded and refuse symlinks, hardlinks and directories", () => {
+    let root = fixture();
+    let path = root + "/data";
+    write(path, "test");
+    t.eq(preflight.read_metadata(path, 4, root).data, "test");
+    t.eq(preflight.read_metadata(path, 3, root).error, "size-limit");
+    fs.symlink(path, root + "/link");
+    t.eq(preflight.read_metadata(root + "/link", 8, root).error, "not-regular-file");
+    fs.symlink(root + "/usr/lib", root + "/parent-link");
+    t.eq(preflight.read_metadata(root + "/parent-link/opkg/status", 4096, root).error, "unsafe-parent-path");
+    t.eq(stub.real.system("ln '" + path + "' '" + root + "/hardlink'"), 0);
+    t.eq(preflight.read_metadata(path, 8, root).error, "hardlinked-file");
+    t.eq(preflight.read_metadata(root, 8, root).error, "unsafe-root");
+});
+
+t.test("inode substitution is rejected before reading data", () => {
+    let root = fixture();
+    let path = root + "/data";
+    write(path, "first");
+    write(root + "/other", "other");
+    let open = fs.open;
+    fs.open = (name, mode) => open(name == path ? root + "/other" : name, mode);
+    let value = preflight.read_metadata(path, 8, root);
+    fs.open = open;
+    t.eq(value.error, "changed-during-read");
+});
+
+t.test("metadata close failures cannot turn a read into verified input", () => {
+    let root = fixture();
+    let path = root + "/data";
+    write(path, "synthetic-secret");
+    let open = fs.open;
+    for (let failure in [ "false", "throw" ]) {
+        fs.open = (name, mode) => {
+            let file = open(name, mode);
+            return { fileno: () => file.fileno(), read: (size) => file.read(size),
+                error: () => file.error(), close: () => {
+                    file.close();
+                    if (failure == "throw") die("synthetic-secret");
+                    return false;
+                } };
+        };
+        let result;
+        try { result = preflight.read_metadata(path, 32, root); }
+        catch (e) { result = { error: "unexpected-exception" }; }
+        fs.open = open;
+        t.eq(result.error, "read-failed");
+        t.excludes(sprintf("%J", result), "synthetic-secret");
+    }
+});
+
+t.test("a failed platform metadata close keeps the installation gate closed", () => {
+    let root = fixture();
+    fs.mkdir(root + "/etc", 0755);
+    let path = root + "/etc/openwrt_release";
+    write(path, "DISTRIB_ID='OpenWrt'\nDISTRIB_RELEASE='24.10.8'\n");
+    let open = fs.open;
+    fs.open = (name, mode) => {
+        let file = open(name, mode);
+        if (name != path) return file;
+        return { fileno: () => file.fileno(), read: (size) => file.read(size),
+            error: () => file.error(), close: () => { file.close(); return false; } };
+    };
+    readonly_probes({ stdout: "{}" });
+    let result;
+    try { result = preflight.collect(root); }
+    catch (e) { result = { observations: [] }; }
+    stub.restore();
+    fs.open = open;
+    t.ok(has(result, "incomplete", "openwrt-release-read-failed"));
+    t.eq(result.install_allowed, false);
+});
+
+t.test("untrusted file and ancestor permissions refuse before open", () => {
+    let root = fixture();
+    let path = root + "/usr/lib/opkg/status";
+    let open = fs.open;
+    let opened = false;
+    fs.open = (name, mode) => { opened = true; return open(name, mode); };
+    fs.chmod(path, 0666);
+    t.eq(preflight.read_metadata(path, 4096, root).error, "unsafe-mode");
+    fs.chmod(path, 0644);
+    fs.chmod(root + "/usr/lib", 0775);
+    t.eq(preflight.read_metadata(path, 4096, root).error, "unsafe-parent-path");
+    fs.open = open;
+    t.eq(opened, false);
+    fs.chmod(root + "/usr/lib", 0755);
+});
+
+t.test("real collector reports only the implemented coverage and never permits install", () => {
+    let root = fixture();
+    let before = fs.readfile(root + "/usr/lib/opkg/status");
+    readonly_probes({ stdout: "{}" });
+    let result = preflight.collect(root);
+    let again = preflight.collect(root);
+    t.eq(stub.command_lines(), [ ...expected_probes(), ...expected_probes() ]);
+    stub.restore();
+    t.eq(result.result, "incomplete");
+    t.eq(result.complete, false);
+    t.eq(result.install_allowed, false);
+    t.ok(has(result, "checked", "metadata-read-complete"));
+    t.ok(has(result, "incomplete", "not-implemented"));
+    t.eq(fs.readfile(root + "/usr/lib/opkg/status"), before);
+    t.eq(again, result, "repeat reads have identical results");
+});
+
+t.test("a supplied prepared config is read from its own root and remains nonauthorizing", () => {
+    let root = fixture();
+    fs.mkdir(root + "/loki");
+    fs.mkdir(root + "/loki/files");
+    fs.mkdir(root + "/loki/files/etc");
+    fs.mkdir(root + "/loki/files/etc/config");
+    let path = root + "/loki/files/etc/config/loki";
+    let data = "config settings 'settings'\n";
+    write(path, data);
+    let scratch = stub.tmpdir();
+    fs.chmod(scratch, 0700);
+    uci.__reset();
+    uci.__seed("loki", [ { ".name": "settings", ".type": "settings",
+        config_format: "loki", config_version: "2.0.0",
+        dns_server: [ "77.88.8.8" ], bootstrap_dns_server: [ "77.88.8.8" ] } ]);
+    readonly_probes({ stdout: "{}" });
+    let result = preflight.collect(root, null, path, scratch, root);
+    stub.restore();
+    t.ok(has(result, "checked", "uci-syntax-checked"));
+    t.ok(has(result, "checked", "uci-schema-checked"));
+    t.ok(has(result, "checked", "uci-values-checked"));
+    t.ok(has(result, "incomplete", "candidate-core-unverified"));
+    t.eq(result.install_allowed, false);
+    t.eq(fs.readfile(path), data);
+    t.eq(fs.lstat(scratch + "/config"), null);
+
+    fs.unlink(path);
+    fs.symlink(root + "/usr/lib/opkg/status", path);
+    let unsafe = preflight.collect(root, null, path, scratch, root);
+    t.ok(has(unsafe, "incomplete", "candidate-config-not-regular-file"));
+    t.excludes(sprintf("%J", unsafe), data);
+});
+
+t.test("platform UCI snapshots are bounded, read-only and rechecked after prepared generation", () => {
+    let root = fixture();
+    stub.real.system("mkdir -p '" + root + "/etc/config' '" + root + "/loki/files/etc/config'");
+    let path = root + "/loki/files/etc/config/loki";
+    let own_config = "config settings 'settings'\n# before\n";
+    write(path, own_config);
+    let dhcp = root + "/etc/config/dhcp";
+    let system = root + "/etc/config/system";
+    let firewall = root + "/etc/config/firewall";
+    let data = "config dnsmasq 'dns'\n option domain 'before'\n";
+    write(dhcp, data);
+    write(system, "config timeserver 'ntp'\n");
+    write(firewall, "config defaults\n# before\n");
+    uci.__reset();
+    uci.__seed("loki", [ { ".name": "settings", ".type": "settings",
+        config_format: "loki", config_version: "2.0.0",
+        dns_server: [ "1.1.1.1" ], bootstrap_dns_server: [ "1.1.1.1" ] } ]);
+    uci.__seed("dhcp", [ { ".name": "dns", ".type": "dnsmasq", domain: "before" } ]);
+    uci.__seed("system", [ { ".name": "ntp", ".type": "timeserver" } ]);
+    uci.__seed("firewall", [ { ".name": "defaults", ".type": "defaults" } ]);
+    for (let changed in [ "none", "dhcp", "loki", "firewall" ]) {
+        let temporary = stub.tmpdir();
+        fs.chmod(temporary, 0700);
+        let original = fs.open;
+        let reads = { dhcp: 0, loki: 0, firewall: 0 };
+        fs.open = (name, ...args) => {
+            let file = original(name, ...args);
+            if ((name != dhcp && name != path && name != firewall) || file == null) return file;
+            let label = name == dhcp ? "dhcp" : name == firewall ? "firewall" : "loki";
+            reads[label]++;
+            return { read: (bytes) => {
+                let value = file.read(bytes);
+                return changed == label && reads[label] == 2 ? replace(value, "before", "after_") : value;
+            }, fileno: () => file.fileno(), error: () => file.error(), close: () => file.close() };
+        };
+        readonly_probes({ stdout: "{}" });
+        let result = preflight.collect(root, null, path, temporary, root);
+        stub.restore();
+        fs.open = original;
+        t.eq(reads, { dhcp: 2, loki: 2, firewall: 2 });
+        t.ok(has(result, "checked", "uci-generation-empty"));
+        t.ok(has(result, "checked", "nft-persisted-inert-includes-checked"));
+        t.eq(has(result, "incomplete", "platform-config-changed-on-recheck"), changed == "dhcp" || changed == "firewall");
+        t.eq(has(result, "incomplete", "candidate-config-changed-on-recheck"), changed == "loki");
+        t.eq(result.install_allowed, false);
+        t.eq(fs.readfile(dhcp), data);
+        t.eq(fs.readfile(path), own_config);
+        t.eq(fs.readfile(system), "config timeserver 'ntp'\n");
+        t.eq(fs.readfile(firewall), "config defaults\n# before\n");
+        t.excludes(sprintf("%J", result), "before");
+        t.excludes(sprintf("%J", result), "after_");
+        t.eq(fs.lstat(temporary + "/config"), null);
+    }
+});
+
+t.test("foreign installed owners block planned paths without reading their contents", () => {
+    let root = fixture();
+    write(root + "/usr/lib/opkg/status", stanza("other-core") + stanza("another-core"));
+    for (let name in [ "other-core", "another-core" ])
+        write(root + "/usr/lib/opkg/info/" + name + ".list", "/usr/bin/loki-core\n");
+    let result = preflight.collect(root);
+    t.eq(result.result, "conflict");
+    t.eq(length(filter(result.observations, (item) => item.state == "conflict")), 1);
+    t.eq(result.complete, false);
+    t.eq(result.install_allowed, false);
+    t.excludes(sprintf("%J", result), "other-core");
+});
+
+t.test("matching package names do not prove our provenance", () => {
+    let root = fixture();
+    write(root + "/usr/lib/opkg/status", stanza("loki"));
+    write(root + "/usr/lib/opkg/info/loki.list", "/etc/config/loki\n");
+    let result = preflight.collect(root);
+    t.eq(result.result, "incomplete");
+    t.ok(has(result, "incomplete", "package-name-does-not-prove-own-origin"));
+});
+
+t.test("missing and corrupt ownership data cannot become empty coverage", () => {
+    let root = fixture();
+    for (let data in [ "", "/etc/banner", "/etc/../usr/bin/loki-core\n" ]) {
+        write(root + "/usr/lib/opkg/info/base-files.list", data);
+        t.ok(has(preflight.collect(root), "incomplete", "ownership-list-invalid"));
+    }
+    fs.unlink(root + "/usr/lib/opkg/info/base-files.list");
+    t.ok(has(preflight.collect(root), "incomplete", "ownership-list-unavailable"));
+});
+
+t.test("proven conflicts survive other incomplete observations", () => {
+    let root = fixture();
+    write(root + "/usr/lib/opkg/status", stanza("base-files") + stanza("missing"));
+    write(root + "/usr/lib/opkg/info/base-files.list", "/etc/config/loki\n");
+    let result = preflight.collect(root);
+    t.eq(result.result, "conflict");
+    t.ok(has(result, "incomplete", "ownership-list-unavailable"));
+});
+
+t.test("APK and multiple databases fail closed without package-manager execution", () => {
+    let root = fixture();
+    write(root + "/lib/apk/db/installed", "P:synthetic-secret\n");
+    t.ok(has(preflight.collect(root), "incomplete", "multiple-package-databases"));
+    fs.unlink(root + "/usr/lib/opkg/status");
+    let result = preflight.collect(root);
+    t.ok(has(result, "incomplete", "apk-record-termination-invalid"));
+    t.excludes(sprintf("%J", result), "synthetic-secret");
+});
+
+t.test("malformed metadata never enters the report", () => {
+    let root = fixture();
+    write(root + "/usr/lib/opkg/status", stanza("secret; do-not-execute"));
+    let result = preflight.collect(root);
+    t.eq(result.result, "incomplete");
+    t.excludes(sprintf("%J", result), "secret");
+});
+
+t.test("rejected input still consumes the aggregate read budget", () => {
+    let root = fixture();
+    let status = "";
+    let body = sprintf("%1048575s", "") + "\u0000";
+    for (let i = 0; i < 17; i++) {
+        status += stanza("package-" + i);
+        write(root + "/usr/lib/opkg/info/package-" + i + ".list", body);
+    }
+    write(root + "/usr/lib/opkg/status", status);
+    let open = fs.open;
+    let lists_opened = 0;
+    fs.open = (path, mode) => {
+        if (match(path, /\.list$/))
+            lists_opened++;
+        return open(path, mode);
+    };
+    let result = preflight.collect(root);
+    fs.open = open;
+    t.ok(has(result, "incomplete", "aggregate-byte-limit"));
+    t.ok(has(result, "incomplete", "ownership-list-nul-byte"));
+    t.eq(lists_opened, 15, "status recheck is reserved before opening another 1 MiB list");
+});
+
+t.test("status and ownership-list size limits have distinct reasons", () => {
+    let root = fixture();
+    write(root + "/usr/lib/opkg/info/base-files.list", sprintf("%1048577s", ""));
+    t.ok(has(preflight.collect(root), "incomplete", "ownership-list-size-limit"));
+    write(root + "/usr/lib/opkg/status", sprintf("%4194305s", ""));
+    t.ok(has(preflight.collect(root), "incomplete", "status-size-limit"));
+});
+
+t.test("a directory at a critical file target is a conflict even without a package owner", () => {
+    let root = fixture();
+    stub.real.system("umask 022; mkdir -p '" + root + "/usr/bin/loki'");
+    let result = preflight.collect(root);
+    t.eq(result.result, "conflict");
+    t.ok(has(result, "conflict", "candidate-target-type-conflict"));
+    t.eq(result.install_allowed, false);
+});
+
+t.test("a candidate symlink never opens or reports its private target", () => {
+    let root = fixture();
+    stub.real.system("umask 022; mkdir -p '" + root + "/usr/bin'");
+    let secret = root + "/synthetic-private-target";
+    write(secret, "synthetic-secret-must-stay-private");
+    fs.symlink(secret, root + "/usr/bin/loki");
+    let open = fs.open;
+    let opened = false;
+    fs.open = (path, mode) => {
+        if (path == secret || path == root + "/usr/bin/loki") opened = true;
+        return open(path, mode);
+    };
+    let result = preflight.collect(root);
+    fs.open = open;
+    t.ok(has(result, "conflict", "candidate-path-symlink"));
+    t.eq(opened, false);
+    t.excludes(sprintf("%J", result), "synthetic-private-target");
+    t.excludes(sprintf("%J", result), "synthetic-secret-must-stay-private");
+    t.eq(fs.readfile(secret), "synthetic-secret-must-stay-private");
+});
+
+t.test("symlink and writable parent paths cannot become checked absence", () => {
+    for (let kind in [ "link", "writable" ]) {
+        let root = fixture();
+        if (kind == "link") fs.symlink(root + "/private-parent", root + "/usr/bin");
+        else {
+            fs.mkdir(root + "/usr/bin", 0777);
+            fs.chmod(root + "/usr/bin", 0777);
+        }
+        let result = preflight.collect(root);
+        t.ok(has(result, "incomplete", kind == "link" ? "candidate-parent-symlink" : "candidate-parent-unsafe"));
+        t.eq(result.install_allowed, false);
+        t.excludes(sprintf("%J", result), "private-parent");
+    }
+});
+
+t.test("unowned regular files are origin unverified and are not read or removed", () => {
+    let root = fixture();
+    stub.real.system("umask 022; mkdir -p '" + root + "/usr/bin'");
+    let path = root + "/usr/bin/loki";
+    write(path, "synthetic-private-existing-file");
+    let result = preflight.collect(root);
+    t.ok(has(result, "incomplete", "candidate-existing-file-origin-unverified"));
+    t.eq(fs.readfile(path), "synthetic-private-existing-file");
+    t.excludes(sprintf("%J", result), "synthetic-private-existing-file");
+    t.eq(preflight.collect(root), result);
+});
+
+t.test("missing paths have bounded checked absence but the full installation gate stays closed", () => {
+    let result = preflight.collect(fixture());
+    t.ok(has(result, "checked", "candidate-path-absent"));
+    t.eq(result.complete, false);
+    t.eq(result.install_allowed, false);
+    t.eq(result.result, "incomplete");
+});
+
+t.test("active foreign service metadata is bounded and never exposes commands or environment", () => {
+    let root = fixture();
+    readonly_probes({ stdout: sprintf("%J", { podkop: { instances: { main: {
+        running: true, pid: 123, command: [ "synthetic-private-command", "synthetic-secret" ],
+        env: { TOKEN: "synthetic-secret" }
+    } } } }) });
+    let result = preflight.collect(root);
+    let commands = stub.command_lines();
+    stub.restore();
+    t.ok(has(result, "incomplete", "foreign-service-active-unverified"));
+    t.eq(commands, expected_probes());
+    t.excludes(sprintf("%J", result), "synthetic-secret");
+    t.excludes(sprintf("%J", result), "synthetic-private-command");
+    t.eq(result.install_allowed, false);
+});
+
+t.test("service query errors do not become an empty service inventory", () => {
+    let root = fixture();
+    readonly_probes({ status: 2, stdout: "synthetic-private-query-error" });
+    let result = preflight.collect(root);
+    stub.restore();
+    t.ok(has(result, "incomplete", "service-query-failed"));
+    t.excludes(sprintf("%J", result), "synthetic-private-query-error");
+    t.eq(result.install_allowed, false);
+});
+
+t.test("enabled competing init links are inspected without executing or stopping their scripts", () => {
+    let root = fixture();
+    stub.real.system("umask 022; mkdir -p '" + root + "/etc/init.d' '" + root + "/etc/rc.d'");
+    let script = root + "/etc/init.d/podkop";
+    let marker = root + "/must-not-exist";
+    write(script, "#!/bin/sh\ntouch '" + marker + "'\n");
+    fs.chmod(script, 0755);
+    fs.symlink("../init.d/podkop", root + "/etc/rc.d/S95podkop");
+    readonly_probes({ stdout: "{}" });
+    let result = preflight.collect(root);
+    let commands = stub.command_lines();
+    stub.restore();
+    t.ok(has(result, "incomplete", "enabled-service-origin-unverified"));
+    t.eq(fs.lstat(marker), null);
+    t.eq(commands, expected_probes());
+    t.eq(result.install_allowed, false);
+});
+
+t.test("disabled init leftovers alone are not conflicting or executed", () => {
+    let root = fixture();
+    stub.real.system("umask 022; mkdir -p '" + root + "/etc/init.d' '" + root + "/etc/rc.d'");
+    write(root + "/etc/init.d/podkop", "synthetic-unused-init-body");
+    readonly_probes({ stdout: "{}" });
+    let result = preflight.collect(root);
+    stub.restore();
+    t.ok(has(result, "checked", "autostart-directory-read-complete"));
+    t.eq(result.result, "incomplete");
+    t.excludes(sprintf("%J", result), "synthetic-unused-init-body");
+});
+
+function listener_fixture(root, broken) {
+    stub.real.system("umask 022; mkdir -p '" + root + "/proc/self/net'");
+    for (let name in [ "tcp", "tcp6", "udp", "udp6" ]) {
+        let v6 = substr(name, -1) == "6";
+        let udp = substr(name, 0, 3) == "udp";
+        let header = "sl local_address " + (v6 ? "remote_address" : "rem_address") +
+            " st tx_queue rx_queue tr tm->when retrnsmt uid timeout inode" + (udp ? " ref pointer drops" : "") + "\n";
+        let address = v6 ? "00000000000000000000000000000000" : "00000000";
+        let row = "0: " + address + ":0035 " + address + ":0000 " + (udp ? "07" : "0A") +
+            " 00000000:00000000 00:00000000 00000000 0 0 12345 1 0000000000000000" + (udp ? " 0" : "") + "\n";
+        write(root + "/proc/self/net/" + name, broken == name ? header + "malformed-private-row\n" : header + row);
+    }
+}
+
+t.test("standalone collector includes all four bounded listener snapshots", () => {
+    let root = fixture();
+    listener_fixture(root);
+    readonly_probes({ stdout: "{}" });
+    let result = preflight.collect(root);
+    stub.restore();
+    t.eq(length(filter(result.observations, (item) => item.kind == "listeners" &&
+        item.reason == "listener-table-read-complete")), 4);
+    t.ok(has(result, "incomplete", "listener-candidate-port-occupied-unverified"));
+    t.eq(result.install_allowed, false);
+});
+
+t.test("a malformed socket table is incomplete rather than an empty listener inventory", () => {
+    let root = fixture();
+    listener_fixture(root, "udp6");
+    readonly_probes({ stdout: "{}" });
+    let result = preflight.collect(root);
+    stub.restore();
+    t.ok(has(result, "incomplete", "listener-table-row-invalid"));
+    t.excludes(sprintf("%J", result), "malformed-private-row");
+    t.eq(result.complete, false);
+});
+
+t.test("socket discovery keeps mandatory ownership and namespace gaps", () => {
+    let root = fixture();
+    listener_fixture(root);
+    readonly_probes({ stdout: "{}" });
+    let result = preflight.collect(root);
+    stub.restore();
+    t.ok(has(result, "incomplete", "listener-process-ownership-unverified"));
+    t.ok(has(result, "incomplete", "listener-namespace-and-bind-configuration-unverified"));
+});
+
+t.test("process discovery reports unreadable procfs instead of granting installation", () => {
+    let root = fixture();
+    readonly_probes({ stdout: "{}" });
+    let result = preflight.collect(root);
+    stub.restore();
+    t.ok(has(result, "incomplete", "process-directory-unavailable"));
+    t.eq(result.complete, false);
+    t.eq(result.install_allowed, false);
+});
+
+t.test("an empty fixture procfs cannot prove system process or script coverage", () => {
+    let root = fixture();
+    fs.mkdir(root + "/proc", 0755);
+    readonly_probes({ stdout: "{}" });
+    let result = preflight.collect(root);
+    stub.restore();
+    t.ok(has(result, "checked", "process-directory-read-complete"));
+    t.ok(has(result, "incomplete", "process-namespace-and-visibility-unverified"));
+    t.ok(has(result, "incomplete", "process-script-and-package-origin-unverified"));
+    t.eq(result.complete, false);
+    t.eq(result.install_allowed, false);
+});
+
+t.test("policy rule snapshots cover both families and retain mandatory ownership gaps", () => {
+    let root = fixture();
+    stub.commands([
+        [ (argv) => index(argv, "/sbin/ip") >= 0, { stdout: "[]\n" } ],
+        [ (argv) => index(argv, "/usr/sbin/nft") >= 0, { stdout: NFT_JSON } ],
+        [ "/usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin LC_ALL=C ubus", { stdout: "{}" } ]
+    ]);
+    let result = preflight.collect(root);
+    stub.restore();
+    t.eq(length(filter(result.observations, (item) => item.reason == "policy-rule-snapshot-read-complete")), 2);
+    t.ok(has(result, "incomplete", "policy-rules-ownership-configuration-unverified"));
+    t.ok(has(result, "incomplete", "policy-routes-and-namespace-unverified"));
+    t.eq(result.complete, false);
+    t.eq(result.install_allowed, false);
+});
+
+t.test("ambiguous policy rule JSON is incomplete and never exposes raw private values", () => {
+    let root = fixture();
+    stub.commands([
+        [ (argv) => index(argv, "/sbin/ip") >= 0,
+          { stdout: '[{"priority":105,"src":"all","table":"105","fwmark":"0x4000000","fwmark":"0x100000"}]' } ],
+        [ (argv) => index(argv, "/usr/sbin/nft") >= 0, { stdout: NFT_JSON } ],
+        [ "/usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin LC_ALL=C ubus", { stdout: "{}" } ]
+    ]);
+    let result = preflight.collect(root);
+    stub.restore();
+    t.ok(has(result, "incomplete", "policy-rule-json-invalid"));
+    t.excludes(sprintf("%J", result), "0x100000");
+    t.eq(result.install_allowed, false);
+});
+
+t.test("resource observations distinguish readable snapshots from unverified transaction budgets", () => {
+    let root = fixture();
+    readonly_probes({ stdout: "{}" });
+    let result = preflight.collect(root);
+    t.ok(has(result, "incomplete", "resource-memory-unavailable"));
+    t.ok(has(result, "checked", "resource-filesystem-snapshot-read-complete"));
+    t.ok(has(result, "incomplete", "resource-transaction-budget-namespace-unverified"));
+    t.eq([ result.result, result.complete, result.install_allowed ], [ "incomplete", false, false ]);
+    t.excludes(sprintf("%J", result), "private-device");
+    t.eq(stub.command_lines(), expected_probes());
+});
+
+t.test("route snapshots add only bounded hints and keep ownership and the installation gate incomplete", () => {
+    let root = fixture();
+    readonly_probes({ stdout: "{}" },
+        '[{"type":"2","dst":"192.0.2.1","dev":"private-device","table":"105","flags":[]}]',
+        '[{"dst":"default","encap":"SYNTHETIC_ROUTE_CANARY"}]');
+    let result = preflight.collect(root);
+    let commands = stub.command_lines();
+    stub.restore();
+    t.ok(has(result, "checked", "policy-route-snapshot-read-complete"));
+    t.ok(has(result, "incomplete", "policy-route-candidate-table-unverified"));
+    t.ok(has(result, "incomplete", "policy-route-selector-or-action-unverified"));
+    t.ok(has(result, "incomplete", "policy-routes-ownership-configuration-unverified"));
+    t.eq([ result.result, result.complete, result.install_allowed ], [ "incomplete", false, false ]);
+    t.eq(length(filter(commands, (command) => command == ROUTE_QUERY4)), 2);
+    t.eq(length(filter(commands, (command) => command == ROUTE_QUERY6)), 1);
+    for (let value in [ "192.0.2", "private-device", "SYNTHETIC_ROUTE_CANARY" ])
+        t.excludes(sprintf("%J", result), value);
+});
+
+t.test("the environment snapshot encloses every collector and cannot clear the global gate", () => {
+    for (let state in [ "checked", "incomplete" ]) {
+        let snapshot = scope.snapshot;
+        let check = scope.check;
+        let calls = [];
+        let token = { identities: {} };
+        let result;
+        let error;
+        scope.snapshot = () => { push(calls, "before"); t.eq(stub.command_lines(), []); return token; };
+        scope.check = (first) => {
+            push(calls, "after");
+            t.eq(first, token);
+            t.eq(stub.command_lines(), expected_probes(true));
+            return { kind: "environment", object: "namespace-layout", state,
+                reason: state == "checked" ? "environment-pid1-relative-scope-checked" : "environment-scope-changed-during-read" };
+        };
+        try {
+            let root = fixture();
+            readonly_probes({ stdout: "{}" });
+            result = preflight.collect(root);
+        }
+        catch (e) { error = e; }
+        scope.snapshot = snapshot;
+        scope.check = check;
+        stub.restore();
+        if (error != null) die(error);
+        t.eq(calls, [ "before", "after" ]);
+        t.ok(has(result, "checked", "nft-compatible-rules-checked"));
+        t.ok(has(result, state, state == "checked" ? "environment-pid1-relative-scope-checked" : "environment-scope-changed-during-read"));
+        t.ok(has(result, "incomplete", "openwrt-release-changed-or-unavailable"));
+        t.eq([ result.complete, result.install_allowed ], [ false, false ]);
+    }
+});
+
+t.test("report truncation retains the final scope failure and mandatory origin gap", () => {
+    let services = require("service.preflight_services");
+    let collect = services.collect;
+    let check = scope.check;
+    let result;
+    let error;
+    services.collect = () => {
+        let items = [];
+        for (let i = 0; i < 300; i++) push(items, { kind: "services", object: "fixture", state: "checked", reason: "fixture" });
+        return items;
+    };
+    scope.check = () => ({ kind: "environment", object: "namespace-layout", state: "incomplete",
+        reason: "environment-scope-changed-during-read" });
+    try { readonly_probes({ stdout: "{}" }); result = preflight.collect(fixture()); }
+    catch (e) { error = e; }
+    services.collect = collect;
+    scope.check = check;
+    stub.restore();
+    if (error != null) die(error);
+    t.eq(length(result.observations), 256);
+    for (let reason in [ "environment-scope-changed-during-read", "openwrt-release-changed-or-unavailable", "observation-count-limit" ])
+        t.ok(has(result, "incomplete", reason));
+    t.eq([ result.complete, result.install_allowed ], [ false, false ]);
+});
+
+t.test("dependency metadata shares the strict installed-status parser and preserves the name-only API", () => {
+    let data = "Package: ucode\nVersion: 1.0-r1\nStatus: install ok installed\n" +
+        "Depends: libc,\n lib-platform (= 2.0-r1)\nProvides: interpreter,\n script-engine\n\n" + stanza("removed", "config-files");
+    t.eq(preflight.package_records_from_status(data), [{ name: "ucode", version: "1.0-r1",
+        depends: "libc, lib-platform (= 2.0-r1)", provides: "interpreter, script-engine" }]);
+    t.eq(preflight.packages_from_status(data), [ "ucode" ]);
+    t.eq(preflight.package_records_from_status(replace(data, "install ok installed", "install ok unpacked")), null);
+    t.eq(preflight.package_records_from_status(replace(data, "Version: 1.0-r1\n", "Version: 1.0-r1\n private-tail\n"))[0].version,
+        "1.0-r1 private-tail");
+});
+
+t.test("dependency observations use only the same stable package database and no PM commands", () => {
+    let root = fixture();
+    let data = stanza("base-files") + "Package: ucode\nVersion: 1.0-r1\nStatus: install ok installed\nDepends: lib-platform (= 2.0-r1)\n\n" +
+        "Package: lib-platform\nVersion: 2.0-r1\nStatus: install ok installed\n\n";
+    write(root + "/usr/lib/opkg/status", data);
+    for (let name in [ "ucode", "lib-platform" ]) write(root + "/usr/lib/opkg/info/" + name + ".list", "/etc/banner\n");
+    readonly_probes({ stdout: "{}" });
+    let result = preflight.collect(root);
+    let commands = stub.command_lines();
+    stub.restore();
+    t.ok(length(filter(result.observations, (row) => row.kind == "dependencies" && row.object == "ucode" && row.state == "checked")) == 1);
+    t.ok(has(result, "incomplete", "required-system-package-missing"));
+    t.eq(commands, expected_probes());
+    t.eq(fs.readfile(root + "/usr/lib/opkg/status"), data);
+    t.eq([ result.complete, result.install_allowed ], [ false, false ]);
+    t.eq(length(filter(result.observations, (row) => row.kind == "dependencies" && row.reason == "not-implemented")), 0);
+
+    fs.unlink(root + "/usr/lib/opkg/status");
+    readonly_probes({ stdout: "{}" });
+    let unavailable = preflight.collect(root);
+    stub.restore();
+    t.eq(length(filter(unavailable.observations, (row) => row.kind == "dependencies" && row.state == "checked")), 0);
+});
+
+t.test("an unstable status recheck cannot grant dependency coverage from its first read", () => {
+    let root = fixture();
+    let path = root + "/usr/lib/opkg/status";
+    let data = "Package: ucode\nVersion: 1.0-r1\nStatus: install ok installed\n\n";
+    write(path, data); write(root + "/usr/lib/opkg/info/ucode.list", "/etc/banner\n");
+    let open = fs.open;
+    let reads = 0;
+    fs.open = (name, mode) => {
+        let file = open(name, mode);
+        if (name != path || file == null) return file;
+        return { fileno: () => file.fileno(), error: () => file.error(), close: () => file.close(),
+            read: (count) => { let text = file.read(count); return ++reads == 2 ? replace(text, "1.0-r1", "9.0-r1") : text; } };
+    };
+    let result;
+    let error;
+    try { readonly_probes({ stdout: "{}" }); result = preflight.collect(root); }
+    catch (e) { error = e; }
+    fs.open = open; stub.restore();
+    if (error != null) die(error);
+    t.eq(reads, 2);
+    t.ok(has(result, "incomplete", "status-changed-or-unavailable-on-recheck"));
+    t.eq(length(filter(result.observations, (row) => row.kind == "dependencies" && row.state == "checked")), 0);
+    t.eq(fs.readfile(path), data);
+});
+
+t.test("IPv6 switched off on interfaces remains distinct from an unavailable IPv6 kernel", () => {
+    let nft=require("nft.state"),original=nft.ipv6_interfaces;
+    for(let interfaces in [[],null]) {
+        nft.ipv6_interfaces=()=>interfaces;
+        let result,error;
+        try {readonly_probes({stdout:"{}"});result=preflight.collect(fixture());}
+        catch(e){error=e;}
+        nft.ipv6_interfaces=original;stub.restore();
+        if(error!=null)die(error);
+        t.ok(has(result,interfaces==null?"incomplete":"checked",interfaces==null?"kernel-ipv6-context-unavailable":"kernel-ipv6-context-checked"));
+        t.eq(result.install_allowed,false);
+    }
+});
+
+t.test("checked IPv4 and IPv6 routing cannot bypass the remaining admission domains", () => {
+    let readlink=fs.readlink;
+    fs.readlink=(path)=>index(path,"/ns/net")>=0?"net:[123]":readlink(path);
+    let output,error;
+    try {readonly_probes({stdout:"{}"});output=preflight.collect(fixture());}
+    catch(e){error=e;}
+    stub.restore();fs.readlink=readlink;
+    if(error!=null)die(error);
+    for(let kind in ["ipv4-routes-rules","ipv6-routes-rules"]) {
+        let rows=filter(output.observations,(item)=>item.kind==kind);
+        t.eq(length(rows),2);
+        t.eq(length(filter(rows,(item)=>item.state=="checked")),2);
+    }
+    t.eq([output.complete,output.install_allowed],[false,false]);
+    t.ok(has(output,"incomplete","not-implemented"));
+});
+
+t.test("pending UCI observations are collected without opening the unfinished aggregate gate", () => {
+    let root=fixture();
+    for(let name in ["/tmp","/tmp/run"])fs.mkdir(root+name,0755);
+    fs.mkdir(root+"/tmp/run/rpcd",0700);fs.symlink("tmp",root+"/var");
+    readonly_probes({stdout:"{}"});let output=preflight.collect(root);stub.restore();
+    t.ok(has(output,"checked","uci-pending-snapshot-checked"));
+    t.eq([output.complete,output.install_allowed],[false,false]);
+    fs.mkdir(root+"/tmp/.uci",0700);fs.writefile(root+"/tmp/.uci/dhcp","synthetic-private-delta");
+    fs.chmod(root+"/tmp/.uci/dhcp",0600);
+    readonly_probes({stdout:"{}"});output=preflight.collect(root);stub.restore();
+    t.ok(has(output,"incomplete","uci-pending-config-changes"));
+    t.eq(fs.readfile(root+"/tmp/.uci/dhcp"),"synthetic-private-delta");
+    t.excludes(sprintf("%J",output),"synthetic-private-delta");
+});
+
+t.test("own files require a stable verified kit and exclusive matching package metadata", () => {
+    let update = require("service.update");
+    let original = { root: update.paths.payload_root, installed: update.installed, read: update.read, pending: update.pending };
+    let error;
+    try {
+        for (let scenario in [ "valid", "foreign", "double", "version", "missing-list", "proof-error", "changed", "retained", "aborted", "rolled-back", "unknown", "pending", "mode" ]) {
+            let root = fixture(), retained = index([ "retained", "aborted", "rolled-back", "unknown", "pending", "mode" ], scenario) >= 0;
+            let target = retained ? "/etc/config/loki" : "/usr/bin/loki";
+            stub.real.system("mkdir -p '" + root + "/usr/bin' '" + root + "/etc/config'");
+            write(root + target, "synthetic-private-config"); fs.chmod(root + target, retained ? scenario == "mode" ? 0644 : 0600 : 0755);
+            if (!retained) {
+                let name = scenario == "foreign" ? "other" : "loki";
+                write(root + "/usr/lib/opkg/status", stanza("base-files") + replace(stanza(name), "Version: 1", "Version: " + (scenario == "version" ? "3" : "2")) + (scenario == "double" ? stanza("loki-core") : ""));
+                if (scenario != "missing-list") write(root + "/usr/lib/opkg/info/" + name + ".list", target + "\n");
+                if (scenario == "double") write(root + "/usr/lib/opkg/info/loki-core.list", target + "\n");
+            }
+            update.paths.payload_root = root;
+            let reads = 0;
+            update.installed = () => {
+                if (scenario == "proof-error") die("synthetic-private-error");
+                return retained ? null : { format: "ipk", digest: sprintf("%064d", scenario == "changed" ? ++reads : 1),
+                    components: [ { package: "loki", version: "2", files: [ { path: target, type: "file", mode: 0755 } ] } ] };
+            };
+            update.read = () => ({ operation: index([ "aborted", "rolled-back" ], scenario) >= 0 ? "install" : scenario == "unknown" ? "update" : "uninstall",
+                phase: index([ "aborted", "rolled-back" ], scenario) >= 0 ? scenario : "committed" });
+            update.pending = () => scenario == "pending";
+            readonly_probes({ stdout: "{}" }); let result = preflight.collect(root); stub.restore();
+            let success = index([ "valid", "retained", "aborted", "rolled-back" ], scenario) >= 0;
+            t.eq(has(result, "checked", retained ? "retained-own-configuration-checked" : "installed-component-content-checked"), success || scenario == "changed", scenario);
+            if (scenario == "foreign") t.ok(has(result, "conflict", "foreign-package-owns-candidate-path"));
+            if (scenario == "double") t.ok(has(result, "conflict", "multiple-packages-claim-candidate-path"));
+            if (scenario == "proof-error") t.ok(has(result, "incomplete", "installed-component-origin-unverified"));
+            if (scenario == "changed") t.ok(has(result, "incomplete", "installed-components-changed-during-read"));
+            t.eq([result.complete, result.install_allowed], [false, false]);
+            t.excludes(sprintf("%J", result), "synthetic-private");
+            t.eq(fs.readfile(root + target), "synthetic-private-config");
+        }
+    }
+    catch (e) { error = e; }
+    update.paths.payload_root = original.root; update.installed = original.installed; update.read = original.read; update.pending = original.pending;
+    stub.restore(); if (error != null) die(error);
+});
+
+t.test("only exclusive matching ownership reaches the persisted own-file check", () => {
+    let update = require("service.update"), reader = require("service.preflight_config");
+    let original = { root: update.paths.payload_root, installed: update.installed, read: update.read, check: reader.check };
+    let error, target = "/usr/share/nftables.d/chain-pre/input/loki.nft";
+    try {
+        for (let scenario in [ "valid", "foreign", "double", "version", "missing-list", "proof-error" ]) {
+            let root = fixture();
+            stub.real.system("mkdir -p '" + root + "/usr/share/nftables.d/chain-pre/input' '" + root + "/loki/files/etc/config' '" + root + "/etc/config'");
+            write(root + target, "meta mark 1 accept\n");
+            let candidate = root + "/loki/files/etc/config/loki"; write(candidate, "config settings\n");
+            for (let name in [ "dhcp", "system", "firewall" ]) write(root + "/etc/config/" + name, "# inert\n");
+            let name = scenario == "foreign" ? "other" : "loki";
+            write(root + "/usr/lib/opkg/status", stanza("base-files") + stanza(name) + (scenario == "double" ? stanza("loki-core") : ""));
+            if (scenario != "missing-list") write(root + "/usr/lib/opkg/info/" + name + ".list", target + "\n");
+            if (scenario == "double") write(root + "/usr/lib/opkg/info/loki-core.list", target + "\n");
+            let file = { path: target, type: "file", mode: 0644, size: 19, sha256: sprintf("%064d", 1) };
+            update.paths.payload_root = root;
+            update.read = () => ({ phase: "committed", operation: "install" });
+            update.installed = () => {
+                if (scenario == "proof-error") die("synthetic-private");
+                return { format: "ipk", digest: "verified", components: [ { package: "loki", version: scenario == "version" ? "2" : "1", files: [ file ] } ] };
+            };
+            let seen = 0;
+            reader.check = (data, scratch, platform, core, root, transaction) => {
+                seen++;
+                t.eq(transaction.own_files[target], scenario == "valid" ? { ...file, package: "loki", version: "1" } : null, scenario);
+                return [];
+            };
+            readonly_probes({ stdout: "{}" }); let result = preflight.collect(root, null, candidate, null, root); stub.restore();
+            t.eq(seen, 1); t.eq(result.install_allowed, false);
+        }
+    }
+    catch (e) { error = e; }
+    update.paths.payload_root = original.root; update.installed = original.installed; update.read = original.read; reader.check = original.check;
+    stub.restore(); if (error != null) die(error);
+});
+
+t.test("process provenance uses the same bounded package inventory including system executable paths", () => {
+    let processes = require("service.preflight_processes"), original = processes.collect, failure;
+    try {
+        for (let scenario in [ "single", "double", "missing-list" ]) {
+            let root = fixture();
+            write(root + "/usr/lib/opkg/status", stanza("base-files") + stanza("ubusd") + (scenario == "double" ? stanza("other") : ""));
+            if (scenario != "missing-list") write(root + "/usr/lib/opkg/info/ubusd.list", "/sbin/ubusd\n");
+            if (scenario == "double") write(root + "/usr/lib/opkg/info/other.list", "/sbin/ubusd\n");
+            let calls = 0;
+            processes.collect = (directory, scope, provenance) => {
+                calls++; t.eq(directory, root);
+                t.eq(provenance.complete, scenario != "missing-list");
+                t.eq(provenance.claims["/sbin/ubusd"], scenario == "missing-list" ? null : scenario == "double" ? [ "ubusd", "other" ] : [ "ubusd" ]);
+                t.eq(provenance.system, false, "an incomplete OpenWrt profile is not trusted");
+                return [];
+            };
+            readonly_probes({ stdout: "{}" }); let result = preflight.collect(root); stub.restore();
+            t.eq(calls, 1); t.eq(result.install_allowed, false);
+        }
+    }
+    catch (e) { failure = e; }
+    processes.collect = original; stub.restore(); if (failure != null) die(failure);
+});
+
+t.done();

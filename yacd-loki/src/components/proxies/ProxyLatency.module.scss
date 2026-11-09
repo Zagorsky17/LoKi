@@ -1,0 +1,55 @@
+.proxyLatency {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  flex-shrink: 0;
+  padding: 2px 4px;
+  margin: -2px -4px;
+  border-radius: 6px;
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  font-weight: 500;
+  color: inherit;
+  background: transparent;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+  user-select: none;
+  outline: none;
+  white-space: nowrap;
+}
+
+.clickable {
+  cursor: pointer;
+}
+
+.clickable:hover,
+.clickable:focus-visible {
+  background: var(--color-hover-soft);
+}
+
+.clickable:focus-visible {
+  outline: 2px solid var(--color-focus-blue);
+  outline-offset: 1px;
+}
+
+.placeholder {
+  color: var(--color-text-secondary);
+}
+
+.testing {
+  animation: proxyLatencyPulse 1s ease-in-out infinite;
+}
+
+@keyframes proxyLatencyPulse {
+  0% {
+    opacity: 0.8;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.8;
+  }
+}

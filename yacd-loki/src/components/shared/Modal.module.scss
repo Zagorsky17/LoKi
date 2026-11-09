@@ -1,0 +1,52 @@
+@keyframes overlayShow {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes contentShow {
+  from {
+    opacity: 0;
+    scale: 0.96;
+  }
+  to {
+    opacity: 1;
+    scale: 1;
+  }
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: #444;
+  z-index: 1024;
+
+  &[data-state='open'] {
+    animation: overlayShow 0.2s ease;
+  }
+}
+
+// Radix 的 Content 是 Overlay 的兄弟节点，需自己定位。
+// 这里用独立的 translate / scale 属性而非 transform，避免与各 modal 自带的 transform 冲突。
+.content {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  translate: -50% -50%;
+  z-index: 1025;
+  max-height: 100vh;
+  overflow: auto;
+  outline: none;
+  color: var(--color-text);
+  background: var(--bg-modal);
+  padding: 20px;
+  border-radius: var(--border-radius);
+  box-shadow: var(--shadow-card);
+
+  &[data-state='open'] {
+    animation: contentShow 0.2s ease;
+  }
+}

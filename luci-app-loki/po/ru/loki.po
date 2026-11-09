@@ -1,0 +1,1722 @@
+# RU translations for LOKI package.
+# Copyright (C) 2026 THE FORKOP COPYRIGHT HOLDER
+# This file is distributed under the same license as the LOKI package.
+# ushan0v, 2026.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: LOKI\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-11-06 01:18+0300\n"
+"PO-Revision-Date: 2026-11-06 01:18+0300\n"
+"Last-Translator: ushan0v\n"
+"Language-Team: none\n"
+"Language: ru\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);\n"
+
+msgid "-- Select --"
+msgstr "-- Выберите --"
+
+msgid "%d d"
+msgstr "%d д"
+
+msgid "%d h"
+msgstr "%d ч"
+
+msgid "%d MB"
+msgstr "%d МБ"
+
+msgid "%d min"
+msgstr "%d мин"
+
+msgid "%d ms"
+msgstr "%d мс"
+
+msgid "%d s"
+msgstr "%d с"
+
+msgid "%s (section is unavailable)"
+msgstr "%s (секция недоступна)"
+
+msgid "%s answers with %s"
+msgstr "%s отвечает ошибкой %s"
+
+msgid "%s are already in %s: remove them first"
+msgstr "%s уже входят в %s. Сначала уберите их"
+
+msgid "%s cannot find %s"
+msgstr "%s не находит %s"
+
+msgid "%s does not answer"
+msgstr "%s не отвечает"
+
+msgid "%s error messages found in the last 60 seconds"
+msgstr "Найдено сообщений об ошибках за последние 60 секунд: %s"
+
+msgid "%s holds a configuration of LoKi %s, which is brought to %s as an update would bring it."
+msgstr "В файле %s — конфигурация LoKi %s. Её переведут на %s, как при обновлении."
+
+msgid "%s holds a configuration of LoKi %s."
+msgstr "В файле %s — конфигурация LoKi %s."
+
+msgid "%s intercepts traffic"
+msgstr "%s перехватывает трафик"
+
+msgid "%s is already in %s"
+msgstr "%s уже входит в %s"
+
+msgid "%s is already in %s: remove it first"
+msgstr "%s уже входит в %s. Сначала уберите его"
+
+msgid "%s is set by the cascade connection"
+msgstr "%s задаётся каскадным подключением"
+
+msgid "%s of %s free"
+msgstr "свободно %s из %s"
+
+msgid "%s takes DNS queries before LoKi"
+msgstr "%s забирает DNS-запросы раньше LoKi"
+
+msgid "%s, direct %s"
+msgstr "%s, напрямую %s"
+
+msgid "%s, the same as direct"
+msgstr "%s, как и напрямую"
+
+msgid "+ Add fallback"
+msgstr "+ Добавить Fallback"
+
+msgid "+ Add JSON outbound"
+msgstr "+ Добавить JSON outbound"
+
+msgid "+ Add servers"
+msgstr "+ Добавить серверы"
+
+msgid "+ Add URLTest"
+msgstr "+ Добавить URLTest"
+
+msgid "A custom sing-box outbound object"
+msgstr "Пользовательский объект sing-box outbound"
+
+msgid "A JSON object merged into every server. Parameters a server does not support are skipped, matching parameters are overwritten"
+msgstr "JSON-объект, добавляемый к каждому серверу. Неподдерживаемые параметры пропускаются, совпадающие перезаписываются"
+
+msgid "A path only with https:// and h3://"
+msgstr "Путь допустим только с https:// и h3://"
+
+msgid "A URL or local path. The format is detected automatically"
+msgstr "URL или локальный путь. Формат определяется автоматически"
+
+msgid "A URL, or the absolute path of a file on the router"
+msgstr "URL или абсолютный путь к файлу на роутере"
+
+msgid "About the address on ipinfo.io"
+msgstr "Об адресе на ipinfo.io"
+
+msgid "Accurate latency measurement"
+msgstr "Точное измерение задержки"
+
+msgid "Action"
+msgstr "Действие"
+
+msgid "Active"
+msgstr "Активные"
+
+msgid "Add"
+msgstr "Добавить"
+
+msgid "Add a connection URI, subscription, interface or JSON outbound"
+msgstr "Добавьте ссылку подключения, подписку, интерфейс или JSON outbound"
+
+msgid "Add a domain, built-in list, rule set or device"
+msgstr "Добавьте домен, встроенный список, набор правил или устройство"
+
+msgid "Add a section"
+msgstr "Добавить секцию"
+
+msgid "Add a section to configure routing"
+msgstr "Добавьте секцию чтобы настроить маршрутизацию"
+
+msgid "Add header"
+msgstr "Добавить заголовок"
+
+msgid "Add URLTest"
+msgstr "Добавить URLTest"
+
+msgid "Added after every server name"
+msgstr "Добавляется после имени каждого сервера"
+
+msgid "Added in front of every server name"
+msgstr "Добавляется перед именем каждого сервера"
+
+msgid "Address %s is not allowed"
+msgstr "Адрес %s недопустим"
+
+msgid "All device traffic"
+msgstr "Весь трафик устройств"
+
+msgid "All devices"
+msgstr "Все устройства"
+
+msgid "All except selected"
+msgstr "Кроме выбранных"
+
+msgid "All main DNS servers use the selected protocol. Enter https://host/path for DoH, tls://host for DoT, or an IP address for UDP."
+msgstr "Все основные DNS-серверы используют выбранный протокол. Для DoH укажите https://host/path, для DoT — tls://host, для UDP — IP-адрес."
+
+msgid "All remaining"
+msgstr "Все оставшиеся"
+
+msgid "All routes"
+msgstr "Все маршруты"
+
+msgid "All servers"
+msgstr "Все серверы"
+
+msgid "All traffic from the device is forced through the section"
+msgstr "Весь трафик устройства принудительно пойдёт через секцию"
+
+msgid "An OpenWrt network interface"
+msgstr "Сетевой интерфейс OpenWrt"
+
+msgid "another sing-box is running (PID %s)"
+msgstr "запущен посторонний sing-box (PID %s)"
+
+msgid "Any"
+msgstr "Любой"
+
+msgid "applying..."
+msgstr "применяет настройки..."
+
+msgid "Applying..."
+msgstr "Применение..."
+
+msgid "At least %s error messages in the last 60 seconds; log data incomplete"
+msgstr "Не менее %s сообщений об ошибках за последние 60 секунд; данные журнала неполны"
+
+msgid "At most %d KB, this is %d KB"
+msgstr "Не больше %d КБ, здесь %d КБ"
+
+msgid "Auto refresh"
+msgstr "Автообновление"
+
+msgid "Availability check for every server"
+msgstr "Проверка доступности каждого сервера"
+
+msgid "Available actions"
+msgstr "Доступные действия"
+
+msgid "Back"
+msgstr "Назад"
+
+msgid "Before a letter, write ${1} instead of $1"
+msgstr "Перед буквой пишите ${1} вместо $1"
+
+msgid "Bootstrap DNS"
+msgstr "Bootstrap DNS"
+
+msgid "Bootstrap DNS must use UDP"
+msgstr "Bootstrap DNS должен использовать UDP"
+
+msgid "Bootstrap DNS Query Mode"
+msgstr "Режим опроса Bootstrap DNS"
+
+msgid "Bootstrap DNS Servers"
+msgstr "Bootstrap DNS-серверы"
+
+msgid "Browser check did not confirm FakeIP; router results are shown separately"
+msgstr "Проверка браузера не подтвердила FakeIP; результаты роутера показаны отдельно"
+
+msgid "Built-in lists"
+msgstr "Встроенные списки"
+
+msgid "By default only the domain conditions of a rule set are applied. This option adds its IP addresses and subnets to nftables. Large lists can load the router heavily. Enable it only if you know the set holds the subnets you need"
+msgstr "По умолчанию из набора правил применяются только доменные условия. Опция добавляет IP-адреса и подсети в nftables. Крупные списки могут сильно нагружать роутер. Включайте, только если знаете, что набор содержит необходимые подсети"
+
+msgid "By default the router's routes choose it"
+msgstr "По умолчанию его выбирают маршруты роутера"
+
+msgid "Cache File Path"
+msgstr "Путь к файлу кэша"
+
+msgid "Cancel"
+msgstr "Отмена"
+
+msgid "Cannot be this section"
+msgstr "Нельзя выбрать эту же секцию"
+
+msgid "Cascade connection"
+msgstr "Каскадное подключение"
+
+msgid "Change the build"
+msgstr "Сменить сборку"
+
+msgid "Change the HTTP headers of the request"
+msgstr "Изменить HTTP-заголовки запроса"
+
+msgid "Change the parameters of the servers this subscription adds"
+msgstr "Изменить параметры серверов, которые добавляются из этой подписки"
+
+msgid "Check again"
+msgstr "Проверить снова"
+
+msgid "Check for updates"
+msgstr "Проверить обновления"
+
+msgid "Check for updates to see the available versions"
+msgstr "Проверьте обновления, чтобы увидеть доступные версии"
+
+msgid "Check interval"
+msgstr "Интервал проверки"
+
+msgid "Check IP"
+msgstr "Проверить IP"
+
+msgid "Check timeout"
+msgstr "Таймаут проверки"
+
+msgid "Check URL"
+msgstr "URL проверки"
+
+msgid "Checked from top to bottom until the first working server"
+msgstr "Проверяются сверху вниз до первого рабочего сервера"
+
+msgid "Checking, please wait"
+msgstr "Проверяем, пожалуйста, подождите"
+
+msgid "Checks"
+msgstr "Проверки"
+
+msgid "Checks failed"
+msgstr "Проверки не пройдены"
+
+msgid "Checks passed"
+msgstr "Проверки пройдены"
+
+msgid "Choose a protocol"
+msgstr "Выберите протокол"
+
+msgid "Choose DoH or DoT"
+msgstr "Выберите DoH или DoT"
+
+msgid "Choose enabled or disabled"
+msgstr "Выберите включение или отключение"
+
+msgid "Choose encryption mode"
+msgstr "Выберите режим шифрования"
+
+msgid "Choose explicitly. Server addresses must match the selected protocol; changing the mode does not rewrite them."
+msgstr "Выберите режим явно. Адреса серверов должны соответствовать выбранному протоколу; смена режима не переписывает их."
+
+msgid "Clash API request timed out after it was sent"
+msgstr "Запрос к Clash API был отправлен, но истекло время ожидания ответа"
+
+msgid "Clash API response was lost after the request was sent"
+msgstr "Запрос к Clash API был отправлен, но ответ потерян"
+
+msgid "Click a node to pin it, and click it again to unpin it."
+msgstr "Нажмите на узел, чтобы закрепить его, и ещё раз, чтобы открепить."
+
+msgid "Close"
+msgstr "Закрыть"
+
+msgid "Close all"
+msgstr "Закрыть все"
+
+msgid "Close all connections"
+msgstr "Закрыть все подключения"
+
+msgid "Close connection"
+msgstr "Закрыть подключение"
+
+msgid "Close matching"
+msgstr "Закрыть найденные"
+
+msgid "Close the connections that match the filters"
+msgstr "Закрыть подключения, подходящие под фильтры"
+
+msgid "Closed"
+msgstr "Закрытые"
+
+msgid "Collapse section"
+msgstr "Свернуть секцию"
+
+msgid "Components"
+msgstr "Компоненты"
+
+msgid "Conditions"
+msgstr "Условия"
+
+msgid "Config File Path"
+msgstr "Путь к файлу конфигурации"
+
+msgid "Configuration"
+msgstr "Конфигурация"
+
+msgid "Conflicts"
+msgstr "Конфликты"
+
+msgid "Connect through"
+msgstr "Подключаться через"
+
+msgid "Connect to every server of this subscription through another section"
+msgstr "Подключаться ко всем серверам подписки через другую секцию"
+
+msgid "Connect to the server through another section"
+msgstr "Подключаться к серверу через другую секцию"
+
+msgid "connection failed"
+msgstr "соединение не установлено"
+
+msgid "Connection timeout"
+msgstr "Таймаут подключения"
+
+msgid "Connection URI"
+msgstr "URI подключения"
+
+msgid "Connections"
+msgstr "Соединения"
+
+msgid "Connections are unavailable"
+msgstr "Подключения недоступны"
+
+msgid "Control characters are not allowed"
+msgstr "Управляющие символы недопустимы"
+
+msgid "Copied"
+msgstr "Скопировано"
+
+msgid "Copy"
+msgstr "Копировать"
+
+msgid "Copy address"
+msgstr "Скопировать адрес"
+
+msgid "Copy matching"
+msgstr "Копировать найденное"
+
+msgid "Copy proxy link"
+msgstr "Скопировать ссылку прокси"
+
+msgid "Copy the output"
+msgstr "Копировать вывод"
+
+msgid "Core"
+msgstr "Ядро"
+
+msgid "Core log"
+msgstr "Журнал ядра"
+
+msgid "Could not disable autostart"
+msgstr "Не удалось отключить автостарт"
+
+msgid "Could not enable autostart"
+msgstr "Не удалось включить автостарт"
+
+msgid "Could not get the check results"
+msgstr "Не удалось получить результаты проверки"
+
+msgid "Country"
+msgstr "Страна"
+
+msgid "CPU"
+msgstr "Процессор"
+
+msgid "Currently unavailable"
+msgstr "Временно недоступно"
+
+msgid "Dashboard"
+msgstr "Дашборд"
+
+msgid "Dashboard currently unavailable"
+msgstr "Дашборд сейчас недоступен"
+
+msgid "Delay in milliseconds before reloading LoKi after interface UP"
+msgstr "Задержка в миллисекундах перед перезапуском LoKi после поднятия интерфейса"
+
+msgid "Device"
+msgstr "Устройство"
+
+msgid "Device or IP"
+msgstr "Устройство или IP"
+
+msgid "Diagnostic report"
+msgstr "Отчёт диагностики"
+
+msgid "Direct"
+msgstr "Напрямую"
+
+msgid "Disable autostart"
+msgstr "Отключить автостарт"
+
+msgid "Disable QUIC"
+msgstr "Отключить QUIC"
+
+msgid "Disabled (UDP)"
+msgstr "Выключено (UDP)"
+
+msgid "Disables QUIC for compatibility and to fix video streaming"
+msgstr "Отключает QUIC для совместимости и исправления видеостриминга"
+
+msgid "DNS encryption"
+msgstr "Шифрование DNS"
+
+msgid "DNS outside the rules"
+msgstr "DNS вне правил"
+
+msgid "DNS Query Mode"
+msgstr "Режим опроса DNS"
+
+msgid "DNS requests through"
+msgstr "DNS запросы через"
+
+msgid "DNS Rewrite TTL"
+msgstr "Перезапись TTL для DNS"
+
+msgid "DNS Server"
+msgstr "DNS-сервер"
+
+msgid "DNS Strategy"
+msgstr "Стратегия DNS"
+
+msgid "DNS through section"
+msgstr "DNS через секцию"
+
+msgid "DNS timeout"
+msgstr "Тайм-аут DNS"
+
+msgid "dnsmasq does not answer"
+msgstr "dnsmasq не отвечает"
+
+msgid "DoH (HTTPS)"
+msgstr "DoH (HTTPS)"
+
+msgid "Domain Resolver"
+msgstr "Резолвер доменов"
+
+msgid "Domains"
+msgstr "Домены"
+
+msgid "Domains and IPs"
+msgstr "Домены и IP-адреса"
+
+msgid "Domains only"
+msgstr "Только домены"
+
+msgid "done"
+msgstr "готово"
+
+msgid "DoT (TLS)"
+msgstr "DoT (TLS)"
+
+msgid "Downlink"
+msgstr "Входящий"
+
+msgid "Download"
+msgstr "Скачать"
+
+msgid "Download lists through"
+msgstr "Скачивать списки через"
+
+msgid "Download lists through a section"
+msgstr "Скачивать списки через секцию"
+
+msgid "Download matching"
+msgstr "Скачать найденное"
+
+msgid "Download the built-in lists and remote rule sets through the selected section"
+msgstr "Скачивать встроенные списки и удалённые наборы правил через выбранную секцию"
+
+msgid "Download the subscription through another section instead of directly"
+msgstr "Загружать подписку через другую секцию, а не напрямую"
+
+msgid "Downloaded"
+msgstr "Загружено"
+
+msgid "Drop every active connection when the selected server changes"
+msgstr "Сбрасывать все активные соединения при переключении сервера"
+
+msgid "Duplicate value"
+msgstr "Значение повторяется"
+
+msgid "Edit"
+msgstr "Редактировать"
+
+msgid "Edit rule action"
+msgstr "Изменить"
+
+msgid "empty"
+msgstr "пусто"
+
+msgid "Enable"
+msgstr "Включить"
+
+msgid "Enable autostart"
+msgstr "Включить автостарт"
+
+msgid "Enable built-in DNS resolver for domains handled by this section"
+msgstr "Включить встроенный DNS-резолвер для доменов, обрабатываемых этой секцией"
+
+msgid "Enable Output Network Interface"
+msgstr "Включить выходной сетевой интерфейс"
+
+msgid "Enabled"
+msgstr "Включено"
+
+msgid "Encrypted DNS protocol"
+msgstr "Протокол шифрования DNS"
+
+msgid "English"
+msgstr "Английский"
+
+msgid "Exclude by pattern"
+msgstr "Исключить по шаблону"
+
+msgid "Exclude devices from routing"
+msgstr "Исключить устройства из маршрутизации"
+
+msgid "Exclude servers"
+msgstr "Исключить серверы"
+
+msgid "Exclude types"
+msgstr "Исключить типы"
+
+msgid "excluded from routing"
+msgstr "исключён из маршрутизации"
+
+msgid "Exit IP"
+msgstr "IP выхода"
+
+msgid "Exit through"
+msgstr "Выход через"
+
+msgid "Exit via \"%s\""
+msgstr "Выход через «%s»"
+
+msgid "Expand section"
+msgstr "Развернуть секцию"
+
+msgid "Expected status"
+msgstr "Ожидаемый статус"
+
+msgid "Expires"
+msgstr "Истекает"
+
+msgid "External list %s may overlap %s; compare domains and subnets before removing a list"
+msgstr "Внешний список %s может пересекаться с %s; сравните домены и подсети перед удалением списка"
+
+msgid "External list %s uses the same source as %s; review the section lists"
+msgstr "Внешний список %s использует тот же источник, что и %s; проверьте списки секции"
+
+msgid "failed"
+msgstr "ошибка"
+
+msgid "Failed to close connection"
+msgstr "Не удалось закрыть подключение"
+
+msgid "Failed to close connections"
+msgstr "Не удалось закрыть подключения"
+
+msgid "Failed to copy!"
+msgstr "Не удалось скопировать!"
+
+msgid "Failed to execute"
+msgstr "Не удалось выполнить"
+
+msgid "Failed to load default subscription headers"
+msgstr "Не удалось загрузить заголовки подписки по умолчанию"
+
+msgid "Failed to load diagnostics"
+msgstr "Не удалось загрузить диагностику"
+
+msgid "Failed to load logs"
+msgstr "Не удалось загрузить логи"
+
+msgid "Failed to load the configuration: %s"
+msgstr "Не удалось загрузить конфигурацию: %s"
+
+msgid "Failed to pin the server"
+msgstr "Не удалось закрепить сервер"
+
+msgid "Failed to restart the service"
+msgstr "Не удалось перезапустить сервис"
+
+msgid "Failed to start the service"
+msgstr "Не удалось запустить сервис"
+
+msgid "Failed to stop the service"
+msgstr "Не удалось остановить сервис"
+
+msgid "Failed to switch the server"
+msgstr "Не удалось переключить сервер"
+
+msgid "Failed to update lists"
+msgstr "Ошибка обновления списков"
+
+msgid "Failed to update subscriptions"
+msgstr "Ошибка обновления подписок"
+
+msgid "Failed to upload the file: %s"
+msgstr "Не удалось загрузить файл на роутер: %s"
+
+msgid "Fallback"
+msgstr "Fallback"
+
+msgid "Fallback details"
+msgstr "Детали Fallback"
+
+msgid "Fallback details are unavailable"
+msgstr "Детали Fallback недоступны"
+
+msgid "Fallback settings"
+msgstr "Настройки Fallback"
+
+msgid "Fallback: %s"
+msgstr "Fallback: %s"
+
+msgid "Finding the exit…"
+msgstr "Определяем выход…"
+
+msgid "Fix the settings"
+msgstr "Исправьте настройки"
+
+msgid "Fixed addresses for domains in the hosts format"
+msgstr "Постоянные адреса для доменов в формате hosts"
+
+msgid "For example 30m, 12h or 1d"
+msgstr "Например: 30m, 12h или 1d"
+
+msgid "Format: *, 204, 200-299"
+msgstr "Формат: *, 204, 200-299"
+
+msgid "Format: %s"
+msgstr "Формат: %s"
+
+msgid "Format: 10.0.0.2/24"
+msgstr "Формат: 10.0.0.2/24"
+
+msgid "Format: 30m, 12h, 1d"
+msgstr "Формат: 30m, 12h, 1d"
+
+msgid "Format: 80 or 1000-2000"
+msgstr "Формат: 80 или 1000-2000"
+
+msgid "Format: pattern => replacement"
+msgstr "Формат: шаблон => замена"
+
+msgid "Generate"
+msgstr "Сгенерировать"
+
+msgid "Get report"
+msgstr "Получить отчёт"
+
+msgid "goes past LoKi"
+msgstr "идёт мимо LoKi"
+
+msgid "goes through LoKi"
+msgstr "идёт через LoKi"
+
+msgid "going to the LuCI home page"
+msgstr "переход на главную LuCI"
+
+msgid "Group name"
+msgstr "Имя группы"
+
+msgid "Header name"
+msgstr "Название заголовка"
+
+msgid "Header value"
+msgstr "Значение заголовка"
+
+msgid "Headers"
+msgstr "Заголовки"
+
+msgid "Hide details"
+msgstr "Скрыть подробности"
+
+msgid "Hide values"
+msgstr "Скрывать значения"
+
+msgid "Host"
+msgstr "Хост"
+
+msgid "How long DNS records are cached, in seconds"
+msgstr "Время кэширования DNS-записей в секундах"
+
+msgid "How long to wait for a connection before moving to the next server"
+msgstr "Сколько ждать подключения, прежде чем перейти к следующему серверу"
+
+msgid "How long to wait for a server to answer"
+msgstr "Сколько ждать ответа от сервера"
+
+msgid "How long until health checks stop when the group is unused"
+msgstr "Через сколько остановить проверки, если группа не используется"
+
+msgid "How often every server of the group is checked"
+msgstr "Как часто проверяются все серверы группы"
+
+msgid "HTTP error"
+msgstr "Ошибка HTTP"
+
+msgid "HTTP status codes of a successful check. * is any response, or values and ranges: 204/200-299"
+msgstr "HTTP-коды успешной проверки. * — любой ответ, либо коды и диапазоны: 204/200-299"
+
+msgid "Idle timeout"
+msgstr "Таймаут простоя"
+
+msgid "in progress"
+msgstr "выполняется"
+
+msgid "Include by pattern"
+msgstr "Включить по шаблону"
+
+msgid "Include IP addresses and subnets"
+msgstr "Учитывать IP-адреса и подсети"
+
+msgid "Include servers"
+msgstr "Включить серверы"
+
+msgid "Includes connection setup and the TLS handshake"
+msgstr "Учитывает установку соединения и TLS-рукопожатие"
+
+msgid "Installed versions"
+msgstr "Установленные версии"
+
+msgid "Installer log"
+msgstr "Журнал установщика"
+
+msgid "Installer output"
+msgstr "Вывод установщика"
+
+msgid "installer running..."
+msgstr "работает установщик..."
+
+msgid "interface is up, no internet through it"
+msgstr "интерфейс работает, выхода в интернет через него нет"
+
+msgid "Interface Monitoring"
+msgstr "Мониторинг интерфейса"
+
+msgid "Interface Monitoring Delay"
+msgstr "Задержка при мониторинге интерфейсов"
+
+msgid "Interface monitoring for Bad WAN"
+msgstr "Мониторинг интерфейса для Bad WAN"
+
+msgid "Interface name"
+msgstr "Имя интерфейса"
+
+msgid "Interrupt connections"
+msgstr "Прерывать соединения"
+
+msgid "Interrupt the installer"
+msgstr "Прервать установщик"
+
+msgid "interrupted"
+msgstr "прервано"
+
+msgid "Invalid Clash API response"
+msgstr "Некорректный ответ Clash API"
+
+msgid "Invalid DNS server"
+msgstr "Неверный DNS-сервер"
+
+msgid "Invalid domain"
+msgstr "Неверный домен"
+
+msgid "Invalid domain or IP address"
+msgstr "Неверный домен или IP-адрес"
+
+msgid "Invalid header name"
+msgstr "Неверное имя заголовка"
+
+msgid "Invalid interface name"
+msgstr "Неверное имя интерфейса"
+
+msgid "Invalid IP address"
+msgstr "Неверный IP-адрес"
+
+msgid "Invalid IP address or subnet"
+msgstr "Неверный IP-адрес или подсеть"
+
+msgid "Invalid JSON object"
+msgstr "Неверный JSON-объект"
+
+msgid "Invalid key"
+msgstr "Неверный ключ"
+
+msgid "Invalid path"
+msgstr "Неверный путь"
+
+msgid "Invalid port"
+msgstr "Неверный порт"
+
+msgid "Invalid regular expression"
+msgstr "Неверное регулярное выражение"
+
+msgid "Invalid subnet"
+msgstr "Неверная подсеть"
+
+msgid "Invalid URL"
+msgstr "Неверный URL"
+
+msgid "Invalid UUID"
+msgstr "Неверный UUID"
+
+msgid "IP address only"
+msgstr "Только IP-адрес"
+
+msgid "IPv4 only"
+msgstr "Только IPv4"
+
+msgid "IPv6 only"
+msgstr "Только IPv6"
+
+msgid "Issues detected"
+msgstr "Обнаружены проблемы"
+
+msgid "It replaces the current one through unsaved changes, as if you made them by hand. LoKi runs it once you apply them."
+msgstr "Она заменит текущую через непринятые изменения, будто вы внесли их сами. LoKi заработает с ней, когда вы их примените."
+
+msgid "JSON outbound"
+msgstr "JSON outbound"
+
+msgid "JSON outbound: %s"
+msgstr "JSON outbound: %s"
+
+msgid "Keep settings"
+msgstr "Сохранить настройки"
+
+msgid "Latency difference"
+msgstr "Разница задержки"
+
+msgid "Latency measurement for every server"
+msgstr "Замер задержки каждого сервера"
+
+msgid "Latency test failed: the Clash API did not answer"
+msgstr "Не удалось проверить задержку: Clash API не ответил"
+
+msgid "Latency test URL"
+msgstr "URL для тестирования задержки"
+
+msgid "Level"
+msgstr "Уровень"
+
+msgid "Line breaks are not allowed"
+msgstr "Переносы строк недопустимы"
+
+msgid "List update interval"
+msgstr "Период обновления списков"
+
+msgid "Lists in %s"
+msgstr "Списки в %s"
+
+msgid "Lists updated"
+msgstr "Списки успешно обновлены"
+
+msgid "Load"
+msgstr "Нагрузка"
+
+msgid "Loading connections..."
+msgstr "Загрузка подключений..."
+
+msgid "Loading logs..."
+msgstr "Загрузка логов..."
+
+msgid "Local DNS"
+msgstr "Локальный DNS"
+
+msgid "Log"
+msgstr "Журнал"
+
+msgid "Log data unavailable"
+msgstr "Данные журнала недоступны"
+
+msgid "Log Level"
+msgstr "Уровень логов"
+
+msgid "Logs"
+msgstr "Логи"
+
+msgid "LoKi configuration"
+msgstr "Конфигурация LoKi"
+
+msgid "LoKi diagnostic report"
+msgstr "Отчёт диагностики LoKi"
+
+msgid "LoKi Error"
+msgstr "Ошибка LoKi"
+
+msgid "LoKi ignores these devices entirely: their traffic is not routed and their DNS is not captured"
+msgstr "LoKi полностью игнорирует эти устройства, их трафик не маршрутизируется, а DNS не перехватывается"
+
+msgid "LoKi interface language"
+msgstr "Язык интерфейса LoKi"
+
+msgid "LoKi system logs"
+msgstr "Системные логи LoKi"
+
+msgid "loki-core %s"
+msgstr "loki-core %s"
+
+msgid "loki-core %s (%s)"
+msgstr "loki-core %s (%s)"
+
+msgid "loki-core %s is outdated: %s or newer is needed"
+msgstr "loki-core %s устарел: нужен %s или новее"
+
+msgid "loki-core is not installed"
+msgstr "loki-core не установлен"
+
+msgid "Main DNS"
+msgstr "Основной DNS"
+
+msgid "Main DNS Query Mode"
+msgstr "Режим опроса основного DNS"
+
+msgid "MASKED REPORT: review before sharing."
+msgstr "ЗАМАСКИРОВАННЫЙ ОТЧЁТ: проверьте перед отправкой."
+
+msgid "Match destination domains and addresses"
+msgstr "Совпадение по доменам и адресам назначения"
+
+msgid "Match the domains of DNS queries"
+msgstr "Совпадение по доменам DNS-запросов"
+
+msgid "Maximum time to wait for a DNS response"
+msgstr "Максимальное время ожидания ответа DNS"
+
+msgid "Memory"
+msgstr "Память"
+
+msgid "Memory: %s of %s free"
+msgstr "Память: свободно %s из %s"
+
+msgid "Monitored Interfaces"
+msgstr "Наблюдаемые интерфейсы"
+
+msgid "Monitoring"
+msgstr "Мониторинг"
+
+msgid "More details"
+msgstr "Подробнее"
+
+msgid "N/A"
+msgstr "Н/Д"
+
+msgid "Name already taken"
+msgstr "Имя уже занято"
+
+msgid "Name prefix"
+msgstr "Префикс имени"
+
+msgid "Name suffix"
+msgstr "Суффикс имени"
+
+msgid "Narrows the section's conditions to these ports. Without conditions, takes all traffic to them"
+msgstr "Сужает условия секции до этих портов. Без условий ловит весь трафик на них"
+
+msgid "Network interface"
+msgstr "Сетевой интерфейс"
+
+msgid "Network Interface"
+msgstr "Сетевой интерфейс"
+
+msgid "Network interface settings"
+msgstr "Настройки сетевого интерфейса"
+
+msgid "Network interface: %s"
+msgstr "Сетевой интерфейс: %s"
+
+msgid "No"
+msgstr "Нет"
+
+msgid "No active connections"
+msgstr "Нет активных подключений"
+
+msgid "no answer"
+msgstr "нет ответа"
+
+msgid "no answer from the router"
+msgstr "роутер не отвечает"
+
+msgid "no answer in time"
+msgstr "не ответил вовремя"
+
+msgid "No answer: %s"
+msgstr "Нет ответа: %s"
+
+msgid "No closed connections"
+msgstr "Нет закрытых подключений"
+
+msgid "No domain"
+msgstr "Нет домена"
+
+msgid "No error messages found in the last 60 seconds"
+msgstr "Сообщений об ошибках за последние 60 секунд не найдено"
+
+msgid "No logs available"
+msgstr "Логи отсутствуют"
+
+msgid "No logs match the current filters"
+msgstr "Нет логов, соответствующих текущим фильтрам"
+
+msgid "No LoKi release wrote configuration version %s"
+msgstr "Конфигурации версии %s нет ни в одном выпуске LoKi"
+
+msgid "No sections with a proxy"
+msgstr "Нет секций с прокси"
+
+msgid "No tag field"
+msgstr "Нет поля tag"
+
+msgid "No updates available"
+msgstr "Обновлений нет"
+
+msgid "Node list is empty"
+msgstr "Список узлов пуст"
+
+msgid "Nodes"
+msgstr "Узлы"
+
+msgid "none found"
+msgstr "не найдены"
+
+msgid "not checked: no answer"
+msgstr "не проверено: нет ответа"
+
+msgid "not checked: the check service did not answer"
+msgstr "не проверено: сервис проверки не ответил"
+
+msgid "not checked: the Clash API did not answer"
+msgstr "не проверено: Clash API не ответил"
+
+msgid "Not checked: the Clash API did not answer"
+msgstr "Не проверено: Clash API не ответил"
+
+msgid "not in the running configuration"
+msgstr "нет в рабочей конфигурации"
+
+msgid "Not installed"
+msgstr "Не установлено"
+
+msgid "not running"
+msgstr "не запущен"
+
+msgid "Not running"
+msgstr "Не запущено"
+
+msgid "not running: %s"
+msgstr "не запущен: %s"
+
+msgid "Nothing after %s"
+msgstr "Пусто после %s"
+
+msgid "Nothing to upload: the file holds the current configuration"
+msgstr "Загружать нечего: в файле текущая конфигурация"
+
+msgid "Number or range from 0 to 4294967295"
+msgstr "Число или диапазон от 0 до 4294967295"
+
+msgid "One rule per line: pattern => replacement, applied in order. The pattern is a regular expression, $1 in the replacement keeps a captured group and ${1} keeps it in front of a letter. Example: ^HK-(.*)$ => Hong Kong $1"
+msgstr "По одному правилу в строке: шаблон => замена, применяются по порядку. Шаблон — регулярное выражение, $1 в замене сохраняет найденную группу, а ${1} сохраняет её перед буквой. Пример: ^HK-(.*)$ => Гонконг $1"
+
+msgid "Only %s"
+msgstr "Только %s"
+
+msgid "Only for devices"
+msgstr "Только для устройств"
+
+msgid "Only letters, digits and . _ -"
+msgstr "Только буквы, цифры и . _ -"
+
+msgid "Only selected"
+msgstr "Только выбранные"
+
+msgid "Operation timed out"
+msgstr "Время ожидания истекло"
+
+msgid "OS"
+msgstr "ОС"
+
+msgid "Output Network Interface"
+msgstr "Выходной сетевой интерфейс"
+
+msgid "Package changes are disabled in this development build until preflight and recovery are implemented."
+msgstr "Изменения пакетов в этой сборке разработки отключены до реализации проверки среды и восстановления после ошибки."
+
+msgid "Parallel"
+msgstr "Параллельно"
+
+msgid "Parallel asks every server at once and is faster. Sequential asks them in turn until the first answer"
+msgstr "Параллельно — запрос всем сразу, быстрее. Последовательно — по очереди до первого ответа"
+
+msgid "Path must end with %s"
+msgstr "Путь должен заканчиваться на %s"
+
+msgid "Paused while text is selected"
+msgstr "Пауза, пока выделен текст"
+
+msgid "Pending"
+msgstr "Ожидает запуска"
+
+msgid "Ports"
+msgstr "Порты"
+
+msgid "Prefer IPv4"
+msgstr "Предпочитать IPv4"
+
+msgid "Prefer IPv6"
+msgstr "Предпочитать IPv6"
+
+msgid "Preferred IP address type for domains"
+msgstr "Предпочтительный тип IP-адресов для доменов"
+
+msgid "Prefix length from %d to %d"
+msgstr "Длина префикса от %d до %d"
+
+msgid "Prefixes: full:, keyword:, regex:"
+msgstr "Префиксы: full:, keyword:, regex:"
+
+msgid "Probably a subscription URL: paste it into Subscription"
+msgstr "Возможно, это URL подписки: вставьте его в поле «Подписка»"
+
+msgid "Profile"
+msgstr "Профиль"
+
+msgid "Protocol %s is not supported"
+msgstr "Протокол %s не поддерживается"
+
+msgid "Proxy link is unavailable"
+msgstr "Ссылка прокси недоступна"
+
+msgid "Ready-made lists of domains and subnets from %s"
+msgstr "Готовые списки доменов и подсетей из %s"
+
+msgid "Refill"
+msgstr "Сброс"
+
+msgid "Remove"
+msgstr "Удалить"
+
+msgid "Remove LoKi"
+msgstr "Удалить LoKi"
+
+msgid "Remove LoKi?"
+msgstr "Удалить LoKi?"
+
+msgid "Remove servers from the selection above"
+msgstr "Убрать серверы из выборки выше"
+
+msgid "Remove servers whose names match the regular expression"
+msgstr "Убрать серверы, чьи имена совпадают с регулярным выражением"
+
+msgid "Rename servers"
+msgstr "Переименование серверов"
+
+msgid "Request through"
+msgstr "Запрашивать через"
+
+msgid "Request through a section"
+msgstr "Запрашивать через секцию"
+
+msgid "Required"
+msgstr "Обязательное поле"
+
+msgid "Reserved name"
+msgstr "Зарезервированное имя"
+
+msgid "Resolve the addresses of the main DNS servers and proxies over UDP. IP addresses only."
+msgstr "Разрешение имён основных DNS-серверов и прокси через UDP. Только IP-адреса."
+
+msgid "Resolves domains that match the section conditions. Several servers give automatic failover. The protocol is set by a prefix: %s"
+msgstr "Резолвит домены, совпавшие с условиями секции. Несколько серверов дают автоматическое переключение при сбоях. Протокол задаётся префиксом: %s"
+
+msgid "resolves past LoKi"
+msgstr "резолвит мимо LoKi"
+
+msgid "Restart"
+msgstr "Перезапустить"
+
+msgid "restarting..."
+msgstr "перезапускается..."
+
+msgid "Restarting..."
+msgstr "Перезапуск..."
+
+msgid "Route"
+msgstr "Маршрут"
+
+msgid "Route DNS requests through a section"
+msgstr "Маршрутизировать DNS-запросы через секцию"
+
+msgid "Route main DNS requests through a section"
+msgstr "Маршрутизировать основные DNS-запросы через секцию"
+
+msgid "Route the resolver's DNS requests through a section instead of this network interface"
+msgstr "Маршрутизировать DNS-запросы резолвера через секцию, а не через этот сетевой интерфейс"
+
+msgid "Router"
+msgstr "Роутер"
+
+msgid "Router up for %s"
+msgstr "Роутер работает %s"
+
+msgid "Routing rules"
+msgstr "Правила маршрутизации"
+
+msgid "Routing rules are checked from top to bottom"
+msgstr "Правила маршрутизации проверяются сверху вниз"
+
+msgid "Rule set auto update"
+msgstr "Автообновление наборов правил"
+
+msgid "Rule set settings"
+msgstr "Настройки набора правил"
+
+msgid "Rule set: %s"
+msgstr "Набор правил: %s"
+
+msgid "Rule sets"
+msgstr "Наборы правил"
+
+msgid "Run Diagnostic"
+msgstr "Запустить диагностику"
+
+msgid "running"
+msgstr "работает"
+
+msgid "running for %s"
+msgstr "работает %s"
+
+msgid "Russian"
+msgstr "Русский"
+
+msgid "Save"
+msgstr "Сохранить"
+
+msgid "Search"
+msgstr "Поиск"
+
+msgid "Section"
+msgstr "Секция"
+
+msgid "Section name"
+msgstr "Имя секции"
+
+msgid "Section unavailable"
+msgstr "Секция недоступна"
+
+msgid "Sections"
+msgstr "Секции"
+
+msgid "Select a DNS encryption mode"
+msgstr "Выберите режим шифрования DNS"
+
+msgid "Select a server or set a pattern"
+msgstr "Выберите сервер или задайте шаблон"
+
+msgid "Select an interface"
+msgstr "Выберите интерфейс"
+
+msgid "Select the network interface to which the traffic will originate"
+msgstr "Выберите сетевой интерфейс, на который будет поступать трафик"
+
+msgid "Select the WAN interfaces to be monitored"
+msgstr "Выберите WAN интерфейсы для мониторинга"
+
+msgid "Selected"
+msgstr "Выбран"
+
+msgid "Selects the first available node by priority"
+msgstr "Выбирает первый доступный узел по приоритету"
+
+msgid "Selects the node with the lowest latency"
+msgstr "Выбирает узел с наименьшей задержкой"
+
+msgid "Send BitTorrent traffic past the proxy"
+msgstr "Пропускать торрент-трафик мимо прокси"
+
+msgid "Sequential"
+msgstr "Последовательно"
+
+msgid "Server filter"
+msgstr "Фильтр серверов"
+
+msgid "Server group settings"
+msgstr "Настройки группы серверов"
+
+msgid "Server group: %s"
+msgstr "Группа серверов: %s"
+
+msgid "Server groups"
+msgstr "Группы серверов"
+
+msgid "Server name"
+msgstr "Имя сервера"
+
+msgid "Server parameters"
+msgstr "Параметры серверов"
+
+msgid "Server settings"
+msgstr "Настройки сервера"
+
+msgid "Server: %s"
+msgstr "Сервер: %s"
+
+msgid "Servers of these protocols are not imported"
+msgstr "Серверы этих протоколов не импортируются"
+
+msgid "Servers of these protocols do not end up in the group"
+msgstr "Серверы этих протоколов не войдут в группу"
+
+msgid "Servers whose names match the regular expression"
+msgstr "Серверы, чьи имена совпадают с регулярным выражением"
+
+msgid "Service"
+msgstr "Служба"
+
+msgid "Service action failed"
+msgstr "Действие сервиса не выполнено"
+
+msgid "Service list"
+msgstr "Список сервисов"
+
+msgid "Set the User-Agent under Headers"
+msgstr "User-Agent задаётся в «Заголовках»"
+
+msgid "Settings"
+msgstr "Настройки"
+
+msgid "Settings not saved"
+msgstr "Настройки не сохранены"
+
+msgid "Several servers give automatic failover. The protocol is set by a prefix: %s"
+msgstr "Несколько серверов дают автоматическое переключение при сбоях. Протокол задаётся префиксом: %s"
+
+msgid "Shorter than the check interval"
+msgstr "Меньше интервала проверки"
+
+msgid "Show an unmasked report? It contains keys and passwords. Do not share it."
+msgstr "Показать отчёт без маскирования? Он содержит ключи и пароли. Не публикуйте его."
+
+msgid "Show details"
+msgstr "Показать подробности"
+
+msgid "Show metadata"
+msgstr "Отображать метаданные"
+
+msgid "Show the metadata block on the dashboard"
+msgstr "Отображать блок метаданных в дашборде"
+
+msgid "sing-box %s, not loki-core"
+msgstr "sing-box %s, а не loki-core"
+
+msgid "sing-box is built without %s"
+msgstr "sing-box собран без %s"
+
+msgid "sing-box log level"
+msgstr "Уровень логов sing-box"
+
+msgid "Skipped: LoKi is not running"
+msgstr "Пропущено: LoKi не запущен"
+
+msgid "Sort by latency"
+msgstr "Сортировать по задержке"
+
+msgid "Source"
+msgstr "Источник"
+
+msgid "Source Network Interface"
+msgstr "Сетевой интерфейс источника"
+
+msgid "Start"
+msgstr "Запустить"
+
+msgid "starting..."
+msgstr "запускается..."
+
+msgid "Starting..."
+msgstr "Запуск..."
+
+msgid "Static DNS records"
+msgstr "Статичные DNS записи"
+
+msgid "Status"
+msgstr "Статус"
+
+msgid "Stop"
+msgstr "Остановить"
+
+msgid "stopped"
+msgstr "остановлен"
+
+msgid "stopping..."
+msgstr "останавливается..."
+
+msgid "Stopping..."
+msgstr "Остановка..."
+
+msgid "Straight from the router, without a proxy"
+msgstr "Напрямую с роутера, без прокси"
+
+msgid "Subscription"
+msgstr "Подписка"
+
+msgid "Subscription auto update"
+msgstr "Автообновление подписки"
+
+msgid "Subscription name"
+msgstr "Имя подписки"
+
+msgid "Subscription settings"
+msgstr "Настройки подписки"
+
+msgid "Subscription URL"
+msgstr "URL подписки"
+
+msgid "Subscription URL or local path"
+msgstr "URL подписки или локальный путь"
+
+msgid "Subscription: %s"
+msgstr "Подписка: %s"
+
+msgid "Subscriptions updated"
+msgstr "Подписки успешно обновлены"
+
+msgid "Support"
+msgstr "Поддержка"
+
+msgid "Supported URIs: %s"
+msgstr "Поддерживаются URI: %s"
+
+msgid "Switching threshold in ms at which to move to a faster server"
+msgstr "Порог переключения в мс, при которой переключаться на более быстрый сервер"
+
+msgid "System"
+msgstr "Система"
+
+msgid "System information"
+msgstr "Системная информация"
+
+msgid "Terminal"
+msgstr "Терминал"
+
+msgid "Test all sections"
+msgstr "Тестировать все секции"
+
+msgid "Test latency"
+msgstr "Тестирование задержки"
+
+msgid "The / character is not allowed"
+msgstr "Символ / недопустим"
+
+msgid "The configuration is from LoKi %s, and LoKi loads configurations from %s on"
+msgstr "Конфигурация от LoKi %s, а загрузить можно конфигурации от %s и новее"
+
+msgid "The configuration is from LoKi %s, newer than this one: update LoKi first"
+msgstr "Конфигурация от LoKi %s, он новее установленного: сначала обновите LoKi"
+
+msgid "The configuration must be a regular file of at most 1 MiB"
+msgstr "Конфигурация должна быть обычным файлом размером не более 1 МиБ"
+
+msgid "The configuration of LoKi %s cannot be brought to %s: %s"
+msgstr "Конфигурацию LoKi %s не удаётся перевести на %s: %s"
+
+msgid "The DNS server must use %s"
+msgstr "DNS-сервер должен использовать %s"
+
+msgid "The file has unsupported or ambiguous LoKi sections"
+msgstr "Файл содержит неподдерживаемые или неоднозначные секции LoKi"
+
+msgid "The file is not a LoKi configuration; importing other applications is not supported"
+msgstr "Файл не является конфигурацией LoKi; импорт конфигураций других приложений не поддерживается"
+
+msgid "The file is not a LoKi configuration: it names no version"
+msgstr "Это не конфигурация LoKi: в ней не указана версия"
+
+msgid "The file is not a LoKi configuration: its version is not a release number"
+msgstr "Это не конфигурация LoKi: её версия не номер выпуска"
+
+msgid "The file is not a UCI configuration"
+msgstr "Это не конфигурация UCI"
+
+msgid "The file is over 1 MB, far larger than a LoKi configuration"
+msgstr "Файл больше 1 МБ, а конфигурация LoKi намного меньше"
+
+msgid "The group joins as the single node it has selected"
+msgstr "Группа участвует как один выбранный узел"
+
+msgid "the installed sing-box lacks %s"
+msgstr "в установленном sing-box нет %s"
+
+msgid "The installer checks the release again before changing packages."
+msgstr "Перед изменением пакетов установщик проверит релиз повторно."
+
+msgid "The interface the traffic comes from"
+msgstr "Интерфейс, с которого исходит трафик"
+
+msgid "the page reloads"
+msgstr "страница перезагрузится"
+
+msgid "The range starts after it ends"
+msgstr "Начало диапазона больше конца"
+
+msgid "The router itself: its services and programs"
+msgstr "Сам роутер: его службы и программы"
+
+msgid "The section's other conditions apply only to these devices"
+msgstr "Остальные условия секции действуют только для этих устройств"
+
+msgid "The servers that are imported"
+msgstr "Серверы, которые импортируются"
+
+msgid "The servers that are not imported"
+msgstr "Серверы, которые не импортируются"
+
+msgid "The servers that do not end up in the group"
+msgstr "Серверы, которые не войдут в группу"
+
+msgid "The servers that end up in the group"
+msgstr "Серверы, которые войдут в группу"
+
+msgid "This device"
+msgstr "Это устройство"
+
+msgid "Time"
+msgstr "Время"
+
+msgid "Tolerance"
+msgstr "Допуск"
+
+msgid "Torrents directly"
+msgstr "Торренты напрямую"
+
+msgid "Traffic"
+msgstr "Трафик"
+
+msgid "Traffic Total"
+msgstr "Всего трафика"
+
+msgid "Type"
+msgstr "Тип"
+
+msgid "unknown"
+msgstr "неизвестно"
+
+msgid "unknown error"
+msgstr "неизвестная ошибка"
+
+msgid "Unknown error"
+msgstr "Неизвестная ошибка"
+
+msgid "UNMASKED REPORT: contains keys and passwords. Do not share."
+msgstr "ОТЧЁТ СОДЕРЖИТ КЛЮЧИ И ПАРОЛИ. НЕ ПУБЛИКОВАТЬ."
+
+msgid "Unsaved changes to LoKi made earlier are replaced."
+msgstr "Непринятые изменения LoKi, сделанные раньше, будут заменены."
+
+msgid "Unsupported link"
+msgstr "Ссылка не поддерживается"
+
+msgid "Update check failed. See the installer output for the reason."
+msgstr "Не удалось проверить обновления. Причина указана в выводе установщика."
+
+msgid "Update interval"
+msgstr "Интервал обновления"
+
+msgid "Update lists"
+msgstr "Обновить списки"
+
+msgid "Update LoKi"
+msgstr "Обновить LoKi"
+
+msgid "Update LoKi?"
+msgstr "Обновить LoKi?"
+
+msgid "Update remote lists and rule sets on a schedule"
+msgstr "Обновлять удалённые списки и наборы правил по расписанию"
+
+msgid "Update subscriptions"
+msgstr "Обновить подписки"
+
+msgid "Update the subscription automatically at a set interval"
+msgstr "Автоматически обновлять подписку через заданный интервал"
+
+msgid "Updated %s"
+msgstr "Обновлено %s"
+
+msgid "Updates are available"
+msgstr "Доступны обновления"
+
+msgid "Uplink"
+msgstr "Исходящий"
+
+msgid "Upload"
+msgstr "Загрузить"
+
+msgid "Upload the configuration?"
+msgstr "Загрузить конфигурацию?"
+
+msgid "Uploaded"
+msgstr "Отдано"
+
+msgid "Uptime"
+msgstr "Работает"
+
+msgid "URL for the shared latency test of section nodes"
+msgstr "URL для общего тестирования задержки узлов секции"
+
+msgid "URL or absolute path only"
+msgstr "Только URL или абсолютный путь"
+
+msgid "URLTest"
+msgstr "URLTest"
+
+msgid "URLTest details"
+msgstr "Детали URLTest"
+
+msgid "URLTest details are unavailable"
+msgstr "Детали URLTest недоступны"
+
+msgid "URLTest settings"
+msgstr "Настройки URLTest"
+
+msgid "URLTest: %s"
+msgstr "URLTest: %s"
+
+msgid "VPN tunnel and server types are not supported"
+msgstr "Типы VPN-туннелей и серверов не поддерживаются"
+
+msgid "What the update changes in it:"
+msgstr "Что изменится при переводе:"
+
+msgid "What to do when this section's conditions match"
+msgstr "Что делать при совпадении условий этой секции"
+
+msgid "Which servers end up in the group"
+msgstr "Какие серверы попадут в группу"
+
+msgid "Which servers to import"
+msgstr "Какие серверы импортировать"
+
+msgid "Who resolves domains no rule matched"
+msgstr "Кто резолвит домены, не попавшие ни под одно правило"
+
+msgid "Whole number from %d"
+msgstr "Целое число от %d"
+
+msgid "Whole number from %d to %d"
+msgstr "Целое число от %d до %d"
+
+msgid "YAML is not supported"
+msgstr "YAML не поддерживается"
+
+msgid "Yes"
+msgstr "Да"
+
+msgid "yesterday %s"
+msgstr "вчера %s"

@@ -1,0 +1,476 @@
+{
+  "reserved_ports": [
+    53,
+    1602,
+    1603,
+    1604,
+    1605,
+    9091
+  ],
+  "reserved_tags": [
+    "bootstrap-dns-server",
+    "direct-out",
+    "dns-in",
+    "dns-server",
+    "dnsmasq-server",
+    "fakeip-dns-rule-tag",
+    "fakeip-ruleset-dns-rule-tag",
+    "fakeip-server",
+    "hosts-server",
+    "service-fakeip-dns-rule-tag",
+    "source-dns-in",
+    "system-dns-in",
+    "system-in",
+    "system6-in",
+    "tproxy-in",
+    "tproxy6-in"
+  ],
+  "community_rule_sets": [
+    "ads",
+    "ai",
+    "chatgpt",
+    "claude",
+    "cloudflare",
+    "discord",
+    "facebook",
+    "gemini",
+    "github",
+    "google_play",
+    "instagram",
+    "roblox",
+    "ru_blocked_all",
+    "ru_blocked_geo",
+    "ru_blocked_rkn",
+    "ru_only",
+    "spotify",
+    "supercell",
+    "telegram",
+    "tiktok",
+    "twitch",
+    "ua_blocked",
+    "whatsapp",
+    "x",
+    "youtube"
+  ],
+  "provider_types": [
+    "vless",
+    "vmess",
+    "trojan",
+    "shadowsocks",
+    "hysteria2",
+    "hysteria",
+    "tuic",
+    "anytls",
+    "naive",
+    "mieru",
+    "snell",
+    "shadowtls",
+    "trusttunnel",
+    "ssh",
+    "tor",
+    "socks",
+    "http"
+  ],
+  "group_types": [
+    "vless",
+    "vmess",
+    "trojan",
+    "shadowsocks",
+    "hysteria2",
+    "hysteria",
+    "tuic",
+    "anytls",
+    "naive",
+    "mieru",
+    "snell",
+    "shadowtls",
+    "trusttunnel",
+    "ssh",
+    "tor",
+    "socks",
+    "http",
+    "direct"
+  ],
+  "reserved_override_patch_paths": [
+    "detour"
+  ],
+  "check_domains": {
+    "fakeip": "fakeip.podkop.fyi"
+  },
+  "urltest_defaults": {
+    "testing_url": "https://www.gstatic.com/generate_204",
+    "expected_status": "*",
+    "check_interval": "3m",
+    "tolerance": 50,
+    "idle_timeout": "30m",
+    "interrupt_exist_connections": false
+  },
+  "fallback_defaults": {
+    "health_check_url": "https://www.gstatic.com/generate_204",
+    "health_check_interval": "5m",
+    "health_check_timeout": "5s",
+    "attempt_timeout": "5s",
+    "expected_status": "*",
+    "idle_timeout": "5m",
+    "interrupt_exist_connections": false
+  },
+  "state_wait_ms": 15000,
+  "action_openings": [
+    "Starting LoKi",
+    "Stopping LoKi",
+    "Applying configuration",
+    "Reapplying configuration"
+  ],
+  "password_fields": {
+    "uri": "uri",
+    "url": "url"
+  },
+  "link_features": [
+    [
+      "hy2://secret@example.com:443?sni=example.com#h",
+      [
+        "quic"
+      ]
+    ],
+    [
+      "tuic://u:p@example.com:443#t",
+      [
+        "quic"
+      ]
+    ],
+    [
+      "naive+https://u:p@example.com:443#n",
+      [
+        "naive"
+      ]
+    ],
+    [
+      "http3://u:p@example.com:443#n",
+      [
+        "naive"
+      ]
+    ],
+    [
+      "vless://u@example.com:443?security=reality&pbk=key&sni=example.com#r",
+      [
+        "utls"
+      ]
+    ],
+    [
+      "vless://u@example.com:443?pbk=key#r",
+      [
+        "utls"
+      ]
+    ],
+    [
+      "vless://u@example.com:443?security=tls&fp=chrome#f",
+      [
+        "utls"
+      ]
+    ],
+    [
+      "vless://u@example.com:443?security=none&fp=chrome#plain",
+      []
+    ],
+    [
+      "vless://u@example.com:443?security=tls#tls",
+      []
+    ],
+    [
+      "trojan://p@example.com:443?fp=firefox#t",
+      [
+        "utls"
+      ]
+    ],
+    [
+      "hysteria2://p@example.com:443?fp=chrome#h",
+      [
+        "quic",
+        "utls"
+      ]
+    ],
+    [
+      "ss://YWVzLTI1Ni1nY206cGFzcw@example.com:8388#s",
+      []
+    ],
+    [
+      "vmess://eyJhZGQiOiJleGFtcGxlLmNvbSIsInBvcnQiOiI0NDMiLCJpZCI6InUiLCJ0bHMiOiJ0bHMiLCJmcCI6ImNocm9tZSJ9",
+      [
+        "vmess",
+        "utls"
+      ]
+    ],
+    [
+      "vmess://eyJhZGQiOiJleGFtcGxlLmNvbSIsInBvcnQiOiI0NDMiLCJpZCI6InUiLCJmcCI6ImNocm9tZSJ9",
+      [
+        "vmess"
+      ]
+    ],
+    [
+      "vmess://u@example.com:443?security=tls&fp=chrome#v",
+      [
+        "vmess",
+        "utls"
+      ]
+    ],
+    [
+      "vless://u@example.com:443?security=tls&type=xhttp&alpn=h3#x",
+      [
+        "quic"
+      ]
+    ],
+    [
+      "vless://u@example.com:443?security=tls&type=xhttp&alpn=h3%2Ch2&fp=chrome#x",
+      [
+        "utls"
+      ]
+    ],
+    [
+      "vless://u@example.com:443?security=reality&pbk=key&net=xhttp&alpn=h3#x",
+      [
+        "utls"
+      ]
+    ],
+    [
+      "vless://u@example.com:443?security=tls&pbk=key&type=xhttp&alpn=h3#x",
+      [
+        "utls"
+      ]
+    ],
+    [
+      "trojan://p@example.com:443?security=reality&pbk=key&type=xhttp&alpn=h3#t",
+      [
+        "utls"
+      ]
+    ],
+    [
+      "vless://u@example.com:443?security=tls&type=xhttp&alpn=h2,h3#x",
+      []
+    ],
+    [
+      "vless://u@example.com:443?security=none&type=xhttp&alpn=h3#x",
+      []
+    ],
+    [
+      "vless://u@example.com:443?security=tls&type=ws&alpn=h3#x",
+      []
+    ],
+    [
+      "trojan://p@example.com:443?type=splithttp&alpn=h3#t",
+      [
+        "quic"
+      ]
+    ],
+    [
+      "vmess://u@example.com:443?security=tls&type=xhttp&alpn=h3#v",
+      [
+        "vmess",
+        "quic"
+      ]
+    ],
+    [
+      "socks5://127.0.0.1:1080#local",
+      []
+    ],
+    [
+      "tt://?AAECAQ92cG4uZXhhbXBsZS5jb20FBWFsaWNlBglzZWNyZXQxMjMCCzEuMi4zLjQ6NDQz",
+      [
+        "trusttunnel"
+      ]
+    ],
+    [
+      "anytls://p@example.com:443?fp=chrome#a",
+      [
+        "anytls",
+        "utls"
+      ]
+    ],
+    [
+      "mierus://u:p@example.com?profile=p&port=443&protocol=TCP#m",
+      [
+        "mieru"
+      ]
+    ],
+    [
+      "mieru://opaque-native-payload",
+      [
+        "mieru"
+      ]
+    ]
+  ],
+  "core_report_base": {
+    "known": true,
+    "tags": [
+      "badlinkname",
+      "tfogo_checklinkname0",
+      "with_anytls",
+      "with_clash_api",
+      "with_gvisor",
+      "with_openvpn",
+      "with_quic",
+      "with_trusttunnel",
+      "with_utls",
+      "with_vmess",
+      "with_wireguard"
+    ],
+    "features": {
+      "clash_api": {
+        "available": true,
+        "tags": [
+          "with_clash_api"
+        ]
+      },
+      "utls": {
+        "available": true,
+        "tags": [
+          "with_utls"
+        ]
+      },
+      "quic": {
+        "available": true,
+        "tags": [
+          "with_quic"
+        ]
+      },
+      "naive": {
+        "available": false,
+        "tags": [
+          "with_naive"
+        ]
+      },
+      "trusttunnel": {
+        "available": true,
+        "tags": [
+          "with_trusttunnel"
+        ]
+      },
+      "vmess": {
+        "available": true,
+        "tags": [
+          "with_vmess"
+        ]
+      },
+      "snell": {
+        "available": false,
+        "tags": [
+          "with_snell"
+        ]
+      },
+      "ssh": {
+        "available": false,
+        "tags": [
+          "with_ssh"
+        ]
+      },
+      "shadowtls": {
+        "available": false,
+        "tags": [
+          "with_shadowtls"
+        ]
+      },
+      "tor": {
+        "available": false,
+        "tags": [
+          "with_tor"
+        ]
+      },
+      "anytls": {
+        "available": true,
+        "tags": [
+          "with_anytls"
+        ]
+      },
+      "mieru": {
+        "available": false,
+        "tags": [
+          "with_mieru"
+        ]
+      }
+    },
+    "types": {
+      "outbound": {
+        "hysteria": "quic",
+        "hysteria2": "quic",
+        "tuic": "quic",
+        "naive": "naive",
+        "trusttunnel": "trusttunnel",
+        "vmess": "vmess",
+        "snell": "snell",
+        "ssh": "ssh",
+        "shadowtls": "shadowtls",
+        "tor": "tor",
+        "anytls": "anytls",
+        "mieru": "mieru"
+      }
+    },
+    "links": {
+      "ss": "shadowsocks",
+      "vmess": "vmess",
+      "vless": "vless",
+      "trojan": "trojan",
+      "tuic": "tuic",
+      "anytls": "anytls",
+      "hy": "hysteria",
+      "hysteria": "hysteria",
+      "hy2": "hysteria2",
+      "hysteria2": "hysteria2",
+      "mieru": "mieru",
+      "mierus": "mieru",
+      "naive+https": "naive",
+      "naive+quic": "naive",
+      "http2": "naive",
+      "http3": "naive",
+      "http": "http",
+      "https": "http",
+      "socks": "socks",
+      "socks4": "socks",
+      "socks4a": "socks",
+      "socks5": "socks",
+      "socks5h": "socks",
+      "tt": "trusttunnel"
+    }
+  },
+  "installer": {
+    "object": "loki.installer",
+    "methods": [
+      "input",
+      "read",
+      "stop"
+    ],
+    "actions": [
+      "check",
+      "update",
+      "variant",
+      "uninstall"
+    ]
+  },
+  "removed_vpn_types": [
+    "wireguard",
+    "amneziawg",
+    "warp",
+    "tailscale",
+    "openvpn",
+    "openvpn-client",
+    "openvpn-server",
+    "openconnect"
+  ],
+  "retired_password_fields": {
+    "amnezia_header_protection_key": "amnezia_header_protection_key",
+    "hysteria2_obfs_password": "hysteria2_obfs_password",
+    "openconnect_cookie": "endpoint_json",
+    "openconnect_key_password": "endpoint_json",
+    "openconnect_password": "endpoint_json",
+    "openconnect_token_password": "endpoint_json",
+    "openconnect_token_pin": "endpoint_json",
+    "openconnect_token_secret": "endpoint_json",
+    "openvpn_password": "endpoint_json",
+    "pre_shared_key": "pre_shared_key",
+    "private_key": "private_key",
+    "reality_private_key": "reality_private_key",
+    "shadowsocks_psk": "shadowsocks_psk",
+    "tailscale_auth_key": "tailscale_auth_key",
+    "warp_auth_token": "warp_profile_auth_token",
+    "warp_license_key": "warp_profile_license_key",
+    "warp_private_key": "warp_profile_private_key"
+  }
+}

@@ -1,0 +1,184 @@
+diff --git a/release/config/openwrt.conf b/release/config/openwrt.conf
+--- a/release/config/openwrt.conf
++++ b/release/config/openwrt.conf
+@@ -1,5 +1,5 @@
+-config sing-box 'main'
++config loki-core 'main'
+ 	option enabled '1'
+-	option conffile '/etc/sing-box/config.json'
+-	option workdir '/usr/share/sing-box'
++	option conffile '/etc/loki-core/config.json'
++	option workdir '/usr/share/loki-core'
+ 	option log_stderr '1'
+diff --git a/release/config/openwrt.init b/release/config/openwrt.init
+--- a/release/config/openwrt.init
++++ b/release/config/openwrt.init
+@@ -1,19 +1,20 @@
+ #!/bin/sh /etc/rc.common
++# Modified for LoKi on 2026-11-05: use the independent core namespace.
+ 
+ USE_PROCD=1
+ START=99
+-PROG="/usr/bin/sing-box"
++PROG="/usr/bin/loki-core"
+ 
+ start_service() {
+-  config_load "sing-box"
++  config_load "loki-core"
+ 
+   local enabled config_file working_directory
+   local log_stderr
+   config_get_bool enabled "main" "enabled" "0"
+   [ "$enabled" -eq "1" ] || return 0
+ 
+-  config_get config_file "main" "conffile" "/etc/sing-box/config.json"
+-  config_get working_directory "main" "workdir" "/usr/share/sing-box"
++  config_get config_file "main" "conffile" "/etc/loki-core/config.json"
++  config_get working_directory "main" "workdir" "/usr/share/loki-core"
+   config_get_bool log_stderr "main" "log_stderr" "1"
+ 
+   procd_open_instance
+@@ -34,9 +35,9 @@
+ }
+ 
+ reload_service() {
+-  procd_send_signal sing-box "*" HUP
++  procd_send_signal loki-core "*" HUP
+ }
+ 
+ service_triggers() {
+-  procd_add_reload_trigger "sing-box"
++  procd_add_reload_trigger "loki-core"
+ }
+diff --git a/release/config/openwrt.keep b/release/config/openwrt.keep
+--- a/release/config/openwrt.keep
++++ b/release/config/openwrt.keep
+@@ -1 +1 @@
+-/etc/sing-box/
++/etc/loki-core/
+diff --git a/release/config/openwrt.postinst b/release/config/openwrt.postinst
+--- a/release/config/openwrt.postinst
++++ b/release/config/openwrt.postinst
+@@ -1,19 +1,8 @@
+ #!/bin/sh
+-# apk keeps an /etc/init.d/sing-box that was edited or that no package owns and installs ours
+-# beside it as .apk-new; Forkop needs ours, which reloads the core with SIGHUP.
++# Modified for LoKi on 2026-11-05: preserve an unverified existing service script.
+ [ -z "${IPKG_INSTROOT}" ] || exit 0
+-new=/etc/init.d/sing-box.apk-new
+-[ -f "$new" ] || exit 0
+-old=/etc/sing-box/sing-box.init.before-sing-box-forkop kept=""
+-mkdir -p /etc/sing-box
+-if [ -f /etc/init.d/sing-box ] && mv -f /etc/init.d/sing-box "$old"; then
+-	chmod 0644 "$old"
+-	kept=", the old one is $old"
+-fi
+-if mv -f "$new" /etc/init.d/sing-box; then
+-	logger -t sing-box-forkop "/etc/init.d/sing-box was not the one of the package and apk kept it: replaced$kept"
+-else
+-	[ -z "$kept" ] || mv -f "$old" /etc/init.d/sing-box
+-	logger -t sing-box-forkop "/etc/init.d/sing-box is not the one of the package and could not be replaced by $new"
++if [ -e /etc/init.d/loki-core.apk-new ] || [ -L /etc/init.d/loki-core.apk-new ]; then
++    logger -t loki-core "The existing service script requires review; the prepared script was preserved"
++    exit 1
+ fi
+ exit 0
+diff --git a/release/forkop/package.sh b/release/forkop/package.sh
+--- a/release/forkop/package.sh
++++ b/release/forkop/package.sh
+@@ -1,22 +1,20 @@
+ #!/usr/bin/env bash
++# Modified for LoKi on 2026-11-05: use independent paths without replacing foreign packages.
+ # Modified for LoKi on 2026-11-04: attach binary-specific dependency notices.
+ # Modified for LoKi on 2026-11-01: identify the independent core build.
+-# Packages a sing-box-forkop binary for one OpenWrt architecture as .ipk and .apk.
++# Packages a loki-core binary for one OpenWrt architecture as .ipk and .apk.
+ # build.sh runs it once per architecture; the packages are byte-for-byte the
+ # same for the same binary, version and SOURCE_DATE_EPOCH.
+ set -euo pipefail
+ umask 022
+ 
+ PROJECT=$(cd "$(dirname "$0")/../.." && pwd)
+-PACKAGE=sing-box-forkop
++PACKAGE=loki-core
+ URL=https://github.com/Zagorsky17/LoKi
+ MAINTAINER=Zagorsky17
+ LICENSE=GPL-3.0-or-later
+ DEPENDS=(ca-bundle)
+-# Every package that installs /usr/bin/sing-box. opkg removes one in the same transaction only
+-# when it is named here, as Conflicts and Replaces; it never follows a Provides to it.
+-CONFLICTS=(sing-box sing-box-tiny sing-box-extended podkop-engine podkop-engine-full sing-box-lx sing-box-x rust-x steer-box-connector)
+-CONFFILES=(/etc/config/sing-box /etc/sing-box/config.json)
++CONFFILES=(/etc/config/loki-core /etc/loki-core/config.json)
+ 
+ usage() {
+   echo "Usage: $0 --binary FILE --arch ARCH --version VERSION --variant NAME [--format ipk|apk|all] [--output DIR]" >&2
+@@ -44,7 +42,7 @@
+ # A package carries the release a build is or follows, X.Y.Z-rN for X.Y.Z-rN+K
+ # too: neither opkg nor apk can order a build between two releases.
+ PACKAGE_VERSION=${VERSION%%+*}
+-if ! [[ "$PACKAGE_VERSION" =~ ^[0-9]+(\.[0-9]+)*(-r[0-9]+)?$ ]]; then
++if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+-r[0-9]+(\+[0-9]+)?$ ]]; then
+   echo "$0: version $VERSION is not X.Y.Z-rN or X.Y.Z-rN+K" >&2
+   exit 2
+ fi
+@@ -60,17 +58,17 @@
+ trap 'rm -rf "$WORK"' EXIT
+ ROOT="$WORK/root"
+ 
+-install -Dm755 "$BINARY" "$ROOT/usr/bin/sing-box"
+-install -Dm644 /dev/null "$ROOT/usr/share/sing-box-forkop/version"
+-printf '%s\n' "$VERSION" > "$ROOT/usr/share/sing-box-forkop/version"
+-install -Dm644 /dev/null "$ROOT/usr/share/sing-box-forkop/variant"
+-printf '%s\n' "$VARIANT" > "$ROOT/usr/share/sing-box-forkop/variant"
+-install -Dm644 "$PROJECT/release/config/config.json" "$ROOT/etc/sing-box/config.json"
+-install -Dm644 "$PROJECT/release/config/openwrt.conf" "$ROOT/etc/config/sing-box"
+-install -Dm755 "$PROJECT/release/config/openwrt.init" "$ROOT/etc/init.d/sing-box"
+-install -Dm644 "$PROJECT/release/config/openwrt.keep" "$ROOT/lib/upgrade/keep.d/sing-box"
+-install -Dm644 "$PROJECT/LICENSE" "$ROOT/usr/share/licenses/sing-box/LICENSE"
+-python3 "$PROJECT/release/forkop/notices.py" "$PROJECT" "$BINARY" "$ROOT/usr/share/licenses/sing-box"
++install -Dm755 "$BINARY" "$ROOT/usr/bin/loki-core"
++install -Dm644 /dev/null "$ROOT/usr/share/loki-core/version"
++printf '%s\n' "$VERSION" > "$ROOT/usr/share/loki-core/version"
++install -Dm644 /dev/null "$ROOT/usr/share/loki-core/variant"
++printf '%s\n' "$VARIANT" > "$ROOT/usr/share/loki-core/variant"
++install -Dm600 "$PROJECT/release/config/config.json" "$ROOT/etc/loki-core/config.json"
++install -Dm600 "$PROJECT/release/config/openwrt.conf" "$ROOT/etc/config/loki-core"
++install -Dm755 "$PROJECT/release/config/openwrt.init" "$ROOT/etc/init.d/loki-core"
++install -Dm644 "$PROJECT/release/config/openwrt.keep" "$ROOT/lib/upgrade/keep.d/loki-core"
++install -Dm644 "$PROJECT/LICENSE" "$ROOT/usr/share/licenses/loki-core/LICENSE"
++python3 "$PROJECT/release/forkop/notices.py" "$PROJECT" "$BINARY" "$ROOT/usr/share/licenses/loki-core"
+ 
+ comma_list() {
+   local joined
+@@ -97,9 +95,6 @@
+ Package: $PACKAGE
+ Version: $PACKAGE_VERSION
+ Depends: $(comma_list "${DEPENDS[@]}")
+-Provides: sing-box
+-Conflicts: $(comma_list "${CONFLICTS[@]}")
+-Replaces: $(comma_list "${CONFLICTS[@]}")
+ License: $LICENSE
+ Section: net
+ Architecture: $ARCHITECTURE
+@@ -120,9 +115,7 @@
+   echo "    package: $ASSET.ipk"
+ }
+ 
+-# apk mkpkg looks owner names up in the root it is given, so it gets a root that
+-# knows only root. Provided at its version, sing-box makes apk count this package as
+-# a sing-box and take it in place of the feed's sing-box or sing-box-tiny.
++# apk mkpkg resolves owner names against this private root.
+ build_apk() {
+   local metadata="$ROOT/lib/apk/packages" apk_root="$WORK/apk-root" conffile
+   mkdir -p "$metadata" "$apk_root/etc"
+@@ -146,9 +139,6 @@
+     --info "url:$URL" \
+     --info "maintainer:$MAINTAINER" \
+     --info "depends:${DEPENDS[*]}" \
+-    --info "provides:sing-box=$PACKAGE_VERSION" \
+-    --info "replaces:${CONFLICTS[*]}" \
+-    --info "provider-priority:100" \
+     --script "post-install:$PROJECT/release/config/openwrt.postinst" \
+     --script "post-upgrade:$PROJECT/release/config/openwrt.postinst" \
+     --script "pre-deinstall:$PROJECT/release/config/openwrt.prerm" \

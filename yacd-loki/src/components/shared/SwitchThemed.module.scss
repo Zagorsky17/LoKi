@@ -1,0 +1,56 @@
+// 尺寸与迁移前的 react-switch 保持一致：轨道 44x28，滑块 24
+.root {
+  --switch-w: 44px;
+  --switch-h: 28px;
+  --switch-thumb: 24px;
+
+  position: relative;
+  flex-shrink: 0;
+  width: var(--switch-w);
+  height: var(--switch-h);
+  padding: 0;
+  border: none;
+  border-radius: calc(var(--switch-h) / 2);
+  background-color: var(--color-toggle-bg);
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+
+  &[data-state='checked'] {
+    background-color: var(--color-focus-blue);
+  }
+
+  &:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px var(--color-accent-soft-bg);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
+.mini {
+  --switch-w: 34px;
+  --switch-h: 20px;
+  --switch-thumb: 16px;
+}
+
+.thumb {
+  display: block;
+  width: var(--switch-thumb);
+  height: var(--switch-thumb);
+  border-radius: 50%;
+  background-color: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  transition: transform 0.2s ease;
+  transform: translateX(calc((var(--switch-h) - var(--switch-thumb)) / 2));
+  will-change: transform;
+
+  &[data-state='checked'] {
+    transform: translateX(
+      calc(var(--switch-w) - var(--switch-thumb) - (var(--switch-h) - var(--switch-thumb)) / 2)
+    );
+  }
+}

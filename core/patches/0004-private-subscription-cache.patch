@@ -1,0 +1,3944 @@
+diff --git a/adapter/experimental.go b/adapter/experimental.go
+index a92155a..2821fa1 100644
+--- a/adapter/experimental.go
++++ b/adapter/experimental.go
+@@ -1,3 +1,4 @@
++// Modified for LoKi on 2026-11-03: expose optional two-phase subscription persistence.
+ package adapter
+ 
+ import (
+@@ -66,6 +67,16 @@ type CacheFile interface {
+ 	SaveSubscription(tag string, sub *SavedBinary) error
+ }
+ 
++// SubscriptionCachePreparer keeps bulk body I/O outside the outbound manager's publication lock.
++type SubscriptionCachePreparer interface {
++	PrepareSubscription(tag string, sub *SavedBinary) (PreparedSubscription, error)
++}
++
++type PreparedSubscription interface {
++	Commit() error
++	Close() error
++}
++
+ type SavedBinary struct {
+ 	Content     []byte
+ 	LastUpdated time.Time
+diff --git a/adapter/outbound/manager.go b/adapter/outbound/manager.go
+index 545b7df..3003417 100644
+--- a/adapter/outbound/manager.go
++++ b/adapter/outbound/manager.go
+@@ -1,3 +1,4 @@
++// Modified for LoKi on 2026-11-03: persist provider candidates before atomic runtime replacement.
+ package outbound
+ 
+ import (
+@@ -191,6 +192,12 @@ func (m *Manager) WithStage(fn func(stage adapter.StartStage, scope *adapter.Sco
+ }
+ 
+ func (m *Manager) SwapBatch(expectedOld map[string]adapter.Outbound, candidates []adapter.Outbound) (map[string]adapter.Outbound, error) {
++	return m.SwapBatchWithCommit(expectedOld, candidates, nil)
++}
++
++// commit runs after every rejection check while the manager snapshot is locked. It must
++// only persist candidate state, without manager calls or provider/group notifications.
++func (m *Manager) SwapBatchWithCommit(expectedOld map[string]adapter.Outbound, candidates []adapter.Outbound, commit func() error) (map[string]adapter.Outbound, error) {
+ 	m.access.Lock()
+ 	defer m.access.Unlock()
+ 	removeSet := make(map[string]bool, len(expectedOld))
+@@ -235,6 +242,12 @@ func (m *Manager) SwapBatch(expectedOld map[string]adapter.Outbound, candidates
+ 		}
+ 	}
+ 
++	if commit != nil {
++		if err := commit(); err != nil {
++			return nil, err
++		}
++	}
++
+ 	oldOutbounds := make(map[string]adapter.Outbound, len(expectedOld))
+ 	for tag := range removeSet {
+ 		oldOutbound := m.outboundByTag[tag]
+diff --git a/adapter/provider/adapter.go b/adapter/provider/adapter.go
+index ab996fe..788b84f 100644
+--- a/adapter/provider/adapter.go
++++ b/adapter/provider/adapter.go
+@@ -1,3 +1,4 @@
++// Modified for LoKi on 2026-11-03: stage provider snapshots before persistence.
+ package provider
+ 
+ import (
+@@ -44,6 +45,7 @@ type Adapter struct {
+ 	timeout               time.Duration
+ 	interval              time.Duration
+ 
++	updateAccess       sync.Mutex
+ 	access             sync.RWMutex
+ 	outboundSources    map[string]option.Outbound
+ 	outboundCloseOrder []string
+@@ -172,6 +174,13 @@ func (a *Adapter) OutboundLink(tag string) (string, bool, error) {
+ // UpdateOutbounds publishes outbounds that FilterOutbounds already rewrote, so
+ // the provider override is never applied twice to the same tag.
+ func (a *Adapter) UpdateOutbounds(newOpts []option.Outbound) error {
++	return a.UpdateOutboundsWithCommit(newOpts, nil, nil)
++}
++
++// UpdateOutboundsWithCommit stages the graph and persists it before publishing runtime pointers.
++func (a *Adapter) UpdateOutboundsWithCommit(newOpts []option.Outbound, commit func() error, published func()) error {
++	a.updateAccess.Lock()
++	defer a.updateAccess.Unlock()
+ 	sourceOpts := FilterInvalidOutbounds(newOpts, nil)
+ 	a.access.RLock()
+ 	oldOpts := cloneOutbounds(a.outboundOpts)
+@@ -191,14 +200,18 @@ func (a *Adapter) UpdateOutbounds(newOpts []option.Outbound) error {
+ 	if err != nil {
+ 		return err
+ 	}
+-	oldRuntimeOutbounds, scope, appliedOutbounds, err := a.replaceOutbounds(oldOutbounds, newOutbounds)
++	oldRuntimeOutbounds, scope, publish, err := a.replaceOutbounds(oldOutbounds, newOutbounds, commit)
+ 	if err != nil {
++		if commit != nil {
++			return err
++		}
+ 		restoreErr := a.publishOutbounds(oldOutbounds)
+ 		a.UpdateGroups()
+ 		return E.Errors(err, restoreErr)
+ 	}
+-	if err = a.publishOutbounds(appliedOutbounds); err != nil {
+-		return err
++	publish()
++	if published != nil {
++		published()
+ 	}
+ 	a.UpdateGroups()
+ 	for _, oldOutbound := range oldRuntimeOutbounds {
+@@ -217,6 +230,21 @@ func (a *Adapter) UpdateOutbounds(newOpts []option.Outbound) error {
+ // The tags the filters chose from are kept as the filter candidates, also
+ // when the filters leave nothing to publish.
+ func (a *Adapter) FilterOutbounds(opts []option.Outbound, exclude *regexp.Regexp, include *regexp.Regexp) ([]option.Outbound, error) {
++	result, candidates, err := a.FilterOutboundsStaged(opts, exclude, include)
++	if err == nil {
++		a.PublishFilterCandidates(candidates)
++	}
++	return result, err
++}
++
++func (a *Adapter) PublishFilterCandidates(candidates []string) {
++	a.access.Lock()
++	a.filterCandidates = append([]string(nil), candidates...)
++	a.access.Unlock()
++}
++
++// FilterOutboundsStaged leaves the published filter choices unchanged on a failed cache commit.
++func (a *Adapter) FilterOutboundsStaged(opts []option.Outbound, exclude *regexp.Regexp, include *regexp.Regexp) ([]option.Outbound, []string, error) {
+ 	opts, excludedTags := a.filterOutboundTypes(opts)
+ 	opts = cloneOutbounds(FilterInvalidOutbounds(opts, excludedTags))
+ 	for index, outbound := range opts {
+@@ -228,7 +256,7 @@ func (a *Adapter) FilterOutbounds(opts []option.Outbound, exclude *regexp.Regexp
+ 		}
+ 		patched, err := a.override.ApplyOptions(a.ctx, outbound)
+ 		if err != nil {
+-			return nil, E.Cause(err, "override outbound ", outbound.Tag)
++			return nil, nil, E.Cause(err, "override outbound ", outbound.Tag)
+ 		}
+ 		opts[index] = patched
+ 	}
+@@ -237,11 +265,8 @@ func (a *Adapter) FilterOutbounds(opts []option.Outbound, exclude *regexp.Regexp
+ 	for _, outbound := range opts {
+ 		candidates = append(candidates, outbound.Tag)
+ 	}
+-	a.access.Lock()
+-	a.filterCandidates = candidates
+-	a.access.Unlock()
+ 	if exclude == nil && include == nil {
+-		return opts, nil
++		return opts, candidates, nil
+ 	}
+ 	// Chains that dialed through a filtered-out outbound go with it.
+ 	filteredTags := make(map[string]bool)
+@@ -258,7 +283,7 @@ func (a *Adapter) FilterOutbounds(opts []option.Outbound, exclude *regexp.Regexp
+ 	if len(result) == 0 && len(opts) > 0 {
+ 		a.logger.Warn("name filter left none of the ", len(opts), " imported outbounds")
+ 	}
+-	return result, nil
++	return result, candidates, nil
+ }
+ 
+ func (a *Adapter) defaultDetour() string {
+@@ -289,6 +314,15 @@ func (a *Adapter) filterOutboundTypes(opts []option.Outbound) ([]option.Outbound
+ }
+ 
+ func (a *Adapter) publishOutbounds(preparedOutbounds []preparedOutbound) error {
++	publish, err := a.preparePublication(preparedOutbounds, a.outbound.Outbound)
++	if err != nil {
++		return err
++	}
++	publish()
++	return nil
++}
++
++func (a *Adapter) preparePublication(preparedOutbounds []preparedOutbound, lookup func(string) (adapter.Outbound, bool)) (func(), error) {
+ 	var (
+ 		outbounds          = make([]adapter.Outbound, 0, len(preparedOutbounds))
+ 		outboundMembers    = make([]adapter.ProviderMember, 0, len(preparedOutbounds))
+@@ -301,9 +335,9 @@ func (a *Adapter) publishOutbounds(preparedOutbounds []preparedOutbound) error {
+ 		outboundCloseOrder = append(outboundCloseOrder, prepared.tag)
+ 	}
+ 	for _, prepared := range sourceOrder(preparedOutbounds) {
+-		outbound, loaded := a.outbound.Outbound(prepared.tag)
++		outbound, loaded := lookup(prepared.tag)
+ 		if !loaded {
+-			return E.New("provider outbound not found after update: ", prepared.tag)
++			return nil, E.New("provider outbound not found before update: ", prepared.tag)
+ 		}
+ 		outbounds = append(outbounds, outbound)
+ 		outboundMembers = append(outboundMembers, adapter.ProviderMember{Outbound: outbound, Identity: prepared.identity})
+@@ -311,15 +345,16 @@ func (a *Adapter) publishOutbounds(preparedOutbounds []preparedOutbound) error {
+ 		outboundSources[prepared.tag] = prepared.source
+ 		outboundOpts = append(outboundOpts, prepared.source)
+ 	}
+-	a.access.Lock()
+-	a.outbounds = outbounds
+-	a.outboundMembers = outboundMembers
+-	a.outboundsByTag = outboundsByTag
+-	a.outboundSources = outboundSources
+-	a.outboundOpts = outboundOpts
+-	a.outboundCloseOrder = outboundCloseOrder
+-	a.access.Unlock()
+-	return nil
++	return func() {
++		a.access.Lock()
++		a.outbounds = outbounds
++		a.outboundMembers = outboundMembers
++		a.outboundsByTag = outboundsByTag
++		a.outboundSources = outboundSources
++		a.outboundOpts = outboundOpts
++		a.outboundCloseOrder = outboundCloseOrder
++		a.access.Unlock()
++	}, nil
+ }
+ 
+ func (a *Adapter) HealthCheck(ctx context.Context) (map[string]uint16, error) {
+diff --git a/adapter/provider/graph.go b/adapter/provider/graph.go
+index 685ea53..405fcd1 100644
+--- a/adapter/provider/graph.go
++++ b/adapter/provider/graph.go
+@@ -1,3 +1,4 @@
++// Modified for LoKi on 2026-11-03: preserve live outbounds when cache persistence fails.
+ package provider
+ 
+ import (
+@@ -5,6 +6,8 @@ import (
+ 	"crypto/sha256"
+ 	"encoding/base64"
+ 	"encoding/hex"
++	"errors"
++	"fmt"
+ 	"reflect"
+ 	"sort"
+ 	"strconv"
+@@ -20,6 +23,11 @@ import (
+ 	"github.com/sagernet/sing/service"
+ )
+ 
++// Publication conflicts retain the previously committed response metadata and validator.
++var ErrPublicationRefused = errors.New("provider publication refused")
++
++func publicationRefusal(err error) error { return fmt.Errorf("%w: %w", ErrPublicationRefused, err) }
++
+ // FilterInvalidOutbounds removes chains that depend on an entry which was
+ // present in the source but could not be imported.
+ func FilterInvalidOutbounds(outbounds []option.Outbound, invalidTags map[string]bool) []option.Outbound {
+@@ -452,31 +460,35 @@ func (m *stagedOutboundManager) Outbound(tag string) (adapter.Outbound, bool) {
+ 
+ // replaceOutbounds swaps the affected outbounds in. The replaced ones are left
+ // running in scope, for the caller to remove once nothing selects them.
+-func (a *Adapter) replaceOutbounds(oldOutbounds, newOutbounds []preparedOutbound) (replaced []adapter.Outbound, scope *adapter.Scope, applied []preparedOutbound, err error) {
++func (a *Adapter) replaceOutbounds(oldOutbounds, newOutbounds []preparedOutbound, commit func() error) (replaced []adapter.Outbound, scope *adapter.Scope, publish func(), err error) {
+ 	manager, loaded := a.outbound.(batchOutboundManager)
+ 	if !loaded {
++		if commit != nil {
++			err = publicationRefusal(E.New("outbound manager cannot persist an atomic provider update"))
++			return
++		}
++		var applied []preparedOutbound
+ 		applied, err = a.replaceUnstartedOutbounds(oldOutbounds, newOutbounds)
++		if err == nil {
++			publish, err = a.preparePublication(applied, a.outbound.Outbound)
++		}
+ 		return
+ 	}
+ 	manager.WithStage(func(stage adapter.StartStage, managerScope *adapter.Scope) {
+-		if managerScope != nil {
+-			scope = managerScope
+-			replaced, applied, err = a.replaceStartedOutbounds(manager, stage, managerScope, oldOutbounds, newOutbounds)
+-		} else {
+-			applied, err = a.replaceUnstartedOutbounds(oldOutbounds, newOutbounds)
+-		}
++		scope = managerScope
++		replaced, publish, err = a.replaceStartedOutbounds(manager, stage, managerScope, oldOutbounds, newOutbounds, commit)
+ 	})
+ 	return
+ }
+ 
+-func (a *Adapter) replaceStartedOutbounds(manager batchOutboundManager, managerStage adapter.StartStage, scope *adapter.Scope, oldOutbounds, newOutbounds []preparedOutbound) ([]adapter.Outbound, []preparedOutbound, error) {
++func (a *Adapter) replaceStartedOutbounds(manager batchOutboundManager, managerStage adapter.StartStage, scope *adapter.Scope, oldOutbounds, newOutbounds []preparedOutbound, commit func() error) ([]adapter.Outbound, func(), error) {
+ 	affected := affectedOutbounds(oldOutbounds, newOutbounds)
+ 	expectedOld := make(map[string]adapter.Outbound)
+ 	for _, outbound := range oldOutbounds {
+ 		if affected[outbound.tag] {
+ 			current, loaded := a.outbound.Outbound(outbound.tag)
+ 			if !loaded {
+-				return nil, nil, E.New("provider outbound not found: ", outbound.tag)
++				return nil, nil, publicationRefusal(E.New("provider outbound not found: ", outbound.tag))
+ 			}
+ 			expectedOld[outbound.tag] = current
+ 		}
+@@ -487,12 +499,9 @@ func (a *Adapter) replaceStartedOutbounds(manager batchOutboundManager, managerS
+ 			candidatesToBuild = append(candidatesToBuild, outbound)
+ 		}
+ 	}
+-	if len(expectedOld)+len(candidatesToBuild) == 0 {
+-		return nil, newOutbounds, nil
+-	}
+ 	registry := service.FromContext[adapter.OutboundRegistry](a.ctx)
+ 	if registry == nil {
+-		return nil, nil, E.New("missing outbound registry")
++		return nil, nil, publicationRefusal(E.New("missing outbound registry"))
+ 	}
+ 	staged := &stagedOutboundManager{OutboundManager: a.outbound, candidates: make(map[string]adapter.Outbound)}
+ 	stagedCtx := service.ExtendContext(a.ctx)
+@@ -524,7 +533,7 @@ func (a *Adapter) replaceStartedOutbounds(manager batchOutboundManager, managerS
+ 		preparedByTag[prepared.tag] = prepared
+ 	}
+ 	for _, stage := range adapter.ListStartStages {
+-		if stage > managerStage {
++		if scope == nil || stage > managerStage {
+ 			break
+ 		}
+ 		for _, candidate := range candidates {
+@@ -565,10 +574,27 @@ func (a *Adapter) replaceStartedOutbounds(manager batchOutboundManager, managerS
+ 		removeOutboundsReverse(scope, validCandidates)
+ 		return nil, nil, E.New("no usable provider outbounds")
+ 	}
+-	oldByTag, err := manager.SwapBatch(expectedOld, validCandidates)
++	publish, err := a.preparePublication(appliedOutbounds, staged.Outbound)
+ 	if err != nil {
+ 		removeOutboundsReverse(scope, validCandidates)
+-		return nil, nil, err
++		return nil, nil, publicationRefusal(err)
++	}
++	var oldByTag map[string]adapter.Outbound
++	if commit != nil {
++		atomicManager, ok := manager.(interface {
++			SwapBatchWithCommit(map[string]adapter.Outbound, []adapter.Outbound, func() error) (map[string]adapter.Outbound, error)
++		})
++		if !ok {
++			removeOutboundsReverse(scope, validCandidates)
++			return nil, nil, publicationRefusal(E.New("outbound manager cannot persist an atomic provider update"))
++		}
++		oldByTag, err = atomicManager.SwapBatchWithCommit(expectedOld, validCandidates, commit)
++	} else {
++		oldByTag, err = manager.SwapBatch(expectedOld, validCandidates)
++	}
++	if err != nil {
++		removeOutboundsReverse(scope, validCandidates)
++		return nil, nil, publicationRefusal(err)
+ 	}
+ 	oldToClose := make([]adapter.Outbound, 0, len(oldByTag))
+ 	for index := len(oldOutbounds) - 1; index >= 0; index-- {
+@@ -576,7 +602,7 @@ func (a *Adapter) replaceStartedOutbounds(manager batchOutboundManager, managerS
+ 			oldToClose = append(oldToClose, oldOutbound)
+ 		}
+ 	}
+-	return oldToClose, appliedOutbounds, nil
++	return oldToClose, publish, nil
+ }
+ 
+ // missingDependency returns the first dependency of outbound that cannot be
+@@ -602,7 +628,10 @@ func removeOutboundsReverse(scope *adapter.Scope, outbounds []adapter.Outbound)
+ // removeOutbound stops an outbound started in scope and runs its cleanup.
+ func removeOutbound(scope *adapter.Scope, outbound adapter.Outbound) error {
+ 	lifecycle, isLifecycle := outbound.(adapter.Lifecycle)
+-	if scope == nil || !isLifecycle {
++	if scope == nil {
++		return common.Close(outbound)
++	}
++	if !isLifecycle {
+ 		return nil
+ 	}
+ 	return scope.Remove(lifecycle)
+diff --git a/box.go b/box.go
+index 3359c99..c8bbe88 100644
+--- a/box.go
++++ b/box.go
+@@ -1,3 +1,4 @@
++// Modified for LoKi on 2026-11-03: reject raw noncanonical cache paths during configuration check.
+ package box
+ 
+ import (
+@@ -465,6 +466,9 @@ func New(options Options) (*Box, error) {
+ 	}
+ 	if needCacheFile {
+ 		cacheFile := cachefile.New(ctx, logFactory.NewLogger("cache-file"), common.PtrValueOrDefault(experimentalOptions.CacheFile))
++		if err := cacheFile.ValidatePath(); err != nil {
++			return nil, E.Cause(err, "cache-file options")
++		}
+ 		service.MustRegister[adapter.CacheFile](ctx, cacheFile)
+ 		internalServices = append(internalServices, cacheFile)
+ 	}
+diff --git a/dns/transport/fakeip/store_cachefile_test.go b/dns/transport/fakeip/store_cachefile_test.go
+index 005c4a1..80d7c87 100644
+--- a/dns/transport/fakeip/store_cachefile_test.go
++++ b/dns/transport/fakeip/store_cachefile_test.go
+@@ -32,6 +32,8 @@ func (f *scopedCacheFile) Close() error {
+ // startWithCacheFile starts a store on a real cache file, as sing-box does.
+ func startWithCacheFile(t *testing.T, path string) (*Store, *scopedCacheFile) {
+ 	t.Helper()
++	// TempDir leaves follow umask; this fixture explicitly requests private storage.
++	require.NoError(t, os.Chmod(filepath.Dir(path), 0o700))
+ 	ctx := service.ContextWithDefaultRegistry(context.Background())
+ 	cacheFile := cachefile.New(ctx, logger.NOP(), option.CacheFileOptions{Enabled: true, Path: path, StoreFakeIP: true})
+ 	scope := adapter.NewScope(ctx, logger.NOP())
+diff --git a/experimental/cachefile/cache.go b/experimental/cachefile/cache.go
+index ba7a77a..ae067ef 100644
+--- a/experimental/cachefile/cache.go
++++ b/experimental/cachefile/cache.go
+@@ -1,3 +1,4 @@
++// Modified for LoKi on 2026-11-03: open only marked private cache databases.
+ package cachefile
+ 
+ import (
+@@ -7,20 +8,16 @@ import (
+ 	"errors"
+ 	"net/netip"
+ 	"os"
+-	"strings"
+ 	"sync"
+ 	"sync/atomic"
+ 	"time"
+ 
+ 	"github.com/sagernet/bbolt"
+-	bboltErrors "github.com/sagernet/bbolt/errors"
+ 	"github.com/sagernet/sing-box/adapter"
+ 	"github.com/sagernet/sing-box/experimental/deprecated"
+ 	"github.com/sagernet/sing-box/option"
+-	"github.com/sagernet/sing/common"
+ 	E "github.com/sagernet/sing/common/exceptions"
+ 	"github.com/sagernet/sing/common/logger"
+-	"github.com/sagernet/sing/service/filemanager"
+ )
+ 
+ var (
+@@ -30,50 +27,46 @@ var (
+ 	bucketMode          = []byte("clash_mode")
+ 	bucketRuleSet       = []byte("rule_set")
+ 
+-	bucketNameList = []string{
+-		string(bucketSelected),
+-		string(bucketSelectorState),
+-		string(bucketExpand),
+-		string(bucketMode),
+-		string(bucketRuleSet),
+-		string(bucketRuleSetFile),
+-		string(bucketRDRC),
+-		string(bucketDNSCache),
+-	}
+-
+ 	cacheIDDefault = []byte("default")
+ )
+ 
+ var _ adapter.CacheFile = (*CacheFile)(nil)
+ 
+ type CacheFile struct {
+-	ctx                context.Context
+-	logger             logger.Logger
+-	path               string
+-	cacheID            []byte
+-	cacheIDText        string
+-	storeFakeIP        bool
+-	storeRDRC          bool
+-	storeDNS           bool
+-	storeWARPConfig    bool
+-	storeSubscriptions bool
+-	disableExpire      bool
+-	rdrcTimeout        time.Duration
+-	optimisticTimeout  time.Duration
+-	DB                 *bbolt.DB
+-	dbAccess           sync.RWMutex
+-	generation         atomic.Uint64 // counts resetDB: what was saved before is gone
+-	saveMetadataAccess sync.Mutex
+-	saveMetadata       *adapter.FakeIPMetadata
+-	saveMetadataTimer  *time.Timer
+-	saveFakeIPAccess   sync.RWMutex
+-	saveDomain         map[netip.Addr]string
+-	saveAddress4       map[string]netip.Addr
+-	saveAddress6       map[string]netip.Addr
+-	saveRDRCAccess     sync.RWMutex
+-	saveRDRC           map[saveCacheKey]bool
+-	saveDNSCacheAccess sync.RWMutex
+-	saveDNSCache       map[saveCacheKey]saveDNSCacheEntry
++	ctx                      context.Context
++	logger                   logger.Logger
++	path                     string
++	cacheID                  []byte
++	cacheIDText              string
++	storeFakeIP              bool
++	storeRDRC                bool
++	storeDNS                 bool
++	storeWARPConfig          bool
++	storeSubscriptions       bool
++	disableExpire            bool
++	rdrcTimeout              time.Duration
++	optimisticTimeout        time.Duration
++	DB                       *bbolt.DB
++	storage                  *cacheStorage
++	contentAccess            sync.RWMutex
++	subscriptionState        sync.Mutex
++	subscriptionCommitAccess sync.Mutex
++	subscriptionUncertain    bool
++	subscriptionClosing      bool
++	pendingSubscriptions     map[string]*preparedSubscription
++	dbAccess                 sync.RWMutex
++	generation               atomic.Uint64 // counts resetDB: what was saved before is gone
++	saveMetadataAccess       sync.Mutex
++	saveMetadata             *adapter.FakeIPMetadata
++	saveMetadataTimer        *time.Timer
++	saveFakeIPAccess         sync.RWMutex
++	saveDomain               map[netip.Addr]string
++	saveAddress4             map[string]netip.Addr
++	saveAddress6             map[string]netip.Addr
++	saveRDRCAccess           sync.RWMutex
++	saveRDRC                 map[saveCacheKey]bool
++	saveDNSCacheAccess       sync.RWMutex
++	saveDNSCache             map[saveCacheKey]saveDNSCacheEntry
+ }
+ 
+ type saveCacheKey struct {
+@@ -94,7 +87,7 @@ func New(ctx context.Context, logger logger.Logger, options option.CacheFileOpti
+ 	if options.Path != "" {
+ 		path = options.Path
+ 	} else {
+-		path = "cache.db"
++		path = "/tmp/loki/cache.db"
+ 	}
+ 	var cacheIDBytes []byte
+ 	if options.CacheID != "" {
+@@ -114,7 +107,7 @@ func New(ctx context.Context, logger logger.Logger, options option.CacheFileOpti
+ 	return &CacheFile{
+ 		ctx:                ctx,
+ 		logger:             logger,
+-		path:               filemanager.BasePath(ctx, path),
++		path:               path,
+ 		cacheID:            cacheIDBytes,
+ 		cacheIDText:        options.CacheID,
+ 		storeFakeIP:        options.StoreFakeIP,
+@@ -131,6 +124,14 @@ func New(ctx context.Context, logger logger.Logger, options option.CacheFileOpti
+ 	}
+ }
+ 
++// ValidatePath is pure so configuration check rejects raw paths before normalization or I/O.
++func (c *CacheFile) ValidatePath() error {
++	if !validCachePath(c.path) {
++		return errPrivateStorage
++	}
++	return nil
++}
++
+ func (c *CacheFile) Name() string {
+ 	return "cache-file"
+ }
+@@ -159,7 +160,15 @@ func (c *CacheFile) Start(stage adapter.StartStage, scope *adapter.Scope) error
+ 			return err
+ 		}
+ 		scope.Add(func() error {
+-			return c.database().Close()
++			c.subscriptionState.Lock()
++			c.subscriptionClosing = true
++			c.subscriptionState.Unlock()
++			c.contentAccess.Lock()
++			defer c.contentAccess.Unlock()
++			c.dbAccess.Lock()
++			defer c.dbAccess.Unlock()
++			err := c.DB.Close()
++			return E.Errors(err, c.storage.close())
+ 		})
+ 	case adapter.StartStateStart:
+ 		c.startCacheCleanup()
+@@ -187,84 +196,39 @@ func (c *CacheFile) startCacheCleanup() {
+ }
+ 
+ func (c *CacheFile) start() error {
+-	const fileMode = 0o666
+-	cacheFile, err := filemanager.OpenFile(c.ctx, c.path, os.O_RDWR|os.O_CREATE, fileMode)
+-	if err != nil {
+-		return err
+-	}
+-	cacheFile.Close()
+-	options := bbolt.Options{Timeout: time.Second}
+-	var db *bbolt.DB
+-	for range 10 {
+-		db, err = bbolt.Open(c.path, fileMode, &options)
+-		if err != nil {
+-			if errors.Is(err, bboltErrors.ErrTimeout) {
+-				continue
+-			}
+-			if E.IsMulti(err, bboltErrors.ErrInvalid, bboltErrors.ErrChecksum, bboltErrors.ErrVersionMismatch) {
+-				rmErr := filemanager.Remove(c.ctx, c.path)
+-				if rmErr != nil {
+-					return err
+-				}
+-			}
+-			time.Sleep(100 * time.Millisecond)
+-			continue
+-		}
+-		err = checkDatabase(db)
+-		if err == nil {
+-			break
+-		}
+-		c.logger.Error("database corrupted: ", err, ": resetting")
+-		db.Close()
+-		rmErr := filemanager.Remove(c.ctx, c.path)
+-		if rmErr != nil {
+-			return err
+-		}
++	c.subscriptionState.Lock()
++	pending := len(c.pendingSubscriptions) != 0
++	c.subscriptionState.Unlock()
++	if pending {
++		return errPrivateStorage
+ 	}
++	storage, db, err := openCacheStorage(c.path)
+ 	if err != nil {
+ 		return err
+ 	}
+-	err = filemanager.Chown(c.ctx, c.path)
+-	if err != nil {
+-		db.Close()
+-		return E.Cause(err, "platform chown")
+-	}
+-	err = db.Batch(func(tx *bbolt.Tx) error {
+-		return tx.ForEach(func(name []byte, b *bbolt.Bucket) error {
+-			if name[0] == 0 {
+-				return b.ForEachBucket(func(k []byte) error {
+-					bucketName := string(k)
+-					if !common.Contains(bucketNameList, bucketName) {
+-						_ = b.DeleteBucket(name)
+-					}
+-					return nil
+-				})
+-			} else {
+-				bucketName := string(name)
+-				if !(common.Contains(bucketNameList, bucketName) || strings.HasPrefix(bucketName, fakeipBucketPrefix)) {
+-					_ = tx.DeleteBucket(name)
+-				}
+-			}
+-			return nil
+-		})
+-	})
+-	if err != nil {
+-		db.Close()
+-		return err
+-	}
+-	c.DB = db
++	c.storage, c.DB = storage, db
++	c.subscriptionState.Lock()
++	c.subscriptionClosing, c.subscriptionUncertain = false, false
++	c.subscriptionState.Unlock()
+ 	c.moveRuleSetsToFiles()
+-	// the move may have reset the database (a damaged page found on the way): the one it left
+ 	db, err = c.compactSparse(c.DB)
+ 	if err != nil {
++		c.DB.Close()
++		storage.close()
+ 		return err
+ 	}
+ 	c.DB = db
+ 	c.pruneRuleSetFiles(db)
++	c.pruneSubscriptionFiles()
+ 	return nil
+ }
+ 
+-func checkDatabase(db *bbolt.DB) error {
++func checkDatabase(db *bbolt.DB) (err error) {
++	defer func() {
++		if recover() != nil {
++			err = errPrivateStorage
++		}
++	}()
+ 	return db.View(func(tx *bbolt.Tx) error {
+ 		var checkErr error
+ 		for txErr := range tx.Check() {
+@@ -282,61 +246,52 @@ func (c *CacheFile) database() *bbolt.DB {
+ 	return c.DB
+ }
+ 
+-func (c *CacheFile) view(fn func(tx *bbolt.Tx) error) (err error) {
+-	db := c.database()
++// Hold the DB lifetime lock through each transaction, including delayed bbolt batches.
++func (c *CacheFile) transaction(fn func(*bbolt.DB) error) (err error) {
++	c.dbAccess.RLock()
++	db := c.DB
++	var failure any
+ 	defer func() {
+-		r := recover()
+-		if r != nil {
+-			c.resetDB(db, r)
+-			err = E.New("database corrupted: ", r)
++		if recovered := recover(); recovered != nil {
++			failure = recovered
++			err = errPrivateStorage
+ 		}
+-	}()
+-	return db.View(fn)
+-}
+-
+-func (c *CacheFile) batch(fn func(tx *bbolt.Tx) error) (err error) {
+-	db := c.database()
+-	defer func() {
+-		r := recover()
+-		if r != nil {
+-			c.resetDB(db, r)
+-			err = E.New("database corrupted: ", r)
++		c.dbAccess.RUnlock()
++		if failure != nil {
++			c.resetDB(db, failure)
+ 		}
+ 	}()
+-	err = db.Batch(fn)
++	err = fn(db)
+ 	var panicErr bbolt.PanickedError
+ 	if errors.As(err, &panicErr) {
+-		c.resetDB(db, panicErr.Reason)
+-		return E.New("database corrupted: ", panicErr.Reason)
++		failure = panicErr.Reason
++		return errPrivateStorage
+ 	}
+ 	return err
+ }
+-
+-func (c *CacheFile) update(fn func(tx *bbolt.Tx) error) (err error) {
+-	db := c.database()
+-	defer func() {
+-		r := recover()
+-		if r != nil {
+-			c.resetDB(db, r)
+-			err = E.New("database corrupted: ", r)
+-		}
+-	}()
+-	return db.Update(fn)
++func (c *CacheFile) view(fn func(tx *bbolt.Tx) error) error {
++	return c.transaction(func(db *bbolt.DB) error { return db.View(fn) })
+ }
+-
+-func (c *CacheFile) resetDB(failedDB *bbolt.DB, reason any) {
++func (c *CacheFile) batch(fn func(tx *bbolt.Tx) error) error {
++	return c.transaction(func(db *bbolt.DB) error { return db.Batch(fn) })
++}
++func (c *CacheFile) update(fn func(tx *bbolt.Tx) error) error {
++	return c.transaction(func(db *bbolt.DB) error { return db.Update(fn) })
++}
++func (c *CacheFile) resetDB(failedDB *bbolt.DB, _ any) {
++	c.resetDBWithClose(failedDB, failedDB.Close)
++}
++func (c *CacheFile) resetDBWithClose(failedDB *bbolt.DB, closeDatabase func() error) {
+ 	c.dbAccess.Lock()
+ 	defer c.dbAccess.Unlock()
+ 	if c.DB != failedDB {
+ 		return
+ 	}
+-	c.logger.Error("database corrupted: ", reason, ": resetting")
++	// Only an already verified LoKi inode may be replaced; names are never removed on open errors.
++	c.logger.Error("private cache database is corrupted: resetting owned storage")
+ 	c.generation.Add(1)
+-	failedDB.Close()
+-	filemanager.Remove(c.ctx, c.path)
+-	db, err := bbolt.Open(c.path, 0o666, &bbolt.Options{Timeout: time.Second})
+-	if err == nil {
+-		_ = filemanager.Chown(c.ctx, c.path)
++	_ = closeDatabase()
++	if db, err := c.storage.createDB(true); err == nil {
+ 		c.DB = db
+ 	}
+ }
+@@ -519,6 +474,11 @@ func (c *CacheFile) StoreGroupExpand(group string, isExpand bool) error {
+ }
+ 
+ func (c *CacheFile) LoadRuleSet(tag string) *adapter.SavedBinary {
++	c.contentAccess.RLock()
++	defer c.contentAccess.RUnlock()
++	return c.loadRuleSet(tag)
++}
++func (c *CacheFile) loadRuleSet(tag string) *adapter.SavedBinary {
+ 	if saved, found := c.loadRuleSetFile(tag); found {
+ 		return saved
+ 	}
+@@ -564,9 +524,9 @@ func (c *CacheFile) SaveWARPConfig(tag string, set *adapter.SavedBinary) error {
+ }
+ 
+ func (c *CacheFile) LoadSubscription(tag string) *adapter.SavedBinary {
+-	return c.LoadRuleSet(tag)
++	return c.loadSubscription(tag)
+ }
+ 
+ func (c *CacheFile) SaveSubscription(tag string, sub *adapter.SavedBinary) error {
+-	return c.SaveRuleSet(tag, sub)
++	return c.saveSubscription(tag, sub)
+ }
+diff --git a/experimental/cachefile/fakeip_test.go b/experimental/cachefile/fakeip_test.go
+index a18c890..9da7a4d 100644
+--- a/experimental/cachefile/fakeip_test.go
++++ b/experimental/cachefile/fakeip_test.go
+@@ -1,3 +1,4 @@
++// Modified for LoKi on 2026-11-03: use private fixtures and retain unrelated cache data.
+ package cachefile
+ 
+ import (
+@@ -51,7 +52,7 @@ func loadTable(t *testing.T, cacheFile *testCacheFile, refuse ...netip.Addr) (ma
+ 
+ func TestFakeIPTable(t *testing.T) {
+ 	t.Parallel()
+-	path := filepath.Join(t.TempDir(), "cache.db")
++	path := filepath.Join(privateTestDirectory(t), "cache.db")
+ 	cacheFile := openTestCacheFile(t, path)
+ 	inet4Range := netip.MustParsePrefix("198.18.0.0/15")
+ 	inet6Range := netip.MustParsePrefix("fc00::/18")
+diff --git a/experimental/cachefile/rule_set_file.go b/experimental/cachefile/rule_set_file.go
+index 6b3f7ad..5ce9978 100644
+--- a/experimental/cachefile/rule_set_file.go
++++ b/experimental/cachefile/rule_set_file.go
+@@ -1,3 +1,4 @@
++// Modified for LoKi on 2026-11-03: protect file-backed rule-set cache access.
+ package cachefile
+ 
+ import (
+@@ -6,15 +7,12 @@ import (
+ 	"encoding/binary"
+ 	"encoding/hex"
+ 	"io"
+-	"os"
+-	"path/filepath"
+ 	"strings"
+-	"time"
+ 
+ 	"github.com/sagernet/bbolt"
+ 	"github.com/sagernet/sing-box/adapter"
+ 	E "github.com/sagernet/sing/common/exceptions"
+-	"github.com/sagernet/sing/service/filemanager"
++	"golang.org/x/sys/unix"
+ )
+ 
+ // The content of a remote rule set goes into a file beside the cache file, the rest and the size of
+@@ -106,12 +104,25 @@ func (c *CacheFile) loadRuleSetFile(tag string) (saved *adapter.SavedBinary, fou
+ 		c.logger.Warn("rule-set cache ", tag, ": ", err)
+ 		return nil, true
+ 	}
+-	path := filepath.Join(c.ruleSetDirectory(), ruleSetFileName(c.cacheID, tag))
+-	content, err := os.ReadFile(path)
++	directory, err := c.storage.child(c.storage.name+ruleSetFileSuffix, false)
++	if err != nil {
++		return nil, true
++	}
++	defer directory.close()
++	file, err := directory.open(ruleSetFileName(c.cacheID, tag), unix.O_RDONLY, true)
++	if err != nil {
++		return nil, true
++	}
++	defer file.Close()
++	info, err := fileIdentity(file)
++	if err != nil || uint64(info.Size) != size {
++		return nil, true
++	}
++	content, err := io.ReadAll(file)
+ 	if err != nil {
+-		c.logger.Warn("rule-set cache ", tag, ": ", err)
+ 		return nil, true
+ 	}
++
+ 	if uint64(len(content)) != size {
+ 		c.logger.Warn("rule-set cache ", tag, ": the file of the content has ", len(content), " bytes of ", size, ", it is downloaded again")
+ 		return nil, true
+@@ -123,46 +134,69 @@ func (c *CacheFile) loadRuleSetFile(tag string) (saved *adapter.SavedBinary, fou
+ // saveRuleSetFile writes the content of a rule set into its file, then its record; the
+ // record of an earlier version goes.
+ func (c *CacheFile) saveRuleSetFile(tag string, set *adapter.SavedBinary) error {
++	if set == nil {
++		return errPrivateStorage
++	}
++	c.contentAccess.Lock()
++	defer c.contentAccess.Unlock()
+ 	record, err := ruleSetRecord(set)
+ 	if err != nil {
+-		return err
++		return errPrivateStorage
+ 	}
+-	directory := c.ruleSetDirectory()
+-	err = filemanager.MkdirAll(c.ctx, directory, 0o755)
++	directory, err := c.storage.child(c.storage.name+ruleSetFileSuffix, true)
+ 	if err != nil {
+ 		return err
+ 	}
+-	path := filepath.Join(directory, ruleSetFileName(c.cacheID, tag))
+-	writing := path + ruleSetFileWriting
+-	file, err := filemanager.OpenFile(c.ctx, writing, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
++	defer directory.close()
++	name := ruleSetFileName(c.cacheID, tag)
++	// Refuse an unsafe existing destination before writing or replacing anything.
++	var destination unix.Stat_t
++	statErr := unix.Fstatat(int(directory.file.Fd()), name, &destination, unix.AT_SYMLINK_NOFOLLOW)
++	if statErr != nil && statErr != unix.ENOENT {
++		return errPrivateStorage
++	}
++	if statErr == nil {
++		existing, err := directory.open(name, unix.O_RDONLY, false)
++		if err != nil {
++			return err
++		}
++		existing.Close()
++	}
++	file, writing, err := directory.randomFile(".loki-srs-" + c.storage.id + "-")
+ 	if err != nil {
+ 		return err
+ 	}
++	defer func() { _ = directory.remove(writing) }()
+ 	_, err = file.Write(set.Content)
+ 	if err == nil {
+ 		err = file.Sync()
+ 	}
+ 	closeErr := file.Close()
+-	if err == nil {
+-		err = closeErr
++	if err != nil || closeErr != nil {
++		return errPrivateStorage
+ 	}
+-	if err == nil {
+-		err = os.Rename(writing, path)
++	if statErr == nil {
++		var current unix.Stat_t
++		if unix.Fstatat(int(directory.file.Fd()), name, &current, unix.AT_SYMLINK_NOFOLLOW) != nil || current.Ino != destination.Ino || current.Dev != destination.Dev || current.Nlink != 1 {
++			return errPrivateStorage
++		}
+ 	}
+-	if err != nil {
+-		_ = os.Remove(writing)
+-		return err
++	flags := uint(0)
++	if statErr == unix.ENOENT {
++		flags = unix.RENAME_NOREPLACE
++	}
++	if unix.Renameat2(int(directory.file.Fd()), writing, int(directory.file.Fd()), name, flags) != nil || directory.sync() != nil {
++		return errPrivateStorage
+ 	}
+ 	return c.batch(func(t *bbolt.Tx) error {
+ 		bucket, err := c.createBucket(t, bucketRuleSetFile)
+ 		if err != nil {
+ 			return err
+ 		}
+-		err = bucket.Put([]byte(tag), record)
+-		if err != nil {
++		if err = bucket.Put([]byte(tag), record); err != nil {
+ 			return err
+ 		}
+-		if legacy := c.bucket(t, bucketRuleSet); legacy != nil && legacy.Get([]byte(tag)) != nil {
++		if legacy := c.bucket(t, bucketRuleSet); legacy != nil {
+ 			return legacy.Delete([]byte(tag))
+ 		}
+ 		return nil
+@@ -206,7 +240,15 @@ const compactFrom = 8 << 20
+ // compactSparse writes the database anew into a file of the size of what it holds when
+ // more than half of a big file is free pages, and returns the database to use.
+ func (c *CacheFile) compactSparse(db *bbolt.DB) (*bbolt.DB, error) {
+-	info, err := os.Stat(c.path)
++	return c.compactSparseWithClose(db, db.Close)
++}
++func (c *CacheFile) compactSparseWithClose(db *bbolt.DB, closeDatabase func() error) (*bbolt.DB, error) {
++	currentFile, err := c.storage.open(c.storage.name, unix.O_RDONLY, false)
++	if err != nil {
++		return db, err
++	}
++	info, err := currentFile.Stat()
++	currentFile.Close()
+ 	if err != nil || info.Size() < compactFrom {
+ 		return db, nil
+ 	}
+@@ -215,67 +257,85 @@ func (c *CacheFile) compactSparse(db *bbolt.DB) (*bbolt.DB, error) {
+ 	if free*2 < info.Size() {
+ 		return db, nil
+ 	}
+-	compact := c.path + ".compact"
+-	_ = os.Remove(compact)
+-	destination, err := bbolt.Open(compact, 0o666, &bbolt.Options{Timeout: time.Second})
++	file, compact, err := c.storage.randomFile(".loki-compact-" + c.storage.id + "-")
++	if err != nil {
++		return db, nil
++	}
++	file.Close()
++	defer func() { _ = c.storage.remove(compact) }()
++	destination, err := c.storage.openDB(compact, false, nil, true)
+ 	if err != nil {
+ 		return db, nil
+ 	}
+ 	err = bbolt.Compact(destination, db, 4<<20)
+-	closeErr := destination.Close()
+ 	if err == nil {
+-		err = closeErr
++		err = destination.Sync()
+ 	}
+-	if err != nil {
+-		_ = os.Remove(compact)
+-		c.logger.Warn("compact the cache file: ", err)
++	closeErr := destination.Close()
++	if err != nil || closeErr != nil {
+ 		return db, nil
+ 	}
+-	db.Close()
+-	err = os.Rename(compact, c.path)
++	existing, err := c.storage.open(c.storage.name, unix.O_RDONLY, false)
+ 	if err != nil {
+-		_ = os.Remove(compact)
++		return db, errPrivateStorage
+ 	}
+-	db, openErr := bbolt.Open(c.path, 0o666, &bbolt.Options{Timeout: time.Second})
+-	if openErr != nil {
+-		return nil, openErr
++	current, err := fileIdentity(existing)
++	existing.Close()
++	if err != nil || current.Dev != c.storage.database.Dev || current.Ino != c.storage.database.Ino {
++		return db, errPrivateStorage
+ 	}
+-	if err == nil {
+-		c.logger.Info("cache file compacted: ", info.Size()>>20, " MiB, most of it free pages")
+-		_ = filemanager.Chown(c.ctx, c.path)
++	if closeDatabase() != nil {
++		return db, errPrivateStorage
++	}
++	if unix.Renameat(int(c.storage.file.Fd()), compact, int(c.storage.file.Fd()), c.storage.name) != nil {
++		return c.storage.openDB(c.storage.name, false, &current, true)
++	}
++	if c.storage.sync() != nil {
++		return nil, errPrivateStorage
++	}
++	db, err = c.storage.openDB(c.storage.name, false, nil, true)
++	if err != nil {
++		return nil, err
++	}
++	existing, err = c.storage.open(c.storage.name, unix.O_RDONLY, false)
++	if err != nil {
++		db.Close()
++		return nil, err
+ 	}
++	c.storage.database, err = fileIdentity(existing)
++	existing.Close()
++	if err != nil {
++		db.Close()
++		return nil, err
++	}
++
+ 	return db, nil
+ }
+ 
+ // pruneRuleSetFiles removes the files of the directory that no record names (of any cache
+ // ID), and files whose write was cut.
+-func (c *CacheFile) pruneRuleSetFiles(db *bbolt.DB) {
+-	entries, err := os.ReadDir(c.ruleSetDirectory())
++func (c *CacheFile) pruneRuleSetFiles(_ *bbolt.DB) {
++	// The v1 format cannot prove ownership of arbitrary unreferenced names. Only our
++	// store-specific random staging files may be removed; unknown entries remain untouched.
++	directory, err := c.storage.child(c.storage.name+ruleSetFileSuffix, false)
+ 	if err != nil {
+ 		return
+ 	}
+-	named := make(map[string]bool)
+-	_ = db.View(func(t *bbolt.Tx) error {
+-		collect := func(cacheID []byte, bucket *bbolt.Bucket) {
+-			if bucket == nil {
+-				return
+-			}
+-			_ = bucket.ForEach(func(tag []byte, _ []byte) error {
+-				named[ruleSetFileName(cacheID, string(tag))] = true
+-				return nil
+-			})
+-		}
+-		collect(nil, t.Bucket(bucketRuleSetFile))
+-		return t.ForEach(func(name []byte, bucket *bbolt.Bucket) error {
+-			if len(name) > 0 && name[0] == 0 {
+-				collect(bytes.Clone(name), bucket.Bucket(bucketRuleSetFile))
+-			}
+-			return nil
+-		})
+-	})
++	defer directory.close()
++	entries, err := directory.file.ReadDir(256)
++	if err != nil && err != io.EOF {
++		return
++	}
++	prefix := ".loki-srs-" + c.storage.id + "-"
+ 	for _, entry := range entries {
+-		if !named[entry.Name()] {
+-			_ = os.Remove(filepath.Join(c.ruleSetDirectory(), entry.Name()))
++		name := entry.Name()
++		if strings.HasPrefix(name, prefix) && len(name) == len(prefix)+32 {
++			suffix := strings.TrimPrefix(name, prefix)
++			decoded, err := hex.DecodeString(suffix)
++			if err == nil && len(decoded) == 16 && hex.EncodeToString(decoded) == suffix {
++				_ = directory.remove(name)
++			}
+ 		}
+ 	}
++	_ = directory.sync()
+ }
+diff --git a/experimental/cachefile/rule_set_file_test.go b/experimental/cachefile/rule_set_file_test.go
+index a653880..d1af749 100644
+--- a/experimental/cachefile/rule_set_file_test.go
++++ b/experimental/cachefile/rule_set_file_test.go
+@@ -1,3 +1,4 @@
++// Modified for LoKi on 2026-11-03: use private fixtures and retain unrelated cache data.
+ package cachefile
+ 
+ import (
+@@ -19,7 +20,7 @@ import (
+ // A big list changed again and again takes its size once in the file beside the cache file,
+ // and the cache file stays small; what is saved comes back across a reopen.
+ func TestRuleSetFile(t *testing.T) {
+-	path := filepath.Join(t.TempDir(), "cache.db")
++	path := filepath.Join(privateTestDirectory(t), "cache.db")
+ 	cacheFile := openTestCacheFile(t, path)
+ 	list := bytes.Repeat([]byte("203.0.113.0/24\n"), 300000)
+ 	for round := byte(0); round < 4; round++ {
+@@ -48,7 +49,7 @@ func TestRuleSetFile(t *testing.T) {
+ // A rule set an earlier version kept in the database is read from there until it is saved
+ // again; the save moves it into its file.
+ func TestRuleSetFileFromDatabase(t *testing.T) {
+-	path := filepath.Join(t.TempDir(), "cache.db")
++	path := filepath.Join(privateTestDirectory(t), "cache.db")
+ 	cacheFile := openTestCacheFile(t, path)
+ 	old, err := (&adapter.SavedBinary{Content: []byte("old.lab.example\n"), LastUpdated: time.Unix(50, 0)}).MarshalBinary()
+ 	require.NoError(t, err)
+@@ -72,10 +73,10 @@ func TestRuleSetFileFromDatabase(t *testing.T) {
+ 	require.NoError(t, cacheFile.Close())
+ }
+ 
+-// A file cut by a power loss is not read; a reopen removes the files no record names and the
+-// writes that were cut, and keeps those of every cache ID.
++// A cut file is refused; reopen preserves other cache IDs and unknown entries. Only
++// store-specific random staging names have sufficient provenance for orphan cleanup.
+ func TestRuleSetFileBroken(t *testing.T) {
+-	path := filepath.Join(t.TempDir(), "cache.db")
++	path := filepath.Join(privateTestDirectory(t), "cache.db")
+ 	cacheFile := openTestCacheFile(t, path)
+ 	require.NoError(t, cacheFile.SaveRuleSet("lists", &adapter.SavedBinary{Content: []byte("one.lab.example\ntwo.lab.example\n")}))
+ 	directory := path + ruleSetFileSuffix
+@@ -100,13 +101,13 @@ func TestRuleSetFileBroken(t *testing.T) {
+ 	for _, entry := range entries {
+ 		names = append(names, entry.Name())
+ 	}
+-	require.ElementsMatch(t, []string{ruleSetFileName(nil, "lists"), ruleSetFileName([]byte("\x00other"), "lists")}, names)
++	require.ElementsMatch(t, []string{ruleSetFileName(nil, "lists"), ruleSetFileName([]byte("\x00other"), "lists"), "gone-01020304", ruleSetFileName(nil, "lists") + ruleSetFileWriting}, names)
+ }
+ 
+ // Subscriptions and WARP profiles share the bucket of the lists: the move at the start takes them
+ // along, and they are read and saved where the lists are.
+ func TestSubscriptionAndWARPProfileMovedWithTheLists(t *testing.T) {
+-	path := filepath.Join(t.TempDir(), "cache.db")
++	path := filepath.Join(privateTestDirectory(t), "cache.db")
+ 	cacheFile := openTestCacheFile(t, path)
+ 	saved := map[string]string{"provider": "vless://node", "warp": `{"private_key":"key"}`}
+ 	for tag, content := range saved {
+@@ -144,7 +145,7 @@ func TestRuleSetFileName(t *testing.T) {
+ // The cache file an earlier version left at three times its lists is written anew at the start,
+ // small, with the lists in their files and the rest of the database as it was.
+ func TestRuleSetFileMovedAndCompacted(t *testing.T) {
+-	path := filepath.Join(t.TempDir(), "cache.db")
++	path := filepath.Join(privateTestDirectory(t), "cache.db")
+ 	cacheFile := openTestCacheFile(t, path)
+ 	list := bytes.Repeat([]byte("203.0.113.0/24\n"), 300000)
+ 	for round := byte(0); round < 3; round++ {
+diff --git a/experimental/cachefile/selector_state_test.go b/experimental/cachefile/selector_state_test.go
+index 6c44117..ee20991 100644
+--- a/experimental/cachefile/selector_state_test.go
++++ b/experimental/cachefile/selector_state_test.go
+@@ -1,3 +1,4 @@
++// Modified for LoKi on 2026-11-03: use private fixtures and retain unrelated cache data.
+ package cachefile
+ 
+ import (
+@@ -26,7 +27,7 @@ func openSelectorTestCache(t *testing.T, path, id string) *testCacheFile {
+ }
+ 
+ func TestSelectorStatePersistsAndKeepsCacheNamespaces(t *testing.T) {
+-	path := filepath.Join(t.TempDir(), "cache.db")
++	path := filepath.Join(privateTestDirectory(t), "cache.db")
+ 	state := selectorTestState("provider/Node #2")
+ 	cache := openSelectorTestCache(t, path, "")
+ 	require.NoError(t, cache.StoreSelectorState("group", state))
+@@ -55,7 +56,7 @@ func TestSelectorStatePersistsAndKeepsCacheNamespaces(t *testing.T) {
+ }
+ 
+ func TestSelectorStateRejectsInvalidAndCorruptedData(t *testing.T) {
+-	cache := openSelectorTestCache(t, filepath.Join(t.TempDir(), "cache.db"), "")
++	cache := openSelectorTestCache(t, filepath.Join(privateTestDirectory(t), "cache.db"), "")
+ 	defer cache.Close()
+ 	state := selectorTestState("chosen")
+ 	require.NoError(t, cache.StoreSelectorState("group", state))
+@@ -84,7 +85,7 @@ func TestSelectorStateRejectsInvalidAndCorruptedData(t *testing.T) {
+ }
+ 
+ func TestSelectorStateWritesRollbackTogether(t *testing.T) {
+-	cache := openSelectorTestCache(t, filepath.Join(t.TempDir(), "cache.db"), "")
++	cache := openSelectorTestCache(t, filepath.Join(privateTestDirectory(t), "cache.db"), "")
+ 	require.NoError(t, cache.StoreSelected("group", "old"))
+ 	require.NoError(t, cache.batch(func(tx *bbolt.Tx) error {
+ 		bucket, err := cache.createBucket(tx, bucketSelectorState)
+diff --git a/provider/remote/provider.go b/provider/remote/provider.go
+index d9b4888..c1bacf4 100644
+--- a/provider/remote/provider.go
++++ b/provider/remote/provider.go
+@@ -1,9 +1,12 @@
++// Modified for LoKi on 2026-11-03: commit cached subscriptions before publishing updates.
+ package provider
+ 
+ import (
+ 	"bytes"
+ 	"context"
+ 	"crypto/tls"
++	"errors"
++	"fmt"
+ 	"io"
+ 	"net"
+ 	"net/http"
+@@ -270,7 +273,7 @@ func (s *ProviderRemote) fetch(ctx context.Context) error {
+ 	}
+ 	ctx, cancel := context.WithTimeout(ctx, providerFetchTimeout)
+ 	defer cancel()
+-	s.logger.Debug("updating outbound provider ", s.Tag(), " from URL: ", s.url)
++	s.logger.Debug("updating outbound provider ", s.Tag())
+ 	transport := &http.Transport{
+ 		ForceAttemptHTTP2:   true,
+ 		TLSHandshakeTimeout: C.TCPTimeout,
+@@ -286,30 +289,63 @@ func (s *ProviderRemote) fetch(ctx context.Context) error {
+ 	defer transport.CloseIdleConnections()
+ 	result, err := s.fetchProvider(ctx, client)
+ 	if err != nil {
+-		s.applyFailedFetch(result)
++		if cacheErr := s.applyFailedFetch(result); cacheErr != nil {
++			return cacheErr
++		}
+ 		return err
+ 	}
+ 	if result.notModified {
+-		s.applyNotModified(result)
+-		return nil
++		return s.applyNotModified(result)
+ 	}
+-	s.applyFetchedProvider(result)
+-	return nil
++	err = s.applyFetchedProvider(result)
++	if err != nil && !errors.Is(err, errProviderCache) && !errors.Is(err, provider.ErrPublicationRefused) {
++		result.rejectedResponse = true
++		if cacheErr := s.applyFailedFetch(result); cacheErr != nil {
++			return cacheErr
++		}
++	}
++	return err
+ }
+ 
+ type providerFetchResult struct {
+-	info           adapter.SubscriptionInfo
+-	metadata       adapter.SubscriptionMetadata
+-	metadataValues map[string]string
+-	etag           string
+-	notModified    bool
++	info             adapter.SubscriptionInfo
++	metadata         adapter.SubscriptionMetadata
++	metadataValues   map[string]string
++	etag             string
++	content          string
++	outbounds        []option.Outbound
++	candidates       []string
++	rejectedResponse bool
++	notModified      bool
++}
++
++// The original transport error can retain URL/query/host or an untrusted status reason.
++// Keep only safe context sentinels for callers which distinguish cancellation and timeout.
++func safeProviderRequestError(err error) error {
++	if errors.Is(err, context.Canceled) {
++		return fmt.Errorf("subscription request canceled: %w", context.Canceled)
++	}
++	if errors.Is(err, context.DeadlineExceeded) {
++		return fmt.Errorf("subscription request timeout: %w", context.DeadlineExceeded)
++	}
++	var networkError net.Error
++	if errors.As(err, &networkError) && networkError.Timeout() {
++		return E.New("subscription request timeout")
++	}
++	var verification *tls.CertificateVerificationError
++	var record tls.RecordHeaderError
++	var alert tls.AlertError
++	if errors.As(err, &verification) || errors.As(err, &record) || errors.As(err, &alert) {
++		return E.New("subscription TLS request failed")
++	}
++	return E.New("subscription network request failed")
+ }
+ 
+ func (s *ProviderRemote) fetchProvider(ctx context.Context, client *http.Client) (providerFetchResult, error) {
+ 	var result providerFetchResult
+ 	req, err := http.NewRequest(http.MethodGet, s.url, nil)
+ 	if err != nil {
+-		return result, err
++		return result, E.New("invalid subscription URL")
+ 	}
+ 	lastEtag := s.etag()
+ 	if lastEtag != "" {
+@@ -321,82 +357,153 @@ func (s *ProviderRemote) fetchProvider(ctx context.Context, client *http.Client)
+ 	}
+ 	response, err := client.Do(req.WithContext(ctx))
+ 	if err != nil {
+-		return result, err
++		return result, safeProviderRequestError(err)
+ 	}
+ 	defer response.Body.Close()
+ 	result.metadataValues = metadataHeaderValues(response.Header)
+ 	result.etag = response.Header.Get("Etag")
+ 	if response.StatusCode == http.StatusNotModified {
++		s.access.RLock()
++		hasContent := s.rawContent != ""
++		s.access.RUnlock()
++		if lastEtag == "" || req.Header.Get("If-None-Match") != lastEtag || !hasContent {
++			result.rejectedResponse = true
++			return result, E.New("subscription HTTP status 304 has no matching cached representation")
++		}
+ 		result.notModified = true
+ 		return result, nil
+ 	}
+ 	if response.StatusCode != http.StatusOK {
+-		return result, E.New("unexpected status: ", response.Status)
++		result.rejectedResponse = true
++		return result, E.New("subscription HTTP status ", response.StatusCode)
+ 	}
+ 	contentRaw, err := io.ReadAll(response.Body)
+ 	if err != nil {
+-		return result, err
++		return result, safeProviderRequestError(err)
+ 	}
+ 	content, info, metadata := prepareSubscriptionContent(string(contentRaw), result.metadataValues)
+ 	result.info, result.metadata = info, metadata
+-	if err := s.updateProviderFromContent(content); err != nil {
+-		return result, err
+-	}
+-	return result, nil
++	result.content = content
++	result.outbounds, result.candidates, err = s.prepareProviderContent(content)
++	result.rejectedResponse = err != nil
++	return result, err
+ }
+ 
+ // applyFailedFetch keeps the metadata headers of a response whose body could not be used, such as
+-// an expired subscription; the servers stay, and the etag is dropped so a 304 cannot hide the
+-// failure.
+-func (s *ProviderRemote) applyFailedFetch(result providerFetchResult) {
+-	if len(result.metadataValues) == 0 {
+-		return
++// an expired subscription. A rejected received representation invalidates the prior validator
++// only after old content and new metadata persist. No-response/partial-read transport failures keep it.
++func (s *ProviderRemote) applyFailedFetch(result providerFetchResult) error {
++	if len(result.metadataValues) == 0 && !result.rejectedResponse {
++		return nil
+ 	}
+ 	info, metadata := s.subscriptionData()
+ 	info, metadata = mergeSubscriptionData(info, metadata, result.metadataValues)
+-	s.setSubscriptionData(info, metadata)
+-	s.saveProviderCache()
++	s.access.RLock()
++	content, etag, updated := s.rawContent, s.lastEtag, s.lastUpdated
++	s.access.RUnlock()
++	if result.rejectedResponse {
++		etag = ""
++	}
++	if err := s.persistProviderCache(content, info, metadata, etag, updated); err != nil {
++		return err
++	}
++	s.access.Lock()
++	s.subscriptionInfo, s.subscriptionMeta, s.lastEtag = info, metadata, etag
++	s.access.Unlock()
++	return nil
+ }
+ 
+-func (s *ProviderRemote) applyNotModified(result providerFetchResult) {
++func (s *ProviderRemote) applyNotModified(result providerFetchResult) error {
+ 	info, metadata := s.subscriptionData()
+ 	info, metadata = mergeSubscriptionData(info, metadata, result.metadataValues)
+-	s.setSubscriptionData(info, metadata)
+-	s.access.Lock()
++	s.access.RLock()
++	content, etag := s.rawContent, s.lastEtag
++	s.access.RUnlock()
+ 	if result.etag != "" {
+-		s.lastEtag = result.etag
++		etag = result.etag
+ 	}
+-	s.lastUpdated = time.Now()
++	updated := time.Now()
++	if err := s.persistProviderCache(content, info, metadata, etag, updated); err != nil {
++		return err
++	}
++	s.access.Lock()
++	s.subscriptionInfo, s.subscriptionMeta = info, metadata
++	s.lastEtag, s.lastUpdated = etag, updated
+ 	s.access.Unlock()
+-	s.saveProviderCache()
+ 	s.logger.Info("update outbound provider ", s.Tag(), ": not modified")
++	return nil
+ }
+ 
+-func (s *ProviderRemote) applyFetchedProvider(result providerFetchResult) {
+-	s.access.Lock()
+-	s.lastEtag = result.etag
+-	s.lastUpdated = time.Now()
+-	s.access.Unlock()
+-	s.setSubscriptionData(result.info, result.metadata)
+-	s.saveProviderCache()
++func (s *ProviderRemote) applyFetchedProvider(result providerFetchResult) error {
++	updated := time.Now()
++	var commit func() error
++	if s.cacheFile != nil && s.cacheFile.StoreSubscriptions() {
++		preparer, ok := s.cacheFile.(adapter.SubscriptionCachePreparer)
++		if !ok {
++			return providerCacheFailure("private subscription cache transaction support is unavailable")
++		}
++		saved := s.providerCacheRecord(result.content, result.info, result.metadata, result.etag, updated)
++		prepared, err := preparer.PrepareSubscription(s.Tag(), &saved)
++		if err != nil || prepared == nil {
++			return providerCacheFailure("private subscription cache preparation failed")
++		}
++		defer func() {
++			if prepared.Close() != nil {
++				s.logger.Warn("private subscription cache cleanup incomplete")
++			}
++		}()
++		commit = func() error {
++			if prepared.Commit() != nil {
++				return providerCacheFailure("private subscription cache commit failed")
++			}
++			return nil
++		}
++	}
++	published := func() {
++		s.PublishFilterCandidates(result.candidates)
++		s.access.Lock()
++		s.rawContent, s.subscriptionInfo, s.subscriptionMeta = result.content, result.info, result.metadata
++		s.lastEtag, s.lastUpdated = result.etag, updated
++		s.access.Unlock()
++	}
++	if err := s.UpdateOutboundsWithCommit(result.outbounds, commit, published); err != nil {
++		return err
++	}
+ 	s.logger.Info("updated outbound provider ", s.Tag())
++	return nil
++}
++
++var errProviderCache = errors.New("private subscription cache operation failed")
++
++func providerCacheFailure(message string) error {
++	return fmt.Errorf("%s: %w", message, errProviderCache)
+ }
+ 
+-func (s *ProviderRemote) saveProviderCache() {
++func (s *ProviderRemote) persistProviderCache(content string, info adapter.SubscriptionInfo, metadata adapter.SubscriptionMetadata, etag string, updated time.Time) error {
+ 	if s.cacheFile == nil || !s.cacheFile.StoreSubscriptions() {
+-		return
++		return nil
+ 	}
+-	s.access.RLock()
+-	saved := adapter.SavedBinary{
+-		LastUpdated: s.lastUpdated,
+-		Content:     append([]byte(encodeProviderCacheMetadata(s.subscriptionInfo, s.subscriptionMeta)+"\n"), s.rawContent...),
+-		LastEtag:    s.lastEtag,
++	saved := s.providerCacheRecord(content, info, metadata, etag, updated)
++	if s.cacheFile.SaveSubscription(s.Tag(), &saved) != nil {
++		return providerCacheFailure("private subscription cache commit failed")
++	}
++	return nil
++}
++
++func (s *ProviderRemote) providerCacheRecord(content string, info adapter.SubscriptionInfo, metadata adapter.SubscriptionMetadata, etag string, updated time.Time) adapter.SavedBinary {
++	return adapter.SavedBinary{
++		LastUpdated: updated,
++		Content:     append([]byte(encodeProviderCacheMetadata(info, metadata)+"\n"), content...),
++		LastEtag:    etag,
+ 		URLHash:     providerCacheIdentity(s.url, s.userAgent, s.headers),
+ 	}
++}
++
++func (s *ProviderRemote) saveProviderCache() error {
++	s.access.RLock()
++	content, info, metadata, etag, updated := s.rawContent, s.subscriptionInfo, s.subscriptionMeta, s.lastEtag, s.lastUpdated
+ 	s.access.RUnlock()
+-	if err := s.cacheFile.SaveSubscription(s.Tag(), &saved); err != nil {
+-		s.logger.Error("save outbound provider cache file: ", err)
+-	}
++	return s.persistProviderCache(content, info, metadata, etag, updated)
+ }
+ 
+ func (s *ProviderRemote) restoreProviderCache(saved *adapter.SavedBinary) {
+@@ -408,12 +515,12 @@ func (s *ProviderRemote) restoreProviderCache(saved *adapter.SavedBinary) {
+ 	if !loaded {
+ 		return
+ 	}
+-	s.setSubscriptionData(info, metadata)
+ 	if err := s.updateProviderFromContent(content); err != nil {
+ 		s.logger.Warn(E.Cause(err, "restore cached outbound provider"))
+ 		return
+ 	}
+ 	s.access.Lock()
++	s.subscriptionInfo, s.subscriptionMeta = info, metadata
+ 	s.lastUpdated, s.lastEtag = saved.LastUpdated, saved.LastEtag
+ 	s.access.Unlock()
+ }
+@@ -443,20 +550,24 @@ func (s *ProviderRemote) loopUpdate() {
+ 	}
+ }
+ 
+-func (s *ProviderRemote) updateProviderFromContent(content string) error {
++func (s *ProviderRemote) prepareProviderContent(content string) ([]option.Outbound, []string, error) {
+ 	parsed, err := parser.ParseSubscription(s.ctx, content)
+ 	subscription.ReportSkipped(s.logger, s.Tag(), parsed)
+ 	if err != nil {
+-		return err
++		return nil, nil, err
+ 	}
+-	outboundOpts, err := s.FilterOutbounds(parsed.Outbounds, s.exclude, s.include)
++	return s.FilterOutboundsStaged(parsed.Outbounds, s.exclude, s.include)
++}
++
++func (s *ProviderRemote) updateProviderFromContent(content string) error {
++	outbounds, candidates, err := s.prepareProviderContent(content)
+ 	if err != nil {
+ 		return err
+ 	}
+-	err = s.UpdateOutbounds(outboundOpts)
+-	if err != nil {
++	if err = s.UpdateOutbounds(outbounds); err != nil {
+ 		return err
+ 	}
++	s.PublishFilterCandidates(candidates)
+ 	s.access.Lock()
+ 	s.rawContent = content
+ 	s.access.Unlock()
+diff --git a/provider/remote/provider_test.go b/provider/remote/provider_test.go
+index a1102d1..7a81b9f 100644
+--- a/provider/remote/provider_test.go
++++ b/provider/remote/provider_test.go
+@@ -223,8 +223,8 @@ func TestFailedProviderUpdateKeepsTheMetadataItDelivered(t *testing.T) {
+ 	}
+ 	// Keeping the etag would answer the next request with a 304 that reads as a
+ 	// success, hiding the failure for as long as the panel stayed broken.
+-	if remote.etag() != "\"before\"" {
+-		t.Fatalf("a failed update stored its etag: %q", remote.etag())
++	if remote.etag() != "" {
++		t.Fatalf("a rejected received body retained a conditional validator: %q", remote.etag())
+ 	}
+ }
+ 
+diff --git a/adapter/outbound/commit_test.go b/adapter/outbound/commit_test.go
+new file mode 100644
+index 0000000..41f6e0e
+--- /dev/null
++++ b/adapter/outbound/commit_test.go
+@@ -0,0 +1,83 @@
++package outbound
++
++import (
++	"errors"
++	"testing"
++	"time"
++
++	"github.com/sagernet/sing-box/adapter"
++)
++
++func TestSwapBatchCommitRejectsBeforePersistence(t *testing.T) {
++	for _, kind := range []string{"stale", "external-dependent", "duplicate", "missing-dependency", "conflict"} {
++		t.Run(kind, func(t *testing.T) {
++			old := &testOutbound{NewAdapter("test", "node", nil, nil)}
++			next := &testOutbound{NewAdapter("test", "node", nil, nil)}
++			manager := &Manager{outbounds: []adapter.Outbound{old}, outboundByTag: map[string]adapter.Outbound{"node": old}, dependByTag: make(map[string][]string), defaultOutbound: old}
++			expected := map[string]adapter.Outbound{"node": old}
++			candidates := []adapter.Outbound{next}
++			switch kind {
++			case "stale":
++				expected["node"] = next
++			case "external-dependent":
++				manager.dependByTag["node"] = []string{"external"}
++			case "duplicate":
++				candidates = append(candidates, next)
++			case "missing-dependency":
++				candidates[0] = &testOutbound{NewAdapter("test", "node", nil, []string{"missing"})}
++			case "conflict":
++				delete(expected, "node")
++			}
++			calls := 0
++			if _, err := manager.SwapBatchWithCommit(expected, candidates, func() error { calls++; return nil }); err == nil {
++				t.Fatal("invalid replacement accepted")
++			}
++			if calls != 0 {
++				t.Fatal("rejected runtime update wrote the cache")
++			}
++			if current, _ := manager.Outbound("node"); current != old || manager.Default() != old {
++				t.Fatal("rejection changed the old runtime")
++			}
++		})
++	}
++}
++func TestSwapBatchFailedCommitKeepsMapsAndBlocksReadersUntilOutcome(t *testing.T) {
++	old := &testOutbound{NewAdapter("test", "node", nil, nil)}
++	next := &testOutbound{NewAdapter("test", "node", nil, nil)}
++	manager := &Manager{outbounds: []adapter.Outbound{old}, outboundByTag: map[string]adapter.Outbound{"node": old}, dependByTag: make(map[string][]string), defaultOutbound: old}
++	entered, release := make(chan struct{}), make(chan struct{})
++	finished := make(chan error, 1)
++	go func() {
++		_, err := manager.SwapBatchWithCommit(map[string]adapter.Outbound{"node": old}, []adapter.Outbound{next}, func() error {
++			close(entered)
++			<-release
++			return errors.New("synthetic persistence failure")
++		})
++		finished <- err
++	}()
++	<-entered
++	observed := make(chan adapter.Outbound, 1)
++	go func() { current, _ := manager.Outbound("node"); observed <- current }()
++	select {
++	case <-observed:
++		t.Fatal("reader passed an unresolved publication point")
++	case <-time.After(20 * time.Millisecond):
++	}
++	close(release)
++	if err := <-finished; err == nil {
++		t.Fatal("failed commit reported success")
++	}
++	if current := <-observed; current != old {
++		t.Fatal("failed commit exposed a candidate")
++	}
++	if manager.Default() != old || len(manager.Outbounds()) != 1 {
++		t.Fatal("failed commit changed runtime indexes")
++	}
++	calls := 0
++	if _, err := manager.SwapBatchWithCommit(map[string]adapter.Outbound{"node": old}, []adapter.Outbound{next}, func() error { calls++; return nil }); err != nil {
++		t.Fatal(err)
++	}
++	if current, _ := manager.Outbound("node"); current != next || calls != 1 {
++		t.Fatal("successful commit did not publish exactly once")
++	}
++}
+diff --git a/experimental/cachefile/cache_path_test.go b/experimental/cachefile/cache_path_test.go
+new file mode 100644
+index 0000000..4200124
+--- /dev/null
++++ b/experimental/cachefile/cache_path_test.go
+@@ -0,0 +1,45 @@
++package cachefile
++
++import (
++	"context"
++	"os"
++	"testing"
++
++	"github.com/sagernet/sing-box/adapter"
++	"github.com/sagernet/sing-box/option"
++	"github.com/sagernet/sing/common/logger"
++	"github.com/sagernet/sing/service/filemanager"
++	"github.com/stretchr/testify/require"
++)
++
++func TestStorageRejectsRawNoncanonicalCorePaths(t *testing.T) {
++	for _, kind := range []string{"dotdot", "dot", "double-slash", "trailing-slash", "relative"} {
++		t.Run(kind, func(t *testing.T) {
++			directory := privateTestDirectory(t)
++			path := directory + "/cache.db"
++			switch kind {
++			case "dotdot":
++				path = directory + "/child/../cache.db"
++			case "dot":
++				path = directory + "/./cache.db"
++			case "double-slash":
++				path = directory + "//cache.db"
++			case "trailing-slash":
++				path = directory + "/cache.db/"
++			case "relative":
++				path = "cache.db"
++			}
++			ctx := filemanager.WithDefault(context.Background(), directory, directory, os.Getuid(), os.Getgid())
++			cache := New(ctx, logger.NOP(), option.CacheFileOptions{Enabled: true, Path: path})
++			scope := adapter.NewScope(ctx, logger.NOP())
++			err := cache.Start(adapter.StartStateInitialize, scope)
++			if err == nil {
++				scope.Close()
++			}
++			require.Error(t, err, "raw cache paths must not be silently rewritten")
++			entries, err := os.ReadDir(directory)
++			require.NoError(t, err)
++			require.Empty(t, entries, "rejected raw input created files or directories")
++		})
++	}
++}
+diff --git a/experimental/cachefile/private_directory_test.go b/experimental/cachefile/private_directory_test.go
+new file mode 100644
+index 0000000..d036fe2
+--- /dev/null
++++ b/experimental/cachefile/private_directory_test.go
+@@ -0,0 +1,17 @@
++package cachefile
++
++import (
++	"os"
++	"testing"
++
++	"github.com/stretchr/testify/require"
++)
++
++// testing.TempDir creates its numbered leaf with 0777 subject to umask. Positive
++// fixtures explicitly prepare a private directory; unsafe-parent tests change it afterward.
++func privateTestDirectory(t *testing.T) string {
++	t.Helper()
++	directory := t.TempDir()
++	require.NoError(t, os.Chmod(directory, 0o700))
++	return directory
++}
+diff --git a/experimental/cachefile/storage.go b/experimental/cachefile/storage.go
+new file mode 100644
+index 0000000..a806700
+--- /dev/null
++++ b/experimental/cachefile/storage.go
+@@ -0,0 +1,393 @@
++package cachefile
++
++import (
++	"crypto/rand"
++	"encoding/hex"
++	"errors"
++	"os"
++	"path/filepath"
++	"strings"
++	"time"
++
++	"github.com/sagernet/bbolt"
++	"golang.org/x/sys/unix"
++)
++
++// Errors crossing the cache boundary must not disclose custom paths or DB contents.
++var errPrivateStorage = errors.New("private LoKi cache storage is unsafe or unavailable")
++var bucketStore = []byte("loki_cache_store")
++
++const storageSchema = "1"
++
++type cacheDirectory struct{ file *os.File }
++type cacheStorage struct {
++	*cacheDirectory
++	name     string
++	id       string
++	database unix.Stat_t
++}
++
++func validCachePath(path string) bool {
++	if !filepath.IsAbs(path) || filepath.Clean(path) != path {
++		return false
++	}
++	parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
++	if len(parts) < 2 {
++		return false
++	}
++	for _, part := range parts {
++		if !validLeaf(part) {
++			return false
++		}
++	}
++	return true
++}
++
++func validLeaf(name string) bool {
++	if name == "" || name == "." || name == ".." || strings.ContainsRune(name, '/') {
++		return false
++	}
++	for _, char := range []byte(name) {
++		if char < 32 || char == 127 {
++			return false
++		}
++	}
++	return true
++}
++
++func privateDirectory(path string, create bool) (*cacheDirectory, error) {
++	for _, part := range strings.Split(strings.TrimPrefix(path, "/"), "/") {
++		if !validLeaf(part) {
++			return nil, errPrivateStorage
++		}
++	}
++	if !filepath.IsAbs(path) || filepath.Clean(path) != path {
++		return nil, errPrivateStorage
++	}
++	parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
++	fd, err := unix.Open("/", unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
++	if err != nil {
++		return nil, errPrivateStorage
++	}
++	var rootInfo unix.Stat_t
++	if unix.Fstat(fd, &rootInfo) != nil || rootInfo.Uid != 0 || rootInfo.Mode&0o022 != 0 {
++		unix.Close(fd)
++		return nil, errPrivateStorage
++	}
++	for index, part := range parts {
++		if !validLeaf(part) {
++			unix.Close(fd)
++			return nil, errPrivateStorage
++		}
++		child, openErr := unix.Openat(fd, part, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
++		if errors.Is(openErr, unix.ENOENT) && create {
++			if mkdirErr := unix.Mkdirat(fd, part, 0o700); mkdirErr != nil && !errors.Is(mkdirErr, unix.EEXIST) {
++				unix.Close(fd)
++				return nil, errPrivateStorage
++			}
++			child, openErr = unix.Openat(fd, part, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
++		}
++		unix.Close(fd)
++		if openErr != nil {
++			return nil, errPrivateStorage
++		}
++		fd = child
++		var info unix.Stat_t
++		if unix.Fstat(fd, &info) != nil {
++			unix.Close(fd)
++			return nil, errPrivateStorage
++		}
++		own := info.Uid == uint32(os.Geteuid())
++		trustedAncestor := info.Uid == 0 || own
++		sticky := info.Uid == 0 && info.Mode&unix.S_ISVTX != 0
++		if !trustedAncestor || (info.Mode&0o022 != 0 && !sticky) || (index == len(parts)-1 && (!own || info.Mode&0o777 != 0o700)) {
++			unix.Close(fd)
++			return nil, errPrivateStorage
++		}
++	}
++	return &cacheDirectory{os.NewFile(uintptr(fd), "loki-cache-directory")}, nil
++}
++
++func (d *cacheDirectory) close() error { return d.file.Close() }
++func (d *cacheDirectory) sync() error {
++	if d.file.Sync() != nil {
++		return errPrivateStorage
++	}
++	return nil
++}
++func (d *cacheDirectory) child(name string, create bool) (*cacheDirectory, error) {
++	if !validLeaf(name) {
++		return nil, errPrivateStorage
++	}
++	fd, err := unix.Openat(int(d.file.Fd()), name, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
++	if errors.Is(err, unix.ENOENT) && create {
++		if e := unix.Mkdirat(int(d.file.Fd()), name, 0o700); e != nil && !errors.Is(e, unix.EEXIST) {
++			return nil, errPrivateStorage
++		}
++		fd, err = unix.Openat(int(d.file.Fd()), name, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
++	}
++	if err != nil {
++		return nil, errPrivateStorage
++	}
++	var info unix.Stat_t
++	if unix.Fstat(fd, &info) != nil || info.Uid != uint32(os.Geteuid()) || info.Mode&0o777 != 0o700 {
++		unix.Close(fd)
++		return nil, errPrivateStorage
++	}
++	return &cacheDirectory{os.NewFile(uintptr(fd), "loki-cache-directory")}, nil
++}
++func fileIdentity(file *os.File) (unix.Stat_t, error) {
++	var info unix.Stat_t
++	err := unix.Fstat(int(file.Fd()), &info)
++	if err != nil || info.Mode&unix.S_IFMT != unix.S_IFREG || info.Uid != uint32(os.Geteuid()) || info.Nlink != 1 {
++		return info, errPrivateStorage
++	}
++	return info, nil
++}
++func (d *cacheDirectory) open(name string, flags int, tighten bool) (*os.File, error) {
++	if !validLeaf(name) || flags&unix.O_TRUNC != 0 || (flags&unix.O_CREAT != 0 && flags&unix.O_EXCL == 0) {
++		return nil, errPrivateStorage
++	}
++	fd, err := unix.Openat(int(d.file.Fd()), name, flags|unix.O_NOFOLLOW|unix.O_CLOEXEC|unix.O_NONBLOCK, 0o600)
++	if err != nil {
++		return nil, errPrivateStorage
++	}
++	file := os.NewFile(uintptr(fd), "loki-cache-file")
++	info, err := fileIdentity(file)
++	if err == nil && tighten && info.Mode&0o777 != 0o600 {
++		err = unix.Fchmod(fd, 0o600)
++	}
++	if err != nil {
++		file.Close()
++		return nil, errPrivateStorage
++	}
++	return file, nil
++}
++func randomCacheName(prefix string) (string, error) {
++	var random [16]byte
++	if _, err := rand.Read(random[:]); err != nil {
++		return "", errPrivateStorage
++	}
++	return prefix + hex.EncodeToString(random[:]), nil
++}
++func (d *cacheDirectory) randomFile(prefix string) (*os.File, string, error) {
++	name, err := randomCacheName(prefix)
++	if err != nil {
++		return nil, "", err
++	}
++	file, err := d.open(name, unix.O_RDWR|unix.O_CREAT|unix.O_EXCL, true)
++	return file, name, err
++}
++
++func (d *cacheDirectory) remove(name string) error {
++	if !validLeaf(name) {
++		return errPrivateStorage
++	}
++	var entry unix.Stat_t
++	if err := unix.Fstatat(int(d.file.Fd()), name, &entry, unix.AT_SYMLINK_NOFOLLOW); errors.Is(err, unix.ENOENT) {
++		return nil
++	}
++	file, err := d.open(name, unix.O_RDONLY, false)
++	if err != nil {
++		return err
++	}
++	defer file.Close()
++	// The directory is private. Still refuse replacement or a new hardlink before unlink.
++	info, err := fileIdentity(file)
++	var current unix.Stat_t
++	if err != nil || unix.Fstatat(int(d.file.Fd()), name, &current, unix.AT_SYMLINK_NOFOLLOW) != nil || info.Dev != current.Dev || info.Ino != current.Ino || current.Nlink != 1 {
++		return errPrivateStorage
++	}
++	if unix.Unlinkat(int(d.file.Fd()), name, 0) != nil {
++		return errPrivateStorage
++	}
++	return nil
++}
++func (s *cacheStorage) openDB(name string, readonly bool, expected *unix.Stat_t, tighten bool) (*bbolt.DB, error) {
++	flags := unix.O_RDWR
++	if readonly {
++		flags = unix.O_RDONLY
++	}
++	var opened *os.File
++	options := &bbolt.Options{Timeout: time.Second, ReadOnly: readonly, OpenFile: func(_ string, _ int, _ os.FileMode) (*os.File, error) {
++		file, err := s.open(name, flags, false)
++		if err != nil {
++			return nil, err
++		}
++		info, err := fileIdentity(file)
++		if err != nil || (expected != nil && (info.Dev != expected.Dev || info.Ino != expected.Ino)) || (readonly && info.Size == 0) {
++			file.Close()
++			return nil, errPrivateStorage
++		}
++		if tighten && unix.Fchmod(int(file.Fd()), 0o600) != nil {
++			file.Close()
++			return nil, errPrivateStorage
++		}
++		opened = file
++		return file, nil
++	}}
++	// bbolt receives a non-sensitive logical name, while OpenFile uses our anchored FD.
++	db, err := bbolt.Open("loki-cache", 0o600, options)
++	if err != nil {
++		return nil, errPrivateStorage
++	}
++	// A writer waiting on flock must not accept an inode replaced by another owner instance.
++	current, verifyErr := fileIdentity(opened)
++	var named unix.Stat_t
++	if verifyErr != nil || unix.Fstatat(int(s.file.Fd()), name, &named, unix.AT_SYMLINK_NOFOLLOW) != nil || current.Dev != named.Dev || current.Ino != named.Ino || named.Nlink != 1 {
++		db.Close()
++		return nil, errPrivateStorage
++	}
++	return db, nil
++}
++func readStoreID(db *bbolt.DB) (id string, err error) {
++	defer func() {
++		if recover() != nil {
++			id = ""
++			err = errPrivateStorage
++		}
++	}()
++	err = db.View(func(tx *bbolt.Tx) error {
++		bucket := tx.Bucket(bucketStore)
++		if bucket == nil || string(bucket.Get([]byte("schema"))) != storageSchema {
++			return errPrivateStorage
++		}
++		id = string(bucket.Get([]byte("id")))
++		decoded, e := hex.DecodeString(id)
++		if e != nil || len(decoded) != 16 || hex.EncodeToString(decoded) != id {
++			return errPrivateStorage
++		}
++		return nil
++	})
++	if err != nil {
++		return "", errPrivateStorage
++	}
++	return id, nil
++}
++func (s *cacheStorage) createDB(replace bool) (*bbolt.DB, error) {
++	file, name, err := s.randomFile(".loki-db-")
++	if err != nil {
++		return nil, err
++	}
++	file.Close()
++	defer func() { _ = s.remove(name) }()
++	db, err := s.openDB(name, false, nil, true)
++	if err != nil {
++		return nil, err
++	}
++	err = db.Update(func(tx *bbolt.Tx) error {
++		bucket, e := tx.CreateBucket(bucketStore)
++		if e != nil {
++			return e
++		}
++		if e = bucket.Put([]byte("schema"), []byte(storageSchema)); e != nil {
++			return e
++		}
++		return bucket.Put([]byte("id"), []byte(s.id))
++	})
++	if err == nil {
++		err = db.Sync()
++	}
++	closeErr := db.Close()
++	if err != nil || closeErr != nil {
++		return nil, errPrivateStorage
++	}
++	flags := uint(unix.RENAME_NOREPLACE)
++	if replace {
++		old, e := s.open(s.name, unix.O_RDONLY, false)
++		if e != nil {
++			return nil, e
++		}
++		info, e := fileIdentity(old)
++		old.Close()
++		if e != nil || info.Dev != s.database.Dev || info.Ino != s.database.Ino {
++			return nil, errPrivateStorage
++		}
++		flags = 0
++	}
++	if unix.Renameat2(int(s.file.Fd()), name, int(s.file.Fd()), s.name, flags) != nil {
++		return nil, errPrivateStorage
++	}
++	if s.sync() != nil {
++		return nil, errPrivateStorage
++	}
++	db, err = s.openDB(s.name, false, nil, true)
++	if err != nil {
++		return nil, err
++	}
++	opened, err := s.open(s.name, unix.O_RDONLY, false)
++	if err == nil {
++		s.database, err = fileIdentity(opened)
++		opened.Close()
++	}
++	if err != nil {
++		db.Close()
++		return nil, err
++	}
++	return db, nil
++}
++func openCacheStorage(path string) (*cacheStorage, *bbolt.DB, error) {
++	return openCacheStorageWithLock(path, func(fd int) error { return unix.Flock(fd, unix.LOCK_EX|unix.LOCK_NB) })
++}
++func openCacheStorageWithLock(path string, lock func(int) error) (*cacheStorage, *bbolt.DB, error) {
++	if !validCachePath(path) {
++		return nil, nil, errPrivateStorage
++	}
++	directory, err := privateDirectory(filepath.Dir(path), true)
++	if err != nil {
++		return nil, nil, err
++	}
++	// A stable directory lock survives replacement of the DB inode by compact/reset.
++	if lock(int(directory.file.Fd())) != nil {
++		directory.close()
++		return nil, nil, errPrivateStorage
++	}
++	s := &cacheStorage{cacheDirectory: directory, name: filepath.Base(path)}
++	fail := func() (*cacheStorage, *bbolt.DB, error) { directory.close(); return nil, nil, errPrivateStorage }
++	var info unix.Stat_t
++	err = unix.Fstatat(int(directory.file.Fd()), s.name, &info, unix.AT_SYMLINK_NOFOLLOW)
++	if errors.Is(err, unix.ENOENT) {
++		var random [16]byte
++		if _, err = rand.Read(random[:]); err != nil {
++			return fail()
++		}
++		s.id = hex.EncodeToString(random[:])
++		db, e := s.createDB(false)
++		if e != nil {
++			return fail()
++		}
++		return s, db, nil
++	}
++	if err != nil {
++		return fail()
++	}
++	// A read-only descriptor and marker check precede chmod, writable open, cleanup or migration.
++	db, err := s.openDB(s.name, true, &info, false)
++	if err != nil {
++		return fail()
++	}
++	s.id, err = readStoreID(db)
++	if err == nil {
++		err = checkDatabase(db)
++	}
++	db.Close()
++	if err != nil {
++		return fail()
++	}
++	verified, err := s.open(s.name, unix.O_RDONLY, false)
++	if err != nil {
++		return fail()
++	}
++	current, err := fileIdentity(verified)
++	if err != nil || current.Dev != info.Dev || current.Ino != info.Ino || unix.Fchmod(int(verified.Fd()), 0o600) != nil {
++		verified.Close()
++		return fail()
++	}
++	verified.Close()
++	db, err = s.openDB(s.name, false, &info, true)
++	if err != nil {
++		return fail()
++	}
++	s.database = info
++	return s, db, nil
++}
+diff --git a/experimental/cachefile/storage_boundary_test.go b/experimental/cachefile/storage_boundary_test.go
+new file mode 100644
+index 0000000..b798431
+--- /dev/null
++++ b/experimental/cachefile/storage_boundary_test.go
+@@ -0,0 +1,96 @@
++package cachefile
++
++import (
++	"bytes"
++	"context"
++	"os"
++	"path/filepath"
++	"testing"
++	"time"
++
++	"github.com/sagernet/bbolt"
++	"github.com/sagernet/sing-box/adapter"
++	"github.com/sagernet/sing-box/option"
++	"github.com/sagernet/sing/common/logger"
++	"github.com/stretchr/testify/require"
++)
++
++func TestStorageBoundaryPrivateModes(t *testing.T) {
++	path := filepath.Join(privateTestDirectory(t), "cache.db")
++	cache := openTestCacheFile(t, path)
++	defer cache.Close()
++	require.NoError(t, cache.SaveSubscription("provider", &adapter.SavedBinary{Content: []byte("synthetic-password")}))
++	require.NoError(t, cache.SaveRuleSet("rules", &adapter.SavedBinary{Content: []byte("example.test")}))
++	require.NoError(t, filepath.Walk(filepath.Dir(path), func(name string, info os.FileInfo, err error) error {
++		require.NoError(t, err)
++		if info.IsDir() {
++			require.Equal(t, os.FileMode(0o700), info.Mode().Perm(), "cache directory is public")
++		} else {
++			require.Equal(t, os.FileMode(0o600), info.Mode().Perm(), "cache file is public")
++		}
++		return nil
++	}))
++}
++func TestStorageBoundaryRejectUnmarkedDatabase(t *testing.T) {
++	path := filepath.Join(privateTestDirectory(t), "cache.db")
++	database, err := bbolt.Open(path, 0o644, nil)
++	require.NoError(t, err)
++	require.NoError(t, database.Update(func(tx *bbolt.Tx) error {
++		bucket, err := tx.CreateBucket([]byte("other_application"))
++		if err != nil {
++			return err
++		}
++		return bucket.Put([]byte("keep"), []byte("synthetic-private-data"))
++	}))
++	require.NoError(t, database.Close())
++	require.NoError(t, os.Chmod(path, 0o644))
++	before, err := os.ReadFile(path)
++	require.NoError(t, err)
++	cache := New(context.Background(), logger.NOP(), option.CacheFileOptions{Enabled: true, Path: path})
++	scope := adapter.NewScope(context.Background(), logger.NOP())
++	err = cache.Start(adapter.StartStateInitialize, scope)
++	if err == nil {
++		scope.Close()
++	}
++	require.Error(t, err, "a foreign DB must be refused before writable open or cleanup")
++	after, err := os.ReadFile(path)
++	require.NoError(t, err)
++	require.Equal(t, before, after)
++	info, err := os.Stat(path)
++	require.NoError(t, err)
++	require.Equal(t, os.FileMode(0o644), info.Mode().Perm(), "foreign DB permissions changed")
++}
++func TestStorageBoundarySymlinkDoesNotTruncate(t *testing.T) {
++	directory := privateTestDirectory(t)
++	path := filepath.Join(directory, "cache.db")
++	cache := openTestCacheFile(t, path)
++	defer cache.Close()
++	victim := filepath.Join(directory, "unrelated")
++	original := []byte("keep-unrelated-synthetic-content")
++	require.NoError(t, os.WriteFile(victim, original, 0o600))
++	ruleDirectory := path + ruleSetFileSuffix
++	require.NoError(t, os.Mkdir(ruleDirectory, 0o700))
++	require.NoError(t, os.Symlink(victim, filepath.Join(ruleDirectory, ruleSetFileName(nil, "provider")+ruleSetFileWriting)))
++	_ = cache.SaveSubscription("provider", &adapter.SavedBinary{Content: []byte("replaced-synthetic-content")})
++	after, err := os.ReadFile(victim)
++	require.NoError(t, err)
++	require.Equal(t, original, after, "predictable staging path followed a symlink")
++}
++func TestStorageBoundaryFailedCommitKeepsBodyAndMetadata(t *testing.T) {
++	path := filepath.Join(privateTestDirectory(t), "cache.db")
++	cache := openTestCacheFile(t, path)
++	before := &adapter.SavedBinary{Content: []byte("old-secret"), LastEtag: "old-etag", LastUpdated: time.Unix(10, 0), URLHash: []byte{1}}
++	require.NoError(t, cache.SaveSubscription("provider", before))
++	require.NoError(t, cache.DB.Close())
++	next := &adapter.SavedBinary{Content: []byte("new-secret"), LastEtag: "new-etag", LastUpdated: time.Unix(20, 0), URLHash: []byte{2}}
++	require.Error(t, cache.SaveSubscription("provider", next))
++	_ = cache.Close()
++	reopened := openTestCacheFile(t, path)
++	defer reopened.Close()
++	actual := reopened.LoadSubscription("provider")
++	require.NotNil(t, actual)
++	require.True(t, bytes.Equal(before.Content, actual.Content), "failed DB commit replaced the previous immutable body")
++	require.Equal(t, before.LastEtag, actual.LastEtag)
++	require.True(t, before.LastUpdated.Equal(actual.LastUpdated))
++	require.Equal(t, before.URLHash, actual.URLHash)
++}
+diff --git a/experimental/cachefile/storage_io_linux_test.go b/experimental/cachefile/storage_io_linux_test.go
+new file mode 100644
+index 0000000..bda5ad2
+--- /dev/null
++++ b/experimental/cachefile/storage_io_linux_test.go
+@@ -0,0 +1,62 @@
++package cachefile
++
++import (
++	"os"
++	"os/exec"
++	"os/signal"
++	"path/filepath"
++	"syscall"
++	"testing"
++
++	"github.com/sagernet/sing-box/adapter"
++	"github.com/stretchr/testify/require"
++)
++
++func TestStorageBodyWriteFailureKeepsVerifiedPair(t *testing.T) {
++	if os.Getenv("LOKI_CACHE_FSIZE_CHILD") != "1" {
++		command := exec.Command(os.Args[0], "-test.run=^TestStorageBodyWriteFailureKeepsVerifiedPair$", "-test.v")
++		command.Env = append(os.Environ(), "LOKI_CACHE_FSIZE_CHILD=1")
++		output, err := command.CombinedOutput()
++		require.NoError(t, err, "%s", output)
++		return
++	}
++	path := filepath.Join(privateTestDirectory(t), "cache.db")
++	cache := openTestCacheFile(t, path)
++	defer cache.Close()
++	old := &adapter.SavedBinary{Content: []byte("old-password"), LastEtag: "old"}
++	require.NoError(t, cache.SaveSubscription("provider", old))
++	// A real kernel write limit applies only in this disposable test child.
++	signal.Ignore(syscall.SIGXFSZ)
++	var limit syscall.Rlimit
++	require.NoError(t, syscall.Getrlimit(syscall.RLIMIT_FSIZE, &limit))
++	limit.Cur = 5
++	require.NoError(t, syscall.Setrlimit(syscall.RLIMIT_FSIZE, &limit))
++	require.Error(t, cache.SaveSubscription("provider", &adapter.SavedBinary{Content: []byte("new-password"), LastEtag: "new"}))
++	actual := cache.LoadSubscription("provider")
++	require.NotNil(t, actual)
++	require.Equal(t, old.Content, actual.Content)
++	require.Equal(t, old.LastEtag, actual.LastEtag)
++	entries, err := os.ReadDir(path + subscriptionSuffix)
++	require.NoError(t, err)
++	require.Len(t, entries, 1, "definite body-write failure leaves no new orphan")
++}
++
++func TestStorageTightensOnlyOwnedMarkedFiles(t *testing.T) {
++	for _, mode := range []os.FileMode{0o644, 0o400} {
++		path := filepath.Join(privateTestDirectory(t), "cache.db")
++		cache := openTestCacheFile(t, path)
++		require.NoError(t, cache.SaveSubscription("provider", &adapter.SavedBinary{Content: []byte("synthetic-private")}))
++		_, bodyPath := subscriptionFixture(t, cache.CacheFile, "provider")
++		require.NoError(t, cache.Close())
++		require.NoError(t, os.Chmod(path, mode))
++		require.NoError(t, os.Chmod(bodyPath, mode))
++		cache = openTestCacheFile(t, path)
++		require.NotNil(t, cache.LoadSubscription("provider"))
++		for _, name := range []string{path, bodyPath} {
++			info, err := os.Stat(name)
++			require.NoError(t, err)
++			require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
++		}
++		require.NoError(t, cache.Close())
++	}
++}
+diff --git a/experimental/cachefile/storage_lock_linux_test.go b/experimental/cachefile/storage_lock_linux_test.go
+new file mode 100644
+index 0000000..1c5c09c
+--- /dev/null
++++ b/experimental/cachefile/storage_lock_linux_test.go
+@@ -0,0 +1,158 @@
++package cachefile
++
++import (
++	"bytes"
++	"context"
++	"os"
++	"os/exec"
++	"path/filepath"
++	"testing"
++	"time"
++
++	"github.com/sagernet/bbolt"
++	"github.com/sagernet/sing-box/adapter"
++	"github.com/sagernet/sing-box/option"
++	"github.com/sagernet/sing/common/logger"
++	"github.com/stretchr/testify/require"
++	"golang.org/x/sys/unix"
++)
++
++func TestStorageDirectoryLifetimeLockAcrossDBWindows(t *testing.T) {
++	if mode := os.Getenv("LOKI_CACHE_LOCK_CHILD"); mode != "" {
++		path := os.Getenv("LOKI_CACHE_LOCK_PATH")
++		if mode == "blocked" {
++			directory, err := os.Open(filepath.Dir(path))
++			require.NoError(t, err)
++			err = unix.Flock(int(directory.Fd()), unix.LOCK_EX|unix.LOCK_NB)
++			directory.Close()
++			require.Error(t, err, "parent directory lock did not survive DB close")
++			require.True(t, err == unix.EWOULDBLOCK || err == unix.EAGAIN)
++			cache := New(context.Background(), logger.NOP(), option.CacheFileOptions{Enabled: true, Path: path})
++			require.NoError(t, cache.ValidatePath())
++			require.Error(t, cache.start())
++			return
++		}
++		cache := openTestCacheFile(t, path)
++		require.Equal(t, os.Getenv("LOKI_CACHE_LOCK_MODE"), cache.LoadMode())
++		require.NoError(t, cache.Close())
++		return
++	}
++	for _, kind := range []string{"closed-inode", "compact", "reset"} {
++		t.Run(kind, func(t *testing.T) {
++			path := filepath.Join(privateTestDirectory(t), "cache.db")
++			cache := openTestCacheFile(t, path)
++			active := true
++			defer func() {
++				if active {
++					_ = cache.Close()
++				}
++			}()
++			require.NoError(t, cache.StoreMode("retained"))
++			pending, err := cache.prepareSubscription("pending", &adapter.SavedBinary{Content: []byte("pending-private")}, (*os.File).Sync, "")
++			require.NoError(t, err)
++			defer pending.Close()
++			pendingPath := filepath.Join(path+subscriptionSuffix, pending.name)
++			descriptor := int(cache.storage.file.Fd())
++			flags, err := unix.FcntlInt(uintptr(descriptor), unix.F_GETFD, 0)
++			require.NoError(t, err)
++			require.NotZero(t, flags&unix.FD_CLOEXEC)
++			probe := func(target string) {
++				before, err := os.ReadFile(path)
++				require.NoError(t, err)
++				info, err := os.Stat(path)
++				require.NoError(t, err)
++				ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
++				defer cancel()
++				command := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestStorageDirectoryLifetimeLockAcrossDBWindows$", "-test.v")
++				command.Env = append(os.Environ(), "LOKI_CACHE_LOCK_CHILD=blocked", "LOKI_CACHE_LOCK_PATH="+target)
++				output, err := command.CombinedOutput()
++				require.NoError(t, err, "%s", output)
++				after, err := os.ReadFile(path)
++				require.NoError(t, err)
++				require.Equal(t, before, after)
++				afterInfo, err := os.Stat(path)
++				require.NoError(t, err)
++				require.Equal(t, info.Mode(), afterInfo.Mode(), "blocked competitor chmodded the database")
++				require.FileExists(t, pendingPath, "blocked competitor pruned the other process's pending body")
++			}
++			if kind == "compact" {
++				blob := bytes.Repeat([]byte("x"), compactFrom*2)
++				require.NoError(t, cache.update(func(tx *bbolt.Tx) error {
++					bucket, err := tx.CreateBucketIfNotExists([]byte("fixture"))
++					if err != nil {
++						return err
++					}
++					return bucket.Put([]byte("temporary"), blob)
++				}))
++				require.NoError(t, cache.update(func(tx *bbolt.Tx) error { return tx.Bucket([]byte("fixture")).Delete([]byte("temporary")) }))
++			}
++			require.NoError(t, os.Chmod(path, 0o644))
++			oldDB := cache.DB
++			closeWindow := func() error {
++				err := oldDB.Close()
++				require.NoError(t, err)
++				probe(path)
++				probe(filepath.Join(filepath.Dir(path), "other.db"))
++				require.NoFileExists(t, filepath.Join(filepath.Dir(path), "other.db"))
++				return nil
++			}
++			switch kind {
++			case "closed-inode":
++				require.NoError(t, closeWindow())
++			case "compact":
++				database, err := cache.compactSparseWithClose(cache.DB, closeWindow)
++				require.NoError(t, err)
++				require.NotSame(t, oldDB, database, "the actual compact path was not exercised")
++				cache.DB = database
++				require.NoError(t, pending.Commit())
++			case "reset":
++				cache.resetDBWithClose(cache.DB, closeWindow)
++				require.NotSame(t, oldDB, cache.DB)
++				require.ErrorIs(t, pending.Commit(), errStaleSubscription)
++				require.NoError(t, cache.StoreMode("after-reset"))
++			}
++			if kind != "closed-inode" {
++				probe(path)
++			}
++			_ = pending.Close()
++			expectedMode := "retained"
++			if kind == "reset" {
++				expectedMode = "after-reset"
++			}
++			_ = cache.Close()
++			active = false
++			_, err = unix.FcntlInt(uintptr(descriptor), unix.F_GETFD, 0)
++			require.ErrorIs(t, err, unix.EBADF, "storage directory descriptor leaked")
++			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
++			defer cancel()
++			command := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestStorageDirectoryLifetimeLockAcrossDBWindows$", "-test.v")
++			command.Env = append(os.Environ(), "LOKI_CACHE_LOCK_CHILD=allowed", "LOKI_CACHE_LOCK_PATH="+path, "LOKI_CACHE_LOCK_MODE="+expectedMode)
++			output, err := command.CombinedOutput()
++			require.NoError(t, err, "%s", output)
++			info, err := os.Stat(path)
++			require.NoError(t, err)
++			require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
++		})
++	}
++}
++
++func TestUnsupportedDirectoryLockFailsWithoutDBMutation(t *testing.T) {
++	path := filepath.Join(privateTestDirectory(t), "cache.db")
++	cache := openTestCacheFile(t, path)
++	require.NoError(t, cache.Close())
++	require.NoError(t, os.Chmod(path, 0o644))
++	before, err := os.ReadFile(path)
++	require.NoError(t, err)
++	storage, database, err := openCacheStorageWithLock(path, func(int) error { return unix.ENOTSUP })
++	require.Error(t, err)
++	require.Nil(t, storage)
++	require.Nil(t, database)
++	after, err := os.ReadFile(path)
++	require.NoError(t, err)
++	require.Equal(t, before, after)
++	info, err := os.Stat(path)
++	require.NoError(t, err)
++	require.Equal(t, os.FileMode(0o644), info.Mode().Perm())
++	reopened := openTestCacheFile(t, path)
++	require.NoError(t, reopened.Close(), "failed lock attempt leaked its FD or lock")
++}
+diff --git a/experimental/cachefile/subscription_availability_test.go b/experimental/cachefile/subscription_availability_test.go
+new file mode 100644
+index 0000000..1b1d691
+--- /dev/null
++++ b/experimental/cachefile/subscription_availability_test.go
+@@ -0,0 +1,211 @@
++package cachefile
++
++import (
++	"bufio"
++	"context"
++	"fmt"
++	"io"
++	"net"
++	"net/http"
++	"net/http/httptest"
++	"os"
++	"path/filepath"
++	"strconv"
++	"strings"
++	"sync"
++	"sync/atomic"
++	"testing"
++	"time"
++
++	"github.com/sagernet/sing-box/adapter"
++	outboundAdapter "github.com/sagernet/sing-box/adapter/outbound"
++	"github.com/sagernet/sing-box/log"
++	"github.com/sagernet/sing-box/option"
++	remoteProvider "github.com/sagernet/sing-box/provider/remote"
++	"github.com/sagernet/sing/common/logger"
++	M "github.com/sagernet/sing/common/metadata"
++	"github.com/sagernet/sing/service"
++	"github.com/stretchr/testify/require"
++)
++
++type syncBlockedCache struct {
++	*CacheFile
++	block   atomic.Bool
++	entered chan struct{}
++	release chan struct{}
++	once    sync.Once
++}
++
++func (c *syncBlockedCache) PrepareSubscription(tag string, saved *adapter.SavedBinary) (adapter.PreparedSubscription, error) {
++	return c.prepareSubscription(tag, saved, func(file *os.File) error {
++		if c.block.Load() {
++			c.once.Do(func() { close(c.entered) })
++			<-c.release
++		}
++		return file.Sync()
++	}, "")
++}
++func (c *syncBlockedCache) SaveSubscription(tag string, saved *adapter.SavedBinary) error {
++	prepared, err := c.PrepareSubscription(tag, saved)
++	if err != nil {
++		return err
++	}
++	defer prepared.Close()
++	return prepared.Commit()
++}
++
++type availabilityOutbound struct {
++	outboundAdapter.Adapter
++	target  string
++	allowed map[string]bool
++}
++
++func (o *availabilityOutbound) DialContext(ctx context.Context, network string, destination M.Socksaddr) (net.Conn, error) {
++	target := o.target
++	if target == "" {
++		target = destination.String()
++	}
++	if network != "tcp" || !o.allowed[target] {
++		return nil, fmt.Errorf("unapproved test peer")
++	}
++	return (&net.Dialer{}).DialContext(ctx, network, target)
++}
++func (*availabilityOutbound) ListenPacket(context.Context, M.Socksaddr) (net.PacketConn, error) {
++	return nil, fmt.Errorf("UDP disabled in test")
++}
++func (*availabilityOutbound) Close() error { return nil }
++
++// These are unit peers with real loopback HTTP markers, not a VLESS protocol handshake.
++func TestSubscriptionBodySyncDoesNotBlockOldRouting(t *testing.T) {
++	oldPeer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, "old") }))
++	defer oldPeer.Close()
++	nextPeer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, "new") }))
++	defer nextPeer.Close()
++	oldAddress, nextAddress := strings.TrimPrefix(oldPeer.URL, "http://"), strings.TrimPrefix(nextPeer.URL, "http://")
++	_, oldPort, err := net.SplitHostPort(oldAddress)
++	require.NoError(t, err)
++	_, nextPort, err := net.SplitHostPort(nextAddress)
++	require.NoError(t, err)
++	oldLink := "vless://00000000-0000-4000-8000-000000000001@127.0.0.1:" + oldPort + "#Node"
++	nextLink := "vless://00000000-0000-4000-8000-000000000002@127.0.0.1:" + nextPort + "#Node"
++	var document atomic.Value
++	document.Store(oldLink)
++	subscription := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, document.Load().(string)) }))
++	defer subscription.Close()
++	allowed := map[string]bool{oldAddress: true, nextAddress: true, strings.TrimPrefix(subscription.URL, "http://"): true}
++	registry := outboundAdapter.NewRegistry()
++	outboundAdapter.Register[option.DirectOutboundOptions](registry, "direct", func(_ context.Context, _ adapter.Router, _ log.ContextLogger, tag string, _ option.DirectOutboundOptions) (adapter.Outbound, error) {
++		return &availabilityOutbound{Adapter: outboundAdapter.NewAdapter("direct", tag, nil, nil), allowed: allowed}, nil
++	})
++	outboundAdapter.Register[option.VLESSOutboundOptions](registry, "vless", func(_ context.Context, _ adapter.Router, _ log.ContextLogger, tag string, opts option.VLESSOutboundOptions) (adapter.Outbound, error) {
++		target := net.JoinHostPort(opts.Server, strconv.Itoa(int(opts.ServerPort)))
++		if !allowed[target] {
++			return nil, fmt.Errorf("unapproved test target")
++		}
++		return &availabilityOutbound{Adapter: outboundAdapter.NewAdapter("vless", tag, nil, nil), target: target, allowed: allowed}, nil
++	})
++	manager := outboundAdapter.NewManager(registry, nil, "")
++	factory := log.NewNOPFactory()
++	ctx := service.ContextWith[adapter.OutboundRegistry](context.Background(), registry)
++	ctx = service.ContextWith[adapter.OutboundManager](ctx, manager)
++	require.NoError(t, manager.Create(ctx, nil, factory.NewLogger("test"), "direct", "direct", &option.DirectOutboundOptions{}))
++	cache := New(context.Background(), logger.NOP(), option.CacheFileOptions{Enabled: true, StoreSubscriptions: true, Path: filepath.Join(privateTestDirectory(t), "cache.db")})
++	cacheScope := adapter.NewScope(context.Background(), logger.NOP())
++	require.NoError(t, cache.Start(adapter.StartStateInitialize, cacheScope))
++	defer cacheScope.Close()
++	wrapped := &syncBlockedCache{CacheFile: cache, entered: make(chan struct{}), release: make(chan struct{})}
++	ctx = service.ContextWith[adapter.CacheFile](ctx, wrapped)
++	raw, err := remoteProvider.NewProviderRemote(ctx, nil, factory, "provider", option.ProviderRemoteOptions{URL: subscription.URL})
++	require.NoError(t, err)
++	provider := raw.(*remoteProvider.ProviderRemote)
++	providerScope := adapter.NewScope(ctx, logger.NOP())
++	defer providerScope.Close()
++	require.NoError(t, provider.Start(adapter.StartStateStart, providerScope))
++	deadline := time.Now().Add(3 * time.Second)
++	for len(provider.OutboundSnapshot()) != 1 {
++		require.True(t, time.Now().Before(deadline), "initial loopback provider did not publish")
++		time.Sleep(time.Millisecond)
++	}
++	oldSnapshot := provider.OutboundSnapshot()
++	oldUpdated := provider.UpdatedAt()
++	document.Store(nextLink)
++	wrapped.block.Store(true)
++	var release sync.Once
++	defer release.Do(func() { close(wrapped.release) })
++	refreshed := make(chan error, 1)
++	go func() { refreshed <- provider.Update() }()
++	select {
++	case <-wrapped.entered:
++	case <-time.After(3 * time.Second):
++		t.Fatal("real body Sync preparation was not reached")
++	}
++	// GC can run during the blocked syscall stage and must retain the registered pending file.
++	collected := make(chan struct{})
++	go func() { cache.pruneSubscriptionFiles(); close(collected) }()
++	select {
++	case <-collected:
++	case <-time.After(time.Second):
++		release.Do(func() { close(wrapped.release) })
++		t.Fatal("bulk preparation held the GC/reader lock")
++	}
++	cache.subscriptionState.Lock()
++	var pending string
++	for name := range cache.pendingSubscriptions {
++		pending = name
++	}
++	cache.subscriptionState.Unlock()
++	require.NotEmpty(t, pending)
++	require.FileExists(t, filepath.Join(cache.path+subscriptionSuffix, pending))
++	observed := make(chan string, 1)
++	go func() {
++		current, loaded := manager.Outbound(oldSnapshot[0].Tag())
++		if !loaded || manager.Default() == nil {
++			observed <- "missing"
++			return
++		}
++		connection, err := current.DialContext(context.Background(), "tcp", M.ParseSocksaddr(oldAddress))
++		if err != nil {
++			observed <- "dial-error"
++			return
++		}
++		defer connection.Close()
++		_ = connection.SetDeadline(time.Now().Add(time.Second))
++		_, _ = io.WriteString(connection, "GET / HTTP/1.1\r\nHost: fixture\r\nConnection: close\r\n\r\n")
++		response, err := http.ReadResponse(bufio.NewReader(connection), nil)
++		if err != nil {
++			observed <- "response-error"
++			return
++		}
++		defer response.Body.Close()
++		content, err := io.ReadAll(io.LimitReader(response.Body, 16))
++		if err != nil {
++			observed <- "read-error"
++			return
++		}
++		observed <- string(content)
++	}()
++	blocked := false
++	var marker string
++	select {
++	case marker = <-observed:
++	case <-time.After(500 * time.Millisecond):
++		blocked = true
++	}
++	if !blocked {
++		require.Equal(t, "old", marker)
++		require.Equal(t, oldSnapshot, provider.OutboundSnapshot())
++		require.True(t, provider.UpdatedAt().Equal(oldUpdated))
++	}
++	release.Do(func() { close(wrapped.release) })
++	select {
++	case err = <-refreshed:
++		require.NoError(t, err)
++	case <-time.After(3 * time.Second):
++		t.Fatal("refresh did not finish after releasing Sync")
++	}
++	if blocked {
++		<-observed
++		t.Fatal("global manager lookup/old traffic blocked during body Sync")
++	}
++	require.NotEqual(t, oldSnapshot[0].Identity, provider.OutboundSnapshot()[0].Identity)
++}
+diff --git a/experimental/cachefile/subscription_file.go b/experimental/cachefile/subscription_file.go
+new file mode 100644
+index 0000000..e4c22ca
+--- /dev/null
++++ b/experimental/cachefile/subscription_file.go
+@@ -0,0 +1,425 @@
++package cachefile
++
++import (
++	"bytes"
++	"crypto/sha256"
++	"encoding/hex"
++	"encoding/json"
++	"errors"
++	"io"
++	"os"
++	"strings"
++	"sync/atomic"
++
++	"github.com/sagernet/bbolt"
++	"github.com/sagernet/sing-box/adapter"
++	"golang.org/x/sys/unix"
++)
++
++var bucketSubscriptionFile = []byte("subscription_file")
++
++const subscriptionSuffix = ".subscriptions"
++
++type subscriptionRecord struct {
++	Version  int    `json:"version"`
++	Body     string `json:"body"`
++	Size     int64  `json:"size"`
++	SHA256   string `json:"sha256"`
++	Metadata []byte `json:"metadata"`
++}
++
++func (c *CacheFile) subscriptionBodyName(name string) bool {
++	prefix := "s-" + c.storage.id + "-"
++	if !strings.HasPrefix(name, prefix) || len(name) != len(prefix)+32 {
++		return false
++	}
++	decoded, err := hex.DecodeString(strings.TrimPrefix(name, prefix))
++	return err == nil && len(decoded) == 16 && hex.EncodeToString(decoded) == strings.TrimPrefix(name, prefix)
++}
++func (c *CacheFile) parseSubscriptionRecord(raw []byte) (*subscriptionRecord, *adapter.SavedBinary, error) {
++	var record subscriptionRecord
++	decoder := json.NewDecoder(bytes.NewReader(raw))
++	decoder.DisallowUnknownFields()
++	if decoder.Decode(&record) != nil || decoder.Decode(new(any)) != io.EOF || record.Version != 1 || record.Size < 0 || !c.subscriptionBodyName(record.Body) {
++		return nil, nil, errPrivateStorage
++	}
++	hash, err := hex.DecodeString(record.SHA256)
++	if err != nil || len(hash) != sha256.Size || hex.EncodeToString(hash) != record.SHA256 {
++		return nil, nil, errPrivateStorage
++	}
++	var saved adapter.SavedBinary
++	if len(record.Metadata) == 0 || record.Metadata[0] != 2 || saved.UnmarshalBinary(record.Metadata) != nil || len(saved.Content) != 0 {
++		return nil, nil, errPrivateStorage
++	}
++	return &record, &saved, nil
++}
++func (c *CacheFile) subscriptionRecord(tag string) (raw []byte, err error) {
++	err = c.view(func(tx *bbolt.Tx) error {
++		if bucket := c.bucket(tx, bucketSubscriptionFile); bucket != nil {
++			raw = bytes.Clone(bucket.Get([]byte(tag)))
++		}
++		return nil
++	})
++	return
++}
++func (c *CacheFile) loadSubscription(tag string) *adapter.SavedBinary {
++	c.contentAccess.RLock()
++	defer c.contentAccess.RUnlock()
++	raw, err := c.subscriptionRecord(tag)
++	if err != nil {
++		return nil
++	}
++	if raw == nil {
++		// This fallback is confined to an already marked LoKi store, never an unmarked r4 DB.
++		return c.loadRuleSet(tag)
++	}
++	record, saved, err := c.parseSubscriptionRecord(raw)
++	if err != nil {
++		c.logger.Warn("invalid private subscription cache record")
++		return nil
++	}
++	directory, err := c.storage.child(c.storage.name+subscriptionSuffix, false)
++	if err != nil {
++		return nil
++	}
++	defer directory.close()
++	file, err := directory.open(record.Body, unix.O_RDONLY, true)
++	if err != nil {
++		return nil
++	}
++	defer file.Close()
++	info, err := fileIdentity(file)
++	if err != nil || info.Size != record.Size {
++		return nil
++	}
++	// Allocation follows actual validated file bytes, never an unchecked DB size field.
++	content, err := io.ReadAll(file)
++	if err != nil || int64(len(content)) != record.Size {
++		return nil
++	}
++	hash := sha256.Sum256(content)
++	if hex.EncodeToString(hash[:]) != record.SHA256 {
++		return nil
++	}
++	saved.Content = content
++	return saved
++}
++
++var errStaleSubscription = errors.New("private subscription cache candidate is stale")
++
++const (
++	subscriptionReady uint32 = iota
++	subscriptionCommitting
++	subscriptionCommitted
++	subscriptionFailed
++	subscriptionClosed
++)
++
++type preparedSubscription struct {
++	cache       *CacheFile
++	directory   *cacheDirectory
++	name        string
++	record      []byte
++	expected    []byte
++	expectedTag string
++	previous    string
++	generation  uint64
++	registered  bool
++	ownsFile    bool
++	state       atomic.Uint32
++	done        chan struct{}
++}
++
++func (c *CacheFile) subscriptionWritable() bool {
++	c.subscriptionState.Lock()
++	defer c.subscriptionState.Unlock()
++	return !c.subscriptionClosing && !c.subscriptionUncertain
++}
++func (c *CacheFile) poisonSubscriptionWrites() {
++	c.subscriptionState.Lock()
++	c.subscriptionUncertain = true
++	c.subscriptionState.Unlock()
++}
++
++func (c *CacheFile) PrepareSubscription(tag string, saved *adapter.SavedBinary) (adapter.PreparedSubscription, error) {
++	prepared, err := c.prepareSubscription(tag, saved, (*os.File).Sync, "")
++	if err != nil {
++		return nil, err
++	}
++	return prepared, nil
++}
++
++// syncBody and forcedName keep actual syscall failure/collision controls in the same preparation path.
++func (c *CacheFile) prepareSubscription(tag string, saved *adapter.SavedBinary, syncBody func(*os.File) error, forcedName string) (prepared *preparedSubscription, err error) {
++	if saved == nil || !c.subscriptionWritable() {
++		return nil, errPrivateStorage
++	}
++	named, err := c.subscriptionReferences()
++	if err != nil {
++		c.poisonSubscriptionWrites()
++		return nil, errPrivateStorage
++	}
++	prepared = &preparedSubscription{cache: c, done: make(chan struct{})}
++	err = c.view(func(tx *bbolt.Tx) error {
++		prepared.generation = c.generation.Load()
++		if bucket := c.bucket(tx, bucketSubscriptionFile); bucket != nil {
++			prepared.expected = bytes.Clone(bucket.Get([]byte(tag)))
++		}
++		return nil
++	})
++	if err != nil {
++		c.poisonSubscriptionWrites()
++		return nil, errPrivateStorage
++	}
++	if prepared.expected != nil {
++		previous, _, err := c.parseSubscriptionRecord(prepared.expected)
++		if err != nil {
++			c.poisonSubscriptionWrites()
++			return nil, errPrivateStorage
++		}
++		prepared.previous = previous.Body
++	}
++	metadata, err := (&adapter.SavedBinary{LastUpdated: saved.LastUpdated, LastEtag: saved.LastEtag, URLHash: bytes.Clone(saved.URLHash)}).MarshalBinary()
++	if err != nil {
++		return nil, errPrivateStorage
++	}
++	name := forcedName
++	if name == "" {
++		name, err = randomCacheName("s-" + c.storage.id + "-")
++	}
++	if err != nil || !c.subscriptionBodyName(name) || named[name] {
++		return nil, errPrivateStorage
++	}
++	prepared.name = name
++	// Registration is short and precedes exclusive create. GC's write lock prevents it
++	// from missing a newly registered body while enumerating/removing directory entries.
++	c.contentAccess.RLock()
++	c.subscriptionState.Lock()
++	if c.subscriptionClosing || c.subscriptionUncertain || c.pendingSubscriptions[name] != nil {
++		c.subscriptionState.Unlock()
++		c.contentAccess.RUnlock()
++		return nil, errPrivateStorage
++	}
++	if c.pendingSubscriptions == nil {
++		c.pendingSubscriptions = make(map[string]*preparedSubscription)
++	}
++	c.pendingSubscriptions[name] = prepared
++	prepared.registered = true
++	c.subscriptionState.Unlock()
++	c.contentAccess.RUnlock()
++	complete := false
++	candidate := prepared
++	defer func() {
++		if !complete {
++			_ = candidate.Close()
++		}
++	}()
++	prepared.directory, err = c.storage.child(c.storage.name+subscriptionSuffix, true)
++	if err != nil {
++		return nil, errPrivateStorage
++	}
++	file, err := prepared.directory.open(name, unix.O_RDWR|unix.O_CREAT|unix.O_EXCL, true)
++	if err != nil {
++		return nil, errPrivateStorage
++	}
++	prepared.ownsFile = true
++	written, writeErr := file.Write(saved.Content)
++	if writeErr == nil && written != len(saved.Content) {
++		writeErr = io.ErrShortWrite
++	}
++	if writeErr == nil {
++		writeErr = syncBody(file)
++	}
++	closeErr := file.Close()
++	if writeErr != nil || closeErr != nil || prepared.directory.sync() != nil {
++		return nil, errPrivateStorage
++	}
++	hash := sha256.Sum256(saved.Content)
++	prepared.record, err = json.Marshal(subscriptionRecord{Version: 1, Body: name, Size: int64(len(saved.Content)), SHA256: hex.EncodeToString(hash[:]), Metadata: metadata})
++	if err != nil {
++		return nil, errPrivateStorage
++	}
++	// The tag is a DB key only; it is never part of a filesystem path.
++	prepared.expectedTag = tag
++	complete = true
++	return prepared, nil
++}
++
++func (p *preparedSubscription) Commit() error { return p.commitWith(p.cache.update) }
++func (p *preparedSubscription) commitWith(commit func(func(*bbolt.Tx) error) error) (err error) {
++	if !p.state.CompareAndSwap(subscriptionReady, subscriptionCommitting) {
++		return errPrivateStorage
++	}
++	succeeded := false
++	defer func() {
++		if succeeded {
++			p.state.Store(subscriptionCommitted)
++		} else {
++			p.state.Store(subscriptionFailed)
++		}
++		close(p.done)
++	}()
++	c := p.cache
++	c.subscriptionCommitAccess.Lock()
++	defer c.subscriptionCommitAccess.Unlock()
++	if !c.subscriptionWritable() {
++		return errPrivateStorage
++	}
++	err = commit(func(tx *bbolt.Tx) error {
++		if c.generation.Load() != p.generation {
++			return errStaleSubscription
++		}
++		if !c.subscriptionWritable() {
++			return errPrivateStorage
++		}
++		var current []byte
++		if bucket := c.bucket(tx, bucketSubscriptionFile); bucket != nil {
++			current = bucket.Get([]byte(p.expectedTag))
++		}
++		if !bytes.Equal(current, p.expected) {
++			return errStaleSubscription
++		}
++		bucket, err := c.createBucket(tx, bucketSubscriptionFile)
++		if err != nil {
++			return err
++		}
++		return bucket.Put([]byte(p.expectedTag), p.record)
++	})
++	if err != nil {
++		if errors.Is(err, errStaleSubscription) {
++			return errStaleSubscription
++		}
++		// The final metadata sync can fail after publication. Do not guess the durable outcome.
++		c.poisonSubscriptionWrites()
++		return errPrivateStorage
++	}
++	succeeded = true
++	return nil
++}
++
++func (p *preparedSubscription) Close() error {
++	for {
++		state := p.state.Load()
++		if state == subscriptionClosed {
++			return nil
++		}
++		if state == subscriptionCommitting {
++			<-p.done
++			continue
++		}
++		if p.state.CompareAndSwap(state, subscriptionClosed) {
++			break
++		}
++	}
++	c := p.cache
++	c.contentAccess.Lock()
++	defer c.contentAccess.Unlock()
++	defer func() {
++		c.subscriptionState.Lock()
++		if c.pendingSubscriptions[p.name] == p {
++			delete(c.pendingSubscriptions, p.name)
++		}
++		c.subscriptionState.Unlock()
++	}()
++	var cleanupErr error
++	if p.directory != nil {
++		defer p.directory.close()
++		// Registration alone is never authority to unlink an EEXIST collision.
++		if p.ownsFile {
++			named, err := c.subscriptionReferences()
++			if err != nil {
++				cleanupErr = errPrivateStorage
++			} else {
++				for _, name := range []string{p.name, p.previous} {
++					if name != "" && !named[name] {
++						if err := p.directory.remove(name); err != nil {
++							cleanupErr = errPrivateStorage
++						}
++					}
++				}
++				if p.directory.sync() != nil {
++					cleanupErr = errPrivateStorage
++				}
++			}
++		}
++	}
++	return cleanupErr
++}
++
++func (c *CacheFile) saveSubscription(tag string, saved *adapter.SavedBinary) error {
++	return c.saveSubscriptionWithCommit(tag, saved, c.update)
++}
++func (c *CacheFile) saveSubscriptionWithCommit(tag string, saved *adapter.SavedBinary, commit func(func(*bbolt.Tx) error) error) error {
++	prepared, err := c.prepareSubscription(tag, saved, (*os.File).Sync, "")
++	if err != nil {
++		return err
++	}
++	defer func() {
++		if prepared.Close() != nil {
++			c.logger.Warn("private subscription cache cleanup incomplete")
++		}
++	}()
++	return prepared.commitWith(commit)
++}
++
++func (c *CacheFile) subscriptionReferences() (map[string]bool, error) {
++	named := make(map[string]bool)
++	err := c.view(func(tx *bbolt.Tx) error {
++		collect := func(bucket *bbolt.Bucket) error {
++			if bucket == nil {
++				return nil
++			}
++			return bucket.ForEach(func(_ []byte, value []byte) error {
++				record, _, err := c.parseSubscriptionRecord(value)
++				if err != nil {
++					return err
++				}
++				named[record.Body] = true
++				return nil
++			})
++		}
++		if err := collect(tx.Bucket(bucketSubscriptionFile)); err != nil {
++			return err
++		}
++		return tx.ForEach(func(name []byte, bucket *bbolt.Bucket) error {
++			if len(name) > 0 && name[0] == 0 {
++				return collect(bucket.Bucket(bucketSubscriptionFile))
++			}
++			return nil
++		})
++	})
++	return named, err
++}
++func (c *CacheFile) subscriptionReferenced(name string) (bool, error) {
++	named, err := c.subscriptionReferences()
++	return named[name], err
++}
++
++// A work budget bounds directory scanning, not accepted subscription or node sizes.
++// Unknown files, malformed references and other owners are never cleanup targets.
++func (c *CacheFile) pruneSubscriptionFiles() {
++	c.contentAccess.Lock()
++	defer c.contentAccess.Unlock()
++	named, err := c.subscriptionReferences()
++	if err != nil {
++		return
++	}
++	directory, err := c.storage.child(c.storage.name+subscriptionSuffix, false)
++	if err != nil {
++		return
++	}
++	defer directory.close()
++	entries, err := directory.file.ReadDir(256)
++	if err != nil && err != io.EOF {
++		return
++	}
++	for _, entry := range entries {
++		c.subscriptionState.Lock()
++		pending := c.pendingSubscriptions[entry.Name()] != nil
++		c.subscriptionState.Unlock()
++		if c.subscriptionBodyName(entry.Name()) && !pending && !named[entry.Name()] {
++			_ = directory.remove(entry.Name())
++		}
++	}
++	_ = directory.sync()
++}
+diff --git a/experimental/cachefile/subscription_prepared_test.go b/experimental/cachefile/subscription_prepared_test.go
+new file mode 100644
+index 0000000..8f3d655
+--- /dev/null
++++ b/experimental/cachefile/subscription_prepared_test.go
+@@ -0,0 +1,158 @@
++package cachefile
++
++import (
++	"bytes"
++	"os"
++	"path/filepath"
++	"strings"
++	"testing"
++
++	"github.com/sagernet/bbolt"
++	"github.com/sagernet/sing-box/adapter"
++	"github.com/stretchr/testify/require"
++)
++
++func TestPreparedSubscriptionCollisionsNeverTakeOwnership(t *testing.T) {
++	for _, kind := range []string{"existing-file", "existing-link", "pending"} {
++		t.Run(kind, func(t *testing.T) {
++			cache := openTestCacheFile(t, filepath.Join(privateTestDirectory(t), "cache.db"))
++			defer cache.Close()
++			name := "s-" + cache.storage.id + "-" + strings.Repeat("e", 32)
++			directory, err := cache.storage.child(cache.storage.name+subscriptionSuffix, true)
++			require.NoError(t, err)
++			directory.close()
++			path := filepath.Join(cache.path+subscriptionSuffix, name)
++			var first *preparedSubscription
++			if kind == "pending" {
++				first, err = cache.prepareSubscription("first", &adapter.SavedBinary{Content: []byte("first")}, (*os.File).Sync, name)
++				require.NoError(t, err)
++				defer first.Close()
++			} else {
++				victim := filepath.Join(filepath.Dir(cache.path), "unrelated")
++				require.NoError(t, os.WriteFile(victim, []byte("keep"), 0o644))
++				if kind == "existing-link" {
++					require.NoError(t, os.Symlink(victim, path))
++				} else {
++					require.NoError(t, os.WriteFile(path, []byte("keep"), 0o644))
++				}
++			}
++			before, err := os.ReadFile(path)
++			require.NoError(t, err)
++			prepared, err := cache.prepareSubscription("second", &adapter.SavedBinary{Content: []byte("replace")}, (*os.File).Sync, name)
++			require.Error(t, err)
++			require.Nil(t, prepared)
++			after, err := os.ReadFile(path)
++			require.NoError(t, err)
++			require.Equal(t, before, after)
++			cache.subscriptionState.Lock()
++			pending := cache.pendingSubscriptions[name]
++			cache.subscriptionState.Unlock()
++			if kind == "pending" {
++				require.Same(t, first, pending, "collision replaced another pending entry")
++				cache.pruneSubscriptionFiles()
++				require.FileExists(t, path)
++				require.NoError(t, first.Commit())
++				require.NoError(t, first.Close())
++				require.Equal(t, "first", string(cache.LoadSubscription("first").Content))
++			} else {
++				require.Nil(t, pending)
++			}
++		})
++	}
++}
++func TestPreparedSubscriptionCASGenerationAndClosedHandle(t *testing.T) {
++	cache := openTestCacheFile(t, filepath.Join(privateTestDirectory(t), "cache.db"))
++	defer cache.Close()
++	saved := func(body string) *adapter.SavedBinary { return &adapter.SavedBinary{Content: []byte(body)} }
++	require.NoError(t, cache.SaveSubscription("same", saved("original")))
++	first, err := cache.PrepareSubscription("same", saved("first"))
++	require.NoError(t, err)
++	defer first.Close()
++	stale, err := cache.PrepareSubscription("same", saved("stale"))
++	require.NoError(t, err)
++	defer stale.Close()
++	require.NoError(t, first.Commit())
++	require.ErrorIs(t, stale.Commit(), errStaleSubscription)
++	require.Equal(t, "first", string(cache.LoadSubscription("same").Content))
++	require.NoError(t, first.Close())
++	require.NoError(t, stale.Close())
++	closed, err := cache.PrepareSubscription("closed", saved("closed"))
++	require.NoError(t, err)
++	require.NoError(t, closed.Close())
++	require.Error(t, closed.Commit())
++	require.NoError(t, closed.Close())
++	require.Nil(t, cache.LoadSubscription("closed"))
++	beforeReset, err := cache.PrepareSubscription("reset", saved("stale epoch"))
++	require.NoError(t, err)
++	defer beforeReset.Close()
++	cache.resetDB(cache.DB, "synthetic reset")
++	require.ErrorIs(t, beforeReset.Commit(), errStaleSubscription)
++	require.NoError(t, beforeReset.Close())
++	require.Nil(t, cache.LoadSubscription("reset"))
++	require.NoError(t, cache.SaveSubscription("latest", saved("new epoch")))
++}
++func TestSubscriptionGCUsesOtherNamespaceReferences(t *testing.T) {
++	cache := openTestCacheFile(t, filepath.Join(privateTestDirectory(t), "cache.db"))
++	defer cache.Close()
++	require.NoError(t, cache.SaveSubscription("node", &adapter.SavedBinary{Content: []byte("old")}))
++	_, oldPath := subscriptionFixture(t, cache.CacheFile, "node")
++	raw, err := cache.subscriptionRecord("node")
++	require.NoError(t, err)
++	require.NoError(t, cache.update(func(tx *bbolt.Tx) error {
++		other, err := tx.CreateBucketIfNotExists([]byte("\x00other"))
++		if err != nil {
++			return err
++		}
++		bucket, err := other.CreateBucketIfNotExists(bucketSubscriptionFile)
++		if err != nil {
++			return err
++		}
++		return bucket.Put([]byte("alias"), raw)
++	}))
++	require.NoError(t, cache.SaveSubscription("node", &adapter.SavedBinary{Content: []byte("new")}))
++	cache.pruneSubscriptionFiles()
++	require.FileExists(t, oldPath)
++	cache.contentAccess.Lock()
++	require.NoError(t, cache.update(func(tx *bbolt.Tx) error {
++		return tx.Bucket([]byte("\x00other")).Bucket(bucketSubscriptionFile).Delete([]byte("alias"))
++	}))
++	cache.contentAccess.Unlock()
++	cache.pruneSubscriptionFiles()
++	require.NoFileExists(t, oldPath)
++	require.Equal(t, "new", string(cache.LoadSubscription("node").Content))
++}
++func TestSubscriptionAndRuleSetNamespacesStayIndependent(t *testing.T) {
++	cache := openTestCacheFile(t, filepath.Join(privateTestDirectory(t), "cache.db"))
++	defer cache.Close()
++	legacy, err := (&adapter.SavedBinary{Content: []byte("rule")}).MarshalBinary()
++	require.NoError(t, err)
++	require.NoError(t, cache.update(func(tx *bbolt.Tx) error {
++		bucket, err := cache.createBucket(tx, bucketRuleSet)
++		if err != nil {
++			return err
++		}
++		return bucket.Put([]byte("same"), legacy)
++	}))
++	require.NoError(t, cache.SaveSubscription("same", &adapter.SavedBinary{Content: []byte("subscription")}))
++	require.True(t, bytes.Equal([]byte("rule"), cache.LoadRuleSet("same").Content))
++	require.NoError(t, cache.SaveRuleSet("same", &adapter.SavedBinary{Content: []byte("next-rule")}))
++	require.Equal(t, "subscription", string(cache.LoadSubscription("same").Content))
++}
++
++func TestPreparedRefusalReturnsNilWithoutStaging(t *testing.T) {
++	cache := openTestCacheFile(t, filepath.Join(privateTestDirectory(t), "cache.db"))
++	defer cache.Close()
++	prepared, err := cache.PrepareSubscription("nil", nil)
++	require.Error(t, err)
++	if prepared != nil {
++		t.Fatal("refused preparation returned a non-nil interface")
++	}
++	require.NoDirExists(t, cache.path+subscriptionSuffix)
++	cache.poisonSubscriptionWrites()
++	prepared, err = cache.PrepareSubscription("failed", &adapter.SavedBinary{Content: []byte("keep out")})
++	require.Error(t, err)
++	if prepared != nil {
++		t.Fatal("uncertain store returned a non-nil prepared interface")
++	}
++	require.NoDirExists(t, cache.path+subscriptionSuffix)
++}
+diff --git a/experimental/cachefile/subscription_security_test.go b/experimental/cachefile/subscription_security_test.go
+new file mode 100644
+index 0000000..00a82f9
+--- /dev/null
++++ b/experimental/cachefile/subscription_security_test.go
+@@ -0,0 +1,164 @@
++package cachefile
++
++import (
++	"bytes"
++	"context"
++	"encoding/json"
++	"errors"
++	"os"
++	"path/filepath"
++	"sync"
++	"testing"
++	"time"
++
++	"github.com/sagernet/bbolt"
++	"github.com/sagernet/sing-box/adapter"
++	"github.com/sagernet/sing-box/option"
++	"github.com/sagernet/sing/common/logger"
++	"github.com/stretchr/testify/require"
++)
++
++func subscriptionFixture(t *testing.T, cache *CacheFile, tag string) (*subscriptionRecord, string) {
++	t.Helper()
++	raw, err := cache.subscriptionRecord(tag)
++	require.NoError(t, err)
++	record, _, err := cache.parseSubscriptionRecord(raw)
++	require.NoError(t, err)
++	return record, filepath.Join(cache.path+subscriptionSuffix, record.Body)
++}
++
++func TestSubscriptionImmutableTransactionAndAmbiguousFailure(t *testing.T) {
++	path := filepath.Join(privateTestDirectory(t), "cache.db")
++	cache := openTestCacheFile(t, path)
++	old := &adapter.SavedBinary{Content: []byte("old-password"), LastEtag: "old", LastUpdated: time.Unix(1, 0)}
++	next := &adapter.SavedBinary{Content: []byte("new-password"), LastEtag: "new", LastUpdated: time.Unix(2, 0)}
++	require.NoError(t, cache.SaveSubscription("provider", old))
++	_, oldPath := subscriptionFixture(t, cache.CacheFile, "provider")
++	// Model the real ambiguity of a DB commit whose final sync reports failure after metadata write.
++	require.Error(t, cache.saveSubscriptionWithCommit("provider", next, func(fn func(*bbolt.Tx) error) error {
++		require.NoError(t, cache.update(fn))
++		return errors.New("synthetic final-sync failure")
++	}))
++	_, nextPath := subscriptionFixture(t, cache.CacheFile, "provider")
++	require.NotEqual(t, oldPath, nextPath)
++	body, err := os.ReadFile(nextPath)
++	require.NoError(t, err)
++	require.Equal(t, next.Content, body, "ambiguous commit removed the referenced candidate")
++	entries, err := os.ReadDir(path + subscriptionSuffix)
++	require.NoError(t, err)
++	beforeCount := len(entries)
++	for range 5 {
++		require.Error(t, cache.SaveSubscription("provider", old))
++	}
++	entries, err = os.ReadDir(path + subscriptionSuffix)
++	require.NoError(t, err)
++	require.Len(t, entries, beforeCount, "uncertain state must refuse before new body staging")
++	require.NoError(t, cache.Close())
++	cache = openTestCacheFile(t, path)
++	defer cache.Close()
++	actual := cache.LoadSubscription("provider")
++	require.NotNil(t, actual)
++	require.Equal(t, next.Content, actual.Content)
++	require.Equal(t, next.LastEtag, actual.LastEtag)
++	require.True(t, next.LastUpdated.Equal(actual.LastUpdated))
++	require.NoFileExists(t, oldPath, "restart GC removes only the old unreferenced owned version")
++	require.NoError(t, cache.SaveSubscription("provider", old), "restart establishes a verified store")
++}
++
++func TestSubscriptionCorruptReferencesAndBodies(t *testing.T) {
++	for _, kind := range []string{"traversal", "absolute", "foreign-store", "size", "hash", "body", "symlink", "hardlink"} {
++		t.Run(kind, func(t *testing.T) {
++			path := filepath.Join(privateTestDirectory(t), "cache.db")
++			cache := openTestCacheFile(t, path)
++			defer cache.Close()
++			require.NoError(t, cache.SaveSubscription("provider", &adapter.SavedBinary{Content: []byte("synthetic-private")}))
++			record, bodyPath := subscriptionFixture(t, cache.CacheFile, "provider")
++			victim := filepath.Join(filepath.Dir(path), "unrelated")
++			require.NoError(t, os.WriteFile(victim, []byte("keep"), 0o600))
++			switch kind {
++			case "traversal":
++				record.Body = "../../unrelated"
++			case "absolute":
++				record.Body = victim
++			case "foreign-store":
++				record.Body = "s-00000000000000000000000000000000-00000000000000000000000000000000"
++			case "size":
++				record.Size = 1 << 60
++			case "hash":
++				record.SHA256 = "0000000000000000000000000000000000000000000000000000000000000000"
++			case "body":
++				require.NoError(t, os.WriteFile(bodyPath, bytes.Repeat([]byte("x"), 17), 0o600))
++			case "symlink":
++				require.NoError(t, os.Remove(bodyPath))
++				require.NoError(t, os.Symlink(victim, bodyPath))
++			case "hardlink":
++				require.NoError(t, os.Link(bodyPath, victim+"-link"))
++			}
++			raw, err := json.Marshal(record)
++			require.NoError(t, err)
++			require.NoError(t, cache.update(func(tx *bbolt.Tx) error { return cache.bucket(tx, bucketSubscriptionFile).Put([]byte("provider"), raw) }))
++			require.Nil(t, cache.LoadSubscription("provider"))
++			cache.pruneSubscriptionFiles()
++			contents, err := os.ReadFile(victim)
++			require.NoError(t, err)
++			require.Equal(t, "keep", string(contents))
++		})
++	}
++}
++
++func TestSubscriptionConcurrentReadersAndNamespaces(t *testing.T) {
++	path := filepath.Join(privateTestDirectory(t), "cache.db")
++	cache := openTestCacheFile(t, path)
++	defer func() { _ = cache.Close() }()
++	var workers sync.WaitGroup
++	for worker := range 4 {
++		workers.Go(func() {
++			for round := range 12 {
++				if worker == 0 {
++					content := bytes.Repeat([]byte{byte(round)}, 8192)
++					if err := cache.SaveSubscription("provider", &adapter.SavedBinary{Content: content, LastEtag: string([]byte{byte(round)})}); err != nil {
++						t.Error(err)
++					}
++				} else {
++					actual := cache.LoadSubscription("provider")
++					if actual != nil && (len(actual.LastEtag) != 1 || len(actual.Content) != 8192 || !bytes.Equal(actual.Content, bytes.Repeat([]byte(actual.LastEtag), 8192))) {
++						t.Error("reader observed mixed metadata/body")
++					}
++				}
++			}
++		})
++	}
++	workers.Wait()
++	require.NoError(t, cache.Close())
++	other := New(context.Background(), logger.NOP(), option.CacheFileOptions{Enabled: true, Path: path, CacheID: "other"})
++	otherScope := adapter.NewScope(context.Background(), logger.NOP())
++	require.NoError(t, other.Start(adapter.StartStateInitialize, otherScope))
++	require.NoError(t, other.SaveSubscription("provider", &adapter.SavedBinary{Content: []byte("other")}))
++	require.Equal(t, "other", string(other.LoadSubscription("provider").Content))
++	require.NoError(t, otherScope.Close())
++	cache = openTestCacheFile(t, path)
++	require.Len(t, cache.LoadSubscription("provider").Content, 8192)
++	require.NoError(t, cache.Close())
++	require.NoError(t, other.Start(adapter.StartStateInitialize, adapter.NewScope(context.Background(), logger.NOP())))
++	require.Equal(t, "other", string(other.LoadSubscription("provider").Content))
++	require.NoError(t, other.DB.Close())
++	require.NoError(t, other.storage.close())
++	cache = openTestCacheFile(t, path)
++
++}
++
++func TestStorageRejectHardlinkedDBAndUnsafeParents(t *testing.T) {
++	parent := privateTestDirectory(t)
++	path := filepath.Join(parent, "cache.db")
++	cache := openTestCacheFile(t, path)
++	require.NoError(t, cache.Close())
++	require.NoError(t, os.Link(path, path+"-link"))
++	candidate := New(context.Background(), logger.NOP(), option.CacheFileOptions{Enabled: true, Path: path})
++	require.Error(t, candidate.start())
++	require.NoError(t, os.Remove(path+"-link"))
++	require.NoError(t, os.Chmod(parent, 0o755))
++	require.Error(t, candidate.start())
++	info, err := os.Stat(parent)
++	require.NoError(t, err)
++	require.Equal(t, os.FileMode(0o755), info.Mode().Perm())
++}
+diff --git a/provider/remote/cache_transaction_test.go b/provider/remote/cache_transaction_test.go
+new file mode 100644
+index 0000000..04fc9bc
+--- /dev/null
++++ b/provider/remote/cache_transaction_test.go
+@@ -0,0 +1,143 @@
++package provider
++
++import (
++	"context"
++	"errors"
++	"net"
++	"net/http"
++	"net/http/httptest"
++	"reflect"
++	"sync"
++	"sync/atomic"
++	"testing"
++
++	"github.com/sagernet/sing-box/adapter"
++	outboundAdapter "github.com/sagernet/sing-box/adapter/outbound"
++	providerAdapter "github.com/sagernet/sing-box/adapter/provider"
++	"github.com/sagernet/sing-box/log"
++	"github.com/sagernet/sing-box/option"
++	M "github.com/sagernet/sing/common/metadata"
++	"github.com/sagernet/sing/service"
++)
++
++type transactionCache struct {
++	adapter.CacheFile
++	failure bool
++	saved   *adapter.SavedBinary
++}
++
++func (c *transactionCache) StoreSubscriptions() bool { return true }
++func (c *transactionCache) SaveSubscription(_ string, saved *adapter.SavedBinary) error {
++	if c.failure {
++		return errors.New("synthetic storage failure")
++	}
++	copy := *saved
++	copy.Content = append([]byte(nil), saved.Content...)
++	c.saved = &copy
++	return nil
++}
++
++type transactionPrepared struct {
++	cache *transactionCache
++	saved *adapter.SavedBinary
++}
++
++func (c *transactionCache) PrepareSubscription(_ string, saved *adapter.SavedBinary) (adapter.PreparedSubscription, error) {
++	return &transactionPrepared{cache: c, saved: saved}, nil
++}
++func (p *transactionPrepared) Commit() error { return p.cache.SaveSubscription("", p.saved) }
++func (*transactionPrepared) Close() error    { return nil }
++
++type transactionOutbound struct {
++	outboundAdapter.Adapter
++	closed atomic.Int32
++}
++
++func (*transactionOutbound) DialContext(context.Context, string, M.Socksaddr) (net.Conn, error) {
++	return nil, nil
++}
++func (*transactionOutbound) ListenPacket(context.Context, M.Socksaddr) (net.PacketConn, error) {
++	return nil, nil
++}
++func (o *transactionOutbound) Close() error { o.closed.Add(1); return nil }
++
++func TestProviderFailedCacheCommitKeepsPublishedState(t *testing.T) {
++	registry := outboundAdapter.NewRegistry()
++	var constructed []*transactionOutbound
++	outboundAdapter.Register[option.VLESSOutboundOptions](registry, "vless", func(_ context.Context, _ adapter.Router, _ log.ContextLogger, tag string, opts option.VLESSOutboundOptions) (adapter.Outbound, error) {
++		outbound := &transactionOutbound{Adapter: outboundAdapter.NewAdapter("vless", tag, nil, nil)}
++		constructed = append(constructed, outbound)
++		return outbound, nil
++	})
++	manager := outboundAdapter.NewManager(registry, nil, "")
++	ctx := service.ContextWith[adapter.OutboundRegistry](context.Background(), registry)
++	factory := log.NewNOPFactory()
++	logger := factory.NewLogger("test")
++	var responseAccess sync.Mutex
++	body, etag, code := "vless://00000000-0000-4000-8000-000000000001@127.0.0.1:12001#Node", "old", http.StatusOK
++	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
++		responseAccess.Lock()
++		defer responseAccess.Unlock()
++		w.Header().Set("ETag", etag)
++		w.Header().Set("Subscription-Userinfo", "total=100; expire=2000000000")
++		w.WriteHeader(code)
++		_, _ = w.Write([]byte(body))
++	}))
++	defer server.Close()
++	cache := new(transactionCache)
++	remote := &ProviderRemote{ctx: ctx, logger: logger, dialer: systemTestDialer{}, cacheFile: cache, url: server.URL, headers: make(http.Header)}
++	remote.Adapter = providerAdapter.NewAdapter(ctx, nil, manager, factory, logger, "provider", "remote", option.ProviderHealthCheckOptions{})
++	if err := remote.fetch(ctx); err != nil {
++		t.Fatal(err)
++	}
++	old := remote.OutboundSnapshot()
++	if len(old) != 1 {
++		t.Fatal("initial provider was not published")
++	}
++	oldContent, oldTime, oldEtag, oldCache := remote.rawContent, remote.lastUpdated, remote.lastEtag, cache.saved
++	oldCandidates := remote.FilterCandidates()
++	responseAccess.Lock()
++	body, etag = "vless://00000000-0000-4000-8000-000000000002@127.0.0.1:12002#Changed", "new"
++	responseAccess.Unlock()
++	cache.failure = true
++	if err := remote.fetch(ctx); err == nil {
++		t.Fatal("failed cache commit was reported as success")
++	}
++	if actual := remote.OutboundSnapshot(); !reflect.DeepEqual(old, actual) {
++		t.Fatal("failed cache commit changed runtime pointer or identity")
++	}
++	if remote.rawContent != oldContent || remote.lastEtag != oldEtag || !remote.lastUpdated.Equal(oldTime) || cache.saved != oldCache || !reflect.DeepEqual(remote.FilterCandidates(), oldCandidates) {
++		t.Fatal("failed cache commit changed published source or metadata")
++	}
++	if constructed[0].closed.Load() != 0 || constructed[len(constructed)-1].closed.Load() != 1 {
++		t.Fatal("failed update closed the old outbound or retained the rejected candidate")
++	}
++	cache.failure = false
++	if err := remote.fetch(ctx); err != nil {
++		t.Fatal(err)
++	}
++	if actual := remote.OutboundSnapshot(); len(actual) != 1 || actual[0].Identity == old[0].Identity || actual[0].Outbound == old[0].Outbound {
++		t.Fatal("successful recovery did not publish the candidate")
++	}
++	if constructed[0].closed.Load() != 1 {
++		t.Fatal("successful replacement did not close the old outbound")
++	}
++	current, currentTime, currentEtag, currentInfo := remote.OutboundSnapshot(), remote.lastUpdated, remote.lastEtag, remote.SubscriptionInfo()
++	responseAccess.Lock()
++	code, etag = http.StatusNotModified, "newer"
++	responseAccess.Unlock()
++	cache.failure = true
++	if err := remote.fetch(ctx); err == nil {
++		t.Fatal("failed 304 metadata commit was reported as success")
++	}
++	if !reflect.DeepEqual(current, remote.OutboundSnapshot()) || !remote.lastUpdated.Equal(currentTime) || remote.lastEtag != currentEtag || remote.SubscriptionInfo() != currentInfo {
++		t.Fatal("failed 304 commit changed the published state")
++	}
++	cache.failure = false
++	if err := remote.fetch(ctx); err != nil {
++		t.Fatal(err)
++	}
++	if remote.lastEtag != "newer" || !remote.lastUpdated.After(currentTime) {
++		t.Fatal("304 recovery did not commit metadata")
++	}
++}
+diff --git a/provider/remote/etag_rejection_test.go b/provider/remote/etag_rejection_test.go
+new file mode 100644
+index 0000000..c474948
+--- /dev/null
++++ b/provider/remote/etag_rejection_test.go
+@@ -0,0 +1,159 @@
++package provider
++
++import (
++	"context"
++	"errors"
++	"net/http"
++	"net/http/httptest"
++	"reflect"
++	"sync"
++	"testing"
++	"time"
++
++	"github.com/sagernet/sing-box/adapter"
++	outboundAdapter "github.com/sagernet/sing-box/adapter/outbound"
++	providerAdapter "github.com/sagernet/sing-box/adapter/provider"
++	"github.com/sagernet/sing-box/log"
++	"github.com/sagernet/sing-box/option"
++	"github.com/sagernet/sing/service"
++)
++
++func etagRemote(t *testing.T, url string, cache *transactionCache) *ProviderRemote {
++	t.Helper()
++	registry := outboundAdapter.NewRegistry()
++	outboundAdapter.Register[option.VLESSOutboundOptions](registry, "vless", func(_ context.Context, _ adapter.Router, _ log.ContextLogger, tag string, options option.VLESSOutboundOptions) (adapter.Outbound, error) {
++		if options.ServerPort == 12002 {
++			return nil, errors.New("synthetic outbound construction failure")
++		}
++		return &transactionOutbound{Adapter: outboundAdapter.NewAdapter("vless", tag, nil, nil)}, nil
++	})
++	manager := outboundAdapter.NewManager(registry, nil, "")
++	ctx := service.ContextWith[adapter.OutboundRegistry](context.Background(), registry)
++	factory := log.NewNOPFactory()
++	logger := factory.NewLogger("test")
++	remote := &ProviderRemote{ctx: ctx, logger: logger, dialer: systemTestDialer{}, cacheFile: cache, url: url, headers: make(http.Header)}
++	remote.Adapter = providerAdapter.NewAdapter(ctx, nil, manager, factory, logger, "provider", "remote", option.ProviderHealthCheckOptions{})
++	return remote
++}
++
++func TestRejectedResponseInvalidatesConditionalETagOnlyAfterPersist(t *testing.T) {
++	for _, fixture := range []struct {
++		tag               string
++		metadata, runtime bool
++	}{{"A", true, false}, {"B", true, false}, {"A", false, false}, {"A", true, true}} {
++		invalidTag := fixture.tag
++		wireTag := "\"" + invalidTag + "\""
++		suffix := invalidTag
++		if !fixture.metadata {
++			suffix += "-no-metadata"
++		}
++		if fixture.runtime {
++			suffix += "-runtime"
++		}
++		t.Run("rejected-etag-"+suffix, func(t *testing.T) {
++			var access sync.Mutex
++			mode := "valid"
++			var requests []string
++			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++				access.Lock()
++				current := mode
++				requests = append(requests, r.Header.Get("If-None-Match"))
++				access.Unlock()
++				if current == "timeout" {
++					<-r.Context().Done()
++					return
++				}
++				if current == "valid" {
++					w.Header().Set("ETag", "\"A\"")
++					_, _ = w.Write([]byte("vless://00000000-0000-4000-8000-000000000001@127.0.0.1:12001#Node"))
++					return
++				}
++				w.Header().Set("ETag", wireTag)
++				if fixture.metadata {
++					w.Header().Set("announce", "expired subscription")
++				}
++				if current == "conditional" && r.Header.Get("If-None-Match") == wireTag {
++					w.WriteHeader(http.StatusNotModified)
++					return
++				}
++				if fixture.runtime {
++					_, _ = w.Write([]byte("vless://00000000-0000-4000-8000-000000000001@127.0.0.1:12002#Node"))
++					return
++				}
++				_, _ = w.Write([]byte("[]"))
++			}))
++			defer server.Close()
++			cache := new(transactionCache)
++			remote := etagRemote(t, server.URL, cache)
++			if err := remote.fetch(remote.ctx); err != nil {
++				t.Fatal(err)
++			}
++			oldNodes, oldRaw, oldTime, oldMeta, oldSaved := remote.OutboundSnapshot(), remote.rawContent, remote.lastUpdated, remote.SubscriptionMetadata(), cache.saved
++			setMode := func(value string) { access.Lock(); mode = value; access.Unlock() }
++			setMode("timeout")
++			ctx, cancel := context.WithTimeout(remote.ctx, 30*time.Millisecond)
++			err := remote.fetch(ctx)
++			cancel()
++			if !errors.Is(err, context.DeadlineExceeded) {
++				t.Fatalf("timeout lost its safe context sentinel: %v", err)
++			}
++			if remote.etag() != "\"A\"" || cache.saved != oldSaved || remote.SubscriptionMetadata() != oldMeta {
++				t.Fatal("no-response timeout changed cached state")
++			}
++			setMode("invalid")
++			cache.failure = true
++			if err := remote.fetch(remote.ctx); err == nil {
++				t.Fatal("failed persistence reported success")
++			}
++			if remote.etag() != "\"A\"" || cache.saved != oldSaved || remote.SubscriptionMetadata() != oldMeta || !remote.lastUpdated.Equal(oldTime) {
++				t.Fatal("failed persistence changed prior validator or metadata")
++			}
++			cache.failure = false
++			if err := remote.fetch(remote.ctx); err == nil {
++				t.Fatal("invalid received body accepted")
++			}
++			if remote.etag() != "" || cache.saved.LastEtag != "" {
++				t.Fatal("rejected body left a conditional validator which can hide the failure behind304")
++			}
++			if remote.rawContent != oldRaw || !reflect.DeepEqual(oldNodes, remote.OutboundSnapshot()) || !remote.lastUpdated.Equal(oldTime) {
++				t.Fatal("invalid received body changed the working provider")
++			}
++			if fixture.metadata && remote.SubscriptionMetadata().Announce != "expired subscription" {
++				t.Fatal("rejected response metadata was lost")
++			}
++			setMode("conditional")
++			if err := remote.fetch(remote.ctx); err == nil {
++				t.Fatal("next request hid the rejected body behind304")
++			}
++			access.Lock()
++			last := requests[len(requests)-1]
++			access.Unlock()
++			if last != "" {
++				t.Fatal("next request reused a validator after body rejection")
++			}
++		})
++	}
++}
++
++func TestNotModifiedRequiresMatchingCachedValidator(t *testing.T) {
++	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
++		w.Header().Set("ETag", "\"A\"")
++		w.WriteHeader(http.StatusNotModified)
++	}))
++	defer server.Close()
++	for _, kind := range []string{"initial", "rejected", "different-header"} {
++		t.Run(kind, func(t *testing.T) {
++			remote := &ProviderRemote{url: server.URL, headers: make(http.Header)}
++			if kind != "initial" {
++				remote.rawContent = "old cached profile"
++			}
++			if kind == "different-header" {
++				remote.lastEtag = "\"A\""
++				remote.headers.Set("If-None-Match", "\"B\"")
++			}
++			if _, err := remote.fetchProvider(context.Background(), server.Client()); err == nil {
++				t.Fatal("unverifiable304 accepted as a valid cached representation")
++			}
++		})
++	}
++}
+diff --git a/provider/remote/fetch_privacy_test.go b/provider/remote/fetch_privacy_test.go
+new file mode 100644
+index 0000000..e4dd4f6
+--- /dev/null
++++ b/provider/remote/fetch_privacy_test.go
+@@ -0,0 +1,58 @@
++package provider
++
++import (
++	"context"
++	"io"
++	stdlog "log"
++	"net"
++	"net/http"
++	"net/http/httptest"
++	"strings"
++	"testing"
++	"time"
++)
++
++func TestProviderFetchErrorsDoNotExposeUntrustedRequestData(t *testing.T) {
++	const secret = "synthetic-provider-token-do-not-log"
++	tlsServer := httptest.NewTLSServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
++	tlsServer.Config.ErrorLog = stdlog.New(io.Discard, "", 0)
++	defer tlsServer.Close()
++	listener, err := net.Listen("tcp", "127.0.0.1:0")
++	if err != nil {
++		t.Fatal(err)
++	}
++	refused := "http://" + listener.Addr().String() + "/?token=" + secret
++	listener.Close()
++	statusServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
++		connection, _, err := w.(http.Hijacker).Hijack()
++		if err != nil {
++			return
++		}
++		defer connection.Close()
++		_, _ = io.WriteString(connection, "HTTP/1.1 503 "+secret+"\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
++	}))
++	defer statusServer.Close()
++	for _, testCase := range []struct{ name, url, category string }{
++		{"malformed", "://" + secret, "invalid subscription URL"},
++		{"TLS", tlsServer.URL + "/?token=" + secret, "subscription TLS"},
++		{"refused", refused, "subscription network"},
++		{"status", statusServer.URL + "/?token=" + secret, "HTTP status 503"},
++	} {
++		t.Run(testCase.name, func(t *testing.T) {
++			remote := &ProviderRemote{url: testCase.url, headers: http.Header{"X-Synthetic-Secret": {secret}}}
++			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
++			defer cancel()
++			_, err := remote.fetchProvider(ctx, &http.Client{Timeout: time.Second})
++			if err == nil {
++				t.Fatal("failed request reported success")
++			}
++			message := err.Error()
++			if strings.Contains(message, secret) || strings.Contains(message, "127.0.0.1") || strings.Contains(message, "example.invalid") {
++				t.Fatal("request error disclosed untrusted URL/host/reason: " + message)
++			}
++			if !strings.Contains(message, testCase.category) {
++				t.Fatalf("expected fixed category %q, got %q", testCase.category, message)
++			}
++		})
++	}
++}
+diff --git a/provider/remote/publication_refusal_test.go b/provider/remote/publication_refusal_test.go
+new file mode 100644
+index 0000000..a4004ec
+--- /dev/null
++++ b/provider/remote/publication_refusal_test.go
+@@ -0,0 +1,140 @@
++package provider
++
++import (
++	"context"
++	"net/http"
++	"net/http/httptest"
++	"reflect"
++	"sync"
++	"testing"
++
++	"github.com/sagernet/sing-box/adapter"
++	outboundAdapter "github.com/sagernet/sing-box/adapter/outbound"
++	providerAdapter "github.com/sagernet/sing-box/adapter/provider"
++	"github.com/sagernet/sing-box/log"
++	"github.com/sagernet/sing-box/option"
++	"github.com/sagernet/sing/service"
++)
++
++type publicationManager struct {
++	*outboundAdapter.Manager
++	conflict  bool
++	callbacks int
++}
++
++func (m *publicationManager) SwapBatchWithCommit(old map[string]adapter.Outbound, candidates []adapter.Outbound, commit func() error) (map[string]adapter.Outbound, error) {
++	if m.conflict {
++		changed := make(map[string]adapter.Outbound, len(old))
++		for tag := range old {
++			changed[tag] = &transactionOutbound{Adapter: outboundAdapter.NewAdapter("vless", tag, nil, nil)}
++		}
++		old = changed
++	}
++	return m.Manager.SwapBatchWithCommit(old, candidates, func() error { m.callbacks++; return commit() })
++}
++
++type publicationCache struct {
++	transactionCache
++	commits, fallbackSaves int
++}
++type publicationPrepared struct {
++	cache *publicationCache
++	saved *adapter.SavedBinary
++}
++
++func (c *publicationCache) PrepareSubscription(_ string, saved *adapter.SavedBinary) (adapter.PreparedSubscription, error) {
++	return &publicationPrepared{c, saved}, nil
++}
++func (c *publicationCache) SaveSubscription(tag string, saved *adapter.SavedBinary) error {
++	c.fallbackSaves++
++	return c.transactionCache.SaveSubscription(tag, saved)
++}
++func (p *publicationPrepared) Commit() error {
++	p.cache.commits++
++	return p.cache.transactionCache.SaveSubscription("", p.saved)
++}
++func (*publicationPrepared) Close() error { return nil }
++
++func TestPublicationRefusalNeverPersistsResponseMetadata(t *testing.T) {
++	for _, kind := range []string{"expected-old", "dependency"} {
++		t.Run(kind, func(t *testing.T) {
++			registry := outboundAdapter.NewRegistry()
++			var built []*transactionOutbound
++			outboundAdapter.Register[option.VLESSOutboundOptions](registry, "vless", func(_ context.Context, _ adapter.Router, _ log.ContextLogger, tag string, opts option.VLESSOutboundOptions) (adapter.Outbound, error) {
++				var dependencies []string
++				if opts.Detour != "" {
++					dependencies = []string{opts.Detour}
++				}
++				value := &transactionOutbound{Adapter: outboundAdapter.NewAdapter("vless", tag, nil, dependencies)}
++				built = append(built, value)
++				return value, nil
++			})
++			manager := &publicationManager{Manager: outboundAdapter.NewManager(registry, nil, "")}
++			ctx := service.ContextWith[adapter.OutboundRegistry](context.Background(), registry)
++			factory := log.NewNOPFactory()
++			logger := factory.NewLogger("test")
++			var responseAccess sync.Mutex
++			changed := false
++			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
++				responseAccess.Lock()
++				next := changed
++				responseAccess.Unlock()
++				body := "vless://00000000-0000-4000-8000-000000000001@127.0.0.1:12001#Node"
++				w.Header().Set("ETag", "\"old\"")
++				w.Header().Set("announce", "old notice")
++				if next {
++					body = "vless://00000000-0000-4000-8000-000000000001@127.0.0.1:12003#Changed"
++					w.Header().Set("ETag", "\"new\"")
++					w.Header().Set("announce", "new notice")
++				}
++				_, _ = w.Write([]byte(body))
++			}))
++			defer server.Close()
++			cache := new(publicationCache)
++			remote := &ProviderRemote{ctx: ctx, logger: logger, dialer: systemTestDialer{}, cacheFile: cache, url: server.URL, headers: make(http.Header)}
++			remote.Adapter = providerAdapter.NewAdapter(ctx, nil, manager, factory, logger, "provider", "remote", option.ProviderHealthCheckOptions{})
++			if err := remote.fetch(ctx); err != nil {
++				t.Fatal(err)
++			}
++			old := remote.OutboundSnapshot()
++			oldFilters := remote.FilterCandidates()
++			oldRaw, oldMeta, oldEtag, oldTime, oldSaved := remote.rawContent, remote.SubscriptionMetadata(), remote.etag(), remote.UpdatedAt(), cache.saved
++			previousCommits, previousCallbacks := cache.commits, manager.callbacks
++			if kind == "expected-old" {
++				manager.conflict = true
++			} else {
++				opts := option.VLESSOutboundOptions{DialerOptions: option.DialerOptions{Detour: old[0].Tag()}}
++				if err := manager.Create(ctx, nil, logger, "external-dependent", "vless", &opts); err != nil {
++					t.Fatal(err)
++				}
++			}
++			responseAccess.Lock()
++			changed = true
++			responseAccess.Unlock()
++			if err := remote.fetch(ctx); err == nil {
++				t.Fatal("publication conflict was reported as success")
++			}
++			if manager.callbacks != previousCallbacks || cache.commits != previousCommits || cache.fallbackSaves != 0 {
++				t.Fatal("publication refusal invoked candidate commit or fallback SaveSubscription")
++			}
++			if !reflect.DeepEqual(old, remote.OutboundSnapshot()) || !reflect.DeepEqual(oldFilters, remote.FilterCandidates()) || remote.rawContent != oldRaw || remote.SubscriptionMetadata() != oldMeta || remote.etag() != oldEtag || !remote.UpdatedAt().Equal(oldTime) || cache.saved != oldSaved {
++				t.Fatal("publication refusal changed previously committed state")
++			}
++			if built[0].closed.Load() != 0 || built[len(built)-1].closed.Load() != 1 {
++				t.Fatal("publication refusal closed old runtime or retained its candidate")
++			}
++			manager.conflict = false
++			if kind == "dependency" {
++				if err := manager.Remove("external-dependent"); err != nil {
++					t.Fatal(err)
++				}
++			}
++			if err := remote.fetch(ctx); err != nil {
++				t.Fatal(err)
++			}
++			if cache.commits != previousCommits+1 || manager.callbacks != previousCallbacks+1 || cache.fallbackSaves != 0 || remote.etag() != "\"new\"" || reflect.DeepEqual(old, remote.OutboundSnapshot()) {
++				t.Fatal("resolved publication conflict did not recover normally")
++			}
++		})
++	}
++}

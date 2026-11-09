@@ -1,0 +1,20 @@
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-top: 6px;
+  font-size: 0.72rem;
+  color: var(--color-text-secondary);
+}
+
+.qtyBadge {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 500;
+  line-height: 1;
+  padding: 4px 7px;
+  border-radius: 6px;
+  background: var(--color-badge-bg);
+  color: var(--color-badge-fg);
+}

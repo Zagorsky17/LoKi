@@ -1,0 +1,891 @@
+#!/usr/bin/env bash
+# Modified for LoKi on 2026-11-03: verify and bound SDK downloads before extraction.
+# Modified for LoKi on 2026-11-04: ship the unchanged root license in each package.
+# Modified for LoKi on 2026-11-06: preserve bundled YACD dependency notices.
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+usage() {
+  cat <<EOF
+Usage: $(basename "$0") <version> [output-directory]
+
+Build LoKi IPK and APK packages and the other files of its release: install.sh,
+release.json and SHA256SUMS. The version must use x.y.z format.
+
+INSTALL_COMMAND, when set, goes into release.json as install_command: the release installs
+only with that command, and the Components tab shows it instead of installing the release.
+EOF
+}
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  usage
+  exit 0
+fi
+
+if (( $# < 1 || $# > 2 )); then
+  usage >&2
+  exit 2
+fi
+
+RELEASE_VERSION="$1"
+OUTPUT_DIR="${2:-$ROOT_DIR/dist/release-final}"
+
+if [[ ! "$RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "Expected release version in the form x.y.z" >&2
+  exit 2
+fi
+APK_INTERNAL_VERSION="$RELEASE_VERSION"
+
+BUILD_DIR="${BUILD_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/loki/build}"
+SDK_CACHE_DIR="${SDK_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/loki/openwrt-sdk}"
+SDK_DIR="${SDK_DIR:-$SDK_CACHE_DIR/extracted}"
+IPK_SDK_URL="${IPK_SDK_URL:-https://downloads.openwrt.org/releases/24.10.8/targets/x86/64/openwrt-sdk-24.10.8-x86-64_gcc-13.3.0_musl.Linux-x86_64.tar.zst}"
+APK_SDK_URL="${APK_SDK_URL:-https://downloads.openwrt.org/releases/25.12.6/targets/x86/64/openwrt-sdk-25.12.6-x86-64_gcc-14.3.0_musl.Linux-x86_64.tar.zst}"
+IPK_SDK_SHA256="${IPK_SDK_SHA256:-ac4a0405d2eea821b06f93c14ba13ffa90ad0457648903df7dde02570027ab21}"
+APK_SDK_SHA256="${APK_SDK_SHA256:-1864152619092e781fa36a401960c8e9ae42d6a364c44ee5f0b197ca5f3c0fcc}"
+IPK_SDK_BYTES="${IPK_SDK_BYTES:-258916431}"
+APK_SDK_BYTES="${APK_SDK_BYTES:-285832189}"
+
+BACKEND_DESCRIPTION="Rule-based traffic routing for OpenWrt"
+APP_DESCRIPTION="Web interface for LoKi"
+I18N_DESCRIPTION="Translation for luci-app-loki - Русский (Russian)"
+MAINTAINER="Zagorsky17"
+PROJECT_URL="https://github.com/Zagorsky17/LoKi"
+uc_constant() {
+  sed -n "s/^[[:space:]]*\(const[[:space:]]\{1,\}\)\{0,1\}$2[[:space:]]*[:=][[:space:]]*\"\([^\"]*\)\".*/\2/p" "$ROOT_DIR/loki/files/usr/lib/$1"
+}
+SB_REQUIRED_VERSION="$(uc_constant core/constants.uc SB_REQUIRED_VERSION)"
+MIN_CONFIG_VERSION="$(uc_constant config/migration.uc MIN_CONFIG_VERSION)"
+if [[ ! "$SB_REQUIRED_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+-r[0-9]+$ ]] ||
+  [[ ! "$MIN_CONFIG_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "Cannot read SB_REQUIRED_VERSION or MIN_CONFIG_VERSION from the sources" >&2
+  exit 1
+fi
+# The generated configuration requires the supported core and its LoKi fixes.
+# Both iproute2 variants provide ip; do not force replacement of the installed variant.
+BACKEND_DEPENDS_IPK="libc, ca-bundle, ucode, ucode-mod-fs, ucode-mod-resolv, ucode-mod-socket, ucode-mod-ubus, ucode-mod-uloop, ucode-mod-uci, uclient-fetch, kmod-nft-tproxy, nftables, kmod-nft-nat, ip, loki-core (>= ${SB_REQUIRED_VERSION})"
+BACKEND_DEPENDS_APK="ca-bundle ip kmod-nft-nat kmod-nft-tproxy libc nftables uclient-fetch ucode ucode-mod-fs ucode-mod-resolv ucode-mod-socket ucode-mod-ubus ucode-mod-uci ucode-mod-uloop loki-core>=${SB_REQUIRED_VERSION}"
+# The app calls the backend's ubus object, so it needs a backend at least as new;
+# the feed Makefile uses EXTRA_DEPENDS for the same version constraints.
+APP_DEPENDS_IPK="libc, luci-base, loki (>= ${RELEASE_VERSION})"
+APP_DEPENDS_APK="libc luci-base loki>=${RELEASE_VERSION}"
+
+ensure_host_deps() {
+  local missing=()
+  local commands=(
+    awk
+    curl
+    fakeroot
+    file
+    flock
+    gcc
+    git
+    make
+    patch
+    perl
+    sha256sum
+    stat
+    tar
+    unshare
+    zstd
+  )
+
+  for cmd in "${commands[@]}"; do
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+      missing+=("$cmd")
+    fi
+  done
+
+  if (( ${#missing[@]} > 0 )); then
+    echo "Missing build dependencies: ${missing[*]}" >&2
+    exit 1
+  fi
+
+  if ! unshare -r true >/dev/null 2>&1; then
+    echo "Unprivileged user namespaces are required to build APK packages" >&2
+    exit 1
+  fi
+}
+
+download_sdk_archive() (
+  local url="$1"
+  local expected_sha256="$2"
+  local expected_size="$3"
+  local archive_path
+  local download
+  local cached_mode
+
+  if [[ "$url" != https://* || ! "$expected_sha256" =~ ^[a-f0-9]{64}$ ||
+    ! "$expected_size" =~ ^[1-9][0-9]{0,8}$ ]]; then
+    echo "Expected an HTTPS SDK URL, SHA-256 and byte size below 1 GB" >&2
+    return 1
+  fi
+  archive_path="$SDK_CACHE_DIR/$expected_sha256.tar.zst"
+
+  mkdir -p "$SDK_CACHE_DIR" || return 1
+  if [[ -L "$archive_path" || ( -e "$archive_path" && ( ! -f "$archive_path" || ! -O "$archive_path" ) ) ]]; then
+    echo "SDK cache entry must be an owned regular file" >&2
+    return 1
+  fi
+  if [[ -f "$archive_path" ]]; then
+    cached_mode="$(stat -c %a -- "$archive_path")" || return 1
+    if (( (8#$cached_mode & 022) != 0 )); then
+      echo "SDK cache entry must not be writable by other users" >&2
+      return 1
+    fi
+  fi
+  if [[ ! -e "$archive_path" ]]; then
+    download="$(mktemp "$SDK_CACHE_DIR/download.XXXXXX")" || return 1
+    trap 'rm -f -- "$download"' EXIT
+    echo "Downloading SDK over HTTPS" >&2
+    # head also bounds bodies without Content-Length on older curl versions.
+    if ! curl --disable --fail --location --globoff --proto '=https' --proto-redir '=https' \
+      --max-redirs 5 --connect-timeout 20 --max-time 600 --max-filesize "$expected_size" \
+      --output - --url "$url" | head -c "$((expected_size + 1))" > "$download"; then
+      echo "SDK HTTPS download failed" >&2
+      return 1
+    fi
+    if [[ "$(wc -c < "$download")" != "$expected_size" ]] ||
+      ! printf '%s  %s\n' "$expected_sha256" "$download" | sha256sum --check --status; then
+      echo "SDK download size or SHA-256 mismatch" >&2
+      return 1
+    fi
+    mv -- "$download" "$archive_path" || return 1
+  fi
+  if [[ "$(wc -c < "$archive_path")" != "$expected_size" ]] ||
+    ! printf '%s  %s\n' "$expected_sha256" "$archive_path" | sha256sum --check --status; then
+    echo "SDK cache size or SHA-256 mismatch" >&2
+    return 1
+  fi
+
+  printf '%s\n' "$archive_path"
+)
+
+extract_sdk() (
+  local kind="$1"
+  local archive_path="$2"
+  local sdk_sha256="$3"
+  local destination="$SDK_DIR/$kind"
+  local marker_file="$destination/.loki-sdk-sha256"
+  local temp_dir
+  local extracted_root
+
+  mkdir -p "$SDK_DIR" || return 1
+  if [[ -d "$destination" && -f "$marker_file" ]] && [[ "$(cat "$marker_file")" == "$sdk_sha256" ]]; then
+    printf '%s\n' "$destination"
+    return 0
+  fi
+
+  temp_dir="$(mktemp -d "$SDK_DIR/.${kind}.XXXXXX")" || return 1
+  trap 'rm -rf -- "$temp_dir"' EXIT
+  tar --zstd -xf "$archive_path" -C "$temp_dir" || return 1
+  shopt -s dotglob nullglob
+  local roots=("$temp_dir"/*)
+  if (( ${#roots[@]} != 1 )) || [[ ! -d "${roots[0]}" || -L "${roots[0]}" ]]; then
+    echo "Expected exactly one SDK root directory" >&2
+    return 1
+  fi
+  extracted_root="${roots[0]}"
+  printf '%s\n' "$sdk_sha256" > "$extracted_root/.loki-sdk-sha256" || return 1
+  rm -rf -- "$destination" || return 1
+  mv -- "$extracted_root" "$destination" || return 1
+  rmdir "$temp_dir" || return 1
+
+  printf '%s\n' "$destination"
+)
+
+ensure_po2lmo() {
+  local ipk_sdk_dir="$1"
+  local po2lmo_bin="$ipk_sdk_dir/staging_dir/hostpkg/bin/po2lmo"
+  local luci_src_dir="$ipk_sdk_dir/feeds/luci/modules/luci-base/src"
+
+  if [[ -x "$po2lmo_bin" ]]; then
+    printf '%s\n' "$po2lmo_bin"
+    return 0
+  fi
+
+  (
+    cd "$ipk_sdk_dir"
+    if [[ ! -f "$luci_src_dir/po2lmo.c" ]]; then
+      rm -rf feeds/luci
+      ./scripts/feeds update luci >&2
+    fi
+  )
+
+  if [[ ! -f "$luci_src_dir/po2lmo" ]]; then
+    make -C "$luci_src_dir" po2lmo >&2
+  fi
+
+  printf '%s\n' "$luci_src_dir/po2lmo"
+}
+
+make_dir() {
+  mkdir -p "$1"
+}
+
+normalize_package_root_modes() {
+  local package_root="$1"
+
+  find "$package_root" -type d -exec chmod 0755 {} +
+  find "$package_root" -type f -exec chmod 0644 {} +
+  if [[ -n "$(find "$package_root" \( -type d ! -perm 0755 -o -type f ! -perm 0644 \) -print -quit)" ]]; then
+    echo "Cannot set package file modes in $package_root; use a native Linux BUILD_DIR" >&2
+    exit 1
+  fi
+}
+
+build_backend_root() {
+  local output_root="$1"
+
+  rm -rf "$output_root"
+  make_dir "$output_root/etc/init.d"
+  make_dir "$output_root/etc/config"
+  make_dir "$output_root/usr/bin"
+  make_dir "$output_root/usr/libexec"
+  make_dir "$output_root/usr/lib/loki"
+  make_dir "$output_root/usr/share/loki"
+  make_dir "$output_root/usr/share/nftables.d/chain-pre/input"
+  make_dir "$output_root/lib/upgrade/keep.d"
+
+  install -m 0755 "$ROOT_DIR/loki/files/etc/init.d/loki" "$output_root/etc/init.d/loki"
+  install -m 0755 "$ROOT_DIR/loki/files/etc/init.d/loki-state" "$output_root/etc/init.d/loki-state"
+  install -m 0600 "$ROOT_DIR/loki/files/etc/config/loki" "$output_root/etc/config/loki"
+  install -m 0644 "$ROOT_DIR/loki/files/etc/config/loki" "$output_root/usr/share/loki/default-config"
+  install -m 0644 "$ROOT_DIR/install.sh" "$output_root/usr/share/loki/install.sh"
+  install -m 0644 "$ROOT_DIR/component-update.sh" "$ROOT_DIR/component-update.uc" "$ROOT_DIR/uninstall.sh" "$output_root/usr/share/loki/"
+  install -m 0755 "$ROOT_DIR/loki/files/usr/bin/loki" "$output_root/usr/bin/loki"
+  install -m 0755 "$ROOT_DIR/loki/files/usr/libexec/loki-gateway" "$output_root/usr/libexec/loki-gateway"
+  cp -a "$ROOT_DIR/loki/files/usr/lib/." "$output_root/usr/lib/loki/"
+  install -m 0644 "$ROOT_DIR/loki/files/usr/share/nftables.d/chain-pre/input/loki.nft" \
+    "$output_root/usr/share/nftables.d/chain-pre/input/loki.nft"
+  install -m 0644 "$ROOT_DIR/loki/files/lib/upgrade/keep.d/loki" "$output_root/lib/upgrade/keep.d/loki"
+
+  sed -i -e "s/__COMPILED_VERSION_VARIABLE__/${RELEASE_VERSION}/g" \
+    "$output_root/usr/lib/loki/core/constants.uc"
+
+  make_dir "$output_root/usr/share/licenses/loki"
+  install -m 0644 "$ROOT_DIR/LICENSE" "$output_root/usr/share/licenses/loki/LICENSE"
+
+  normalize_package_root_modes "$output_root"
+  chmod 0600 "$output_root/etc/config/loki"
+  chmod 0755 "$output_root/etc/init.d/loki" "$output_root/etc/init.d/loki-state" "$output_root/usr/bin/loki" \
+    "$output_root/usr/libexec/loki-gateway"
+}
+
+build_app_root() {
+  local output_root="$1"
+
+  rm -rf "$output_root"
+  make_dir "$output_root/www"
+
+  cp -a "$ROOT_DIR/luci-app-loki/htdocs/." "$output_root/www/"
+  cp -a "$ROOT_DIR/luci-app-loki/root/." "$output_root/"
+  sed -i -e "s/__COMPILED_VERSION_VARIABLE__/${RELEASE_VERSION}/g" \
+    "$output_root/www/luci-static/resources/view/loki/main.js"
+
+  make_dir "$output_root/usr/share/licenses/luci-app-loki"
+  install -m 0644 "$ROOT_DIR/LICENSE" "$output_root/usr/share/licenses/luci-app-loki/LICENSE"
+  install -m 0644 "$ROOT_DIR/yacd-loki/LICENSE" "$output_root/usr/share/licenses/luci-app-loki/YACD-LICENSE"
+  install -m 0644 "$ROOT_DIR/yacd-loki/licenses/inter-OFL.txt" "$output_root/usr/share/licenses/luci-app-loki/INTER-OFL"
+  install -m 0644 "$ROOT_DIR/yacd-loki/licenses/roboto-mono-OFL.txt" "$output_root/usr/share/licenses/luci-app-loki/ROBOTO-MONO-OFL"
+  install -m 0644 "$ROOT_DIR/yacd-loki/licenses/THIRD_PARTY_NOTICES.txt" "$output_root/usr/share/licenses/luci-app-loki/YACD-THIRD-PARTY-NOTICES"
+  install -m 0644 "$ROOT_DIR/yacd-loki/licenses/THIRD_PARTY_INVENTORY.json" "$output_root/usr/share/licenses/luci-app-loki/YACD-THIRD-PARTY-INVENTORY"
+  install -m 0644 "$ROOT_DIR/fe-app-loki/licenses/lucide-LICENSE.txt" "$output_root/usr/share/licenses/luci-app-loki/LUCIDE-LICENSE"
+  install -m 0644 "$ROOT_DIR/fe-app-loki/licenses/lucide-provenance.json" "$output_root/usr/share/licenses/luci-app-loki/LUCIDE-PROVENANCE"
+
+  normalize_package_root_modes "$output_root"
+}
+
+build_i18n_root() {
+  local output_root="$1"
+  local po2lmo_bin="$2"
+  local lmo_path="$output_root/usr/lib/lua/luci/i18n/loki.ru.lmo"
+
+  rm -rf "$output_root"
+  make_dir "$(dirname "$lmo_path")"
+
+  "$po2lmo_bin" "$ROOT_DIR/luci-app-loki/po/ru/loki.po" "$lmo_path"
+
+  make_dir "$output_root/usr/share/licenses/luci-i18n-loki-ru"
+  install -m 0644 "$ROOT_DIR/LICENSE" "$output_root/usr/share/licenses/luci-i18n-loki-ru/LICENSE"
+
+  normalize_package_root_modes "$output_root"
+}
+
+generate_apk_metadata_files() {
+  local package_name="$1"
+  local package_root="$2"
+  local conffile_path="${3:-}"
+  local list_file="$package_root/lib/apk/packages/${package_name}.list"
+
+  make_dir "$(dirname "$list_file")"
+  (
+    cd "$package_root"
+    find . -type f ! -path './lib/apk/packages/*' | LC_ALL=C sort | sed 's#^\./#/#'
+  ) > "$list_file"
+
+  if [[ -n "$conffile_path" ]]; then
+    local conffiles_file="$package_root/lib/apk/packages/${package_name}.conffiles"
+    local conffiles_static_file="$package_root/lib/apk/packages/${package_name}.conffiles_static"
+    local hash_value
+
+    hash_value="$(sha256sum "$package_root$conffile_path" | awk '{print $1}')"
+    printf '%s\n' "$conffile_path" > "$conffiles_file"
+    printf '%s %s\n' "$conffile_path" "$hash_value" > "$conffiles_static_file"
+  fi
+}
+
+installed_size_bytes() {
+  du -sk "$1" | awk '{print $1 * 1024}'
+}
+
+write_backend_ipk_control() {
+  local control_dir="$1"
+  local installed_size="$2"
+
+  rm -rf "$control_dir"
+  make_dir "$control_dir"
+
+  cat > "$control_dir/control" <<EOF
+Package: loki
+Version: ${RELEASE_VERSION}
+Depends: ${BACKEND_DEPENDS_IPK}
+License: GPL-2.0-or-later
+Section: net
+URL: ${PROJECT_URL}
+Maintainer: ${MAINTAINER}
+Architecture: all
+Installed-Size: ${installed_size}
+Description: ${BACKEND_DESCRIPTION}
+EOF
+
+  cat > "$control_dir/conffiles" <<'EOF'
+/etc/config/loki
+EOF
+
+  cat > "$control_dir/postinst" <<'EOF'
+#!/bin/sh
+[ -n "${IPKG_INSTROOT}" ] && exit 0
+LOKI_LIB=/usr/lib/loki ucode -L /usr/lib/loki /usr/lib/loki/config/migration.uc migrate || exit $?
+LOKI_BYTECODE_VALIDATION_TTL=0 /usr/bin/loki package_postinst
+EOF
+
+  cat > "$control_dir/prerm" <<'EOF'
+#!/bin/sh
+[ -n "${IPKG_INSTROOT}" ] && exit 0
+/usr/bin/loki package_prerm "${1:-remove}" >/dev/null 2>&1
+EOF
+
+  chmod 0755 "$control_dir/postinst" "$control_dir/prerm"
+}
+
+write_app_ipk_control() {
+  local control_dir="$1"
+  local installed_size="$2"
+
+  rm -rf "$control_dir"
+  make_dir "$control_dir"
+
+  cat > "$control_dir/control" <<EOF
+Package: luci-app-loki
+Version: ${RELEASE_VERSION}
+Depends: ${APP_DEPENDS_IPK}
+License: GPL-2.0-or-later AND MIT AND Apache-2.0 AND 0BSD AND OFL-1.1 AND ISC
+Section: luci
+URL: ${PROJECT_URL}
+Maintainer: ${MAINTAINER}
+Architecture: all
+Installed-Size: ${installed_size}
+Description: ${APP_DESCRIPTION}
+EOF
+
+  cat > "$control_dir/postinst" <<'EOF'
+#!/bin/sh
+[ "${IPKG_NO_SCRIPT}" = "1" ] && exit 0
+[ -n "${IPKG_INSTROOT}" ] && exit 0
+/usr/bin/loki luci_postinst >/dev/null 2>&1
+EOF
+
+  cat > "$control_dir/prerm" <<'EOF'
+#!/bin/sh
+[ -n "${IPKG_INSTROOT}" ] && exit 0
+/usr/bin/loki luci_prerm >/dev/null 2>&1
+EOF
+
+  chmod 0755 "$control_dir/postinst" "$control_dir/prerm"
+}
+
+write_i18n_ipk_control() {
+  local control_dir="$1"
+  local installed_size="$2"
+
+  rm -rf "$control_dir"
+  make_dir "$control_dir"
+
+  cat > "$control_dir/control" <<EOF
+Package: luci-i18n-loki-ru
+Version: ${RELEASE_VERSION}
+Depends: libc, luci-app-loki (>= ${RELEASE_VERSION})
+License: GPL-2.0-or-later
+Section: luci
+URL: ${PROJECT_URL}
+Maintainer: ${MAINTAINER}
+Architecture: all
+Installed-Size: ${installed_size}
+Description: ${I18N_DESCRIPTION}
+EOF
+
+  cat > "$control_dir/postinst" <<'EOF'
+#!/bin/sh
+[ "${IPKG_NO_SCRIPT}" = "1" ] && exit 0
+[ -s ${IPKG_INSTROOT}/lib/functions.sh ] || exit 0
+. ${IPKG_INSTROOT}/lib/functions.sh
+default_postinst $0 $@
+EOF
+
+  cat > "$control_dir/prerm" <<'EOF'
+#!/bin/sh
+[ -s ${IPKG_INSTROOT}/lib/functions.sh ] || exit 0
+. ${IPKG_INSTROOT}/lib/functions.sh
+default_prerm $0 $@
+EOF
+
+  chmod 0755 "$control_dir/postinst" "$control_dir/prerm"
+}
+
+build_ipk_package() {
+  local ipkg_build_bin="$1"
+  local package_name="$2"
+  local data_root="$3"
+  local control_root="$4"
+  local output_file="$5"
+  local build_dir="$BUILD_DIR/manual/ipk-${package_name}"
+  local package_root="$build_dir/pkg"
+  local built_file
+
+  rm -rf "$build_dir"
+  make_dir "$package_root/CONTROL"
+
+  cp -a "$data_root/." "$package_root/"
+  cp -a "$control_root/." "$package_root/CONTROL/"
+
+  rm -f "$output_file"
+  # shellcheck disable=SC2016
+  fakeroot sh -c '
+    set -e
+    chown -R 0:0 "$1"
+    exec "$2" "$1" "$3"
+  ' sh "$package_root" "$ipkg_build_bin" "$build_dir" >/dev/null
+
+  built_file="$build_dir/${package_name}_${RELEASE_VERSION}_all.ipk"
+  [ -f "$built_file" ] || {
+    echo "Expected IPK artifact not found: $built_file" >&2
+    exit 1
+  }
+
+  mv "$built_file" "$output_file"
+}
+
+write_backend_apk_scripts() {
+  local scripts_dir="$1"
+
+  rm -rf "$scripts_dir"
+  make_dir "$scripts_dir"
+
+  cat > "$scripts_dir/backend-pre-install.sh" <<'EOF'
+#!/usr/bin/ucode
+exit(0);
+EOF
+
+  cat > "$scripts_dir/backend-post-install.sh" <<'EOF'
+#!/usr/bin/ucode
+if (getenv("IPKG_INSTROOT") == null || getenv("IPKG_INSTROOT") == "")
+    exit(system("LOKI_LIB=/usr/lib/loki ucode -L /usr/lib/loki /usr/lib/loki/config/migration.uc migrate && LOKI_BYTECODE_VALIDATION_TTL=0 /usr/bin/loki package_postinst"));
+exit(0);
+EOF
+
+  cat > "$scripts_dir/backend-pre-deinstall.sh" <<'EOF'
+#!/bin/sh
+[ -n "${IPKG_INSTROOT}" ] && exit 0
+/usr/bin/loki package_prerm remove >/dev/null 2>&1
+EOF
+
+  cat > "$scripts_dir/backend-pre-upgrade.sh" <<'EOF'
+#!/bin/sh
+[ -n "${IPKG_INSTROOT}" ] && exit 0
+/usr/bin/loki package_prerm upgrade >/dev/null 2>&1
+EOF
+
+  cat > "$scripts_dir/backend-post-upgrade.sh" <<'EOF'
+#!/usr/bin/ucode
+if (getenv("IPKG_INSTROOT") == null || getenv("IPKG_INSTROOT") == "")
+    exit(system("LOKI_LIB=/usr/lib/loki ucode -L /usr/lib/loki /usr/lib/loki/config/migration.uc migrate && LOKI_BYTECODE_VALIDATION_TTL=0 /usr/bin/loki package_postinst"));
+exit(0);
+EOF
+
+  chmod 0755 "$scripts_dir"/backend-*.sh
+}
+
+write_app_apk_scripts() {
+  local scripts_dir="$1"
+
+  make_dir "$scripts_dir"
+
+  cat > "$scripts_dir/app-pre-install.sh" <<'EOF'
+#!/bin/sh
+exit 0
+EOF
+
+  cat > "$scripts_dir/app-post-install.sh" <<'EOF'
+#!/bin/sh
+[ "${IPKG_NO_SCRIPT}" = "1" ] && exit 0
+[ -n "${IPKG_INSTROOT}" ] && exit 0
+/usr/bin/loki luci_postinst >/dev/null 2>&1
+EOF
+
+  cat > "$scripts_dir/app-pre-deinstall.sh" <<'EOF'
+#!/bin/sh
+[ -n "${IPKG_INSTROOT}" ] && exit 0
+/usr/bin/loki luci_prerm >/dev/null 2>&1
+EOF
+
+  cat > "$scripts_dir/app-pre-upgrade.sh" <<'EOF'
+#!/bin/sh
+exit 0
+EOF
+
+  cat > "$scripts_dir/app-post-upgrade.sh" <<'EOF'
+#!/bin/sh
+[ "${IPKG_NO_SCRIPT}" = "1" ] && exit 0
+[ -n "${IPKG_INSTROOT}" ] && exit 0
+/usr/bin/loki luci_postinst >/dev/null 2>&1
+EOF
+
+  chmod 0755 "$scripts_dir"/app-*.sh
+}
+
+write_i18n_apk_scripts() {
+  local scripts_dir="$1"
+
+  make_dir "$scripts_dir"
+
+  cat > "$scripts_dir/i18n-pre-install.sh" <<'EOF'
+#!/bin/sh
+exit 0
+EOF
+
+  cat > "$scripts_dir/i18n-post-install.sh" <<'EOF'
+#!/bin/sh
+[ "${IPKG_NO_SCRIPT}" = "1" ] && exit 0
+[ -s ${IPKG_INSTROOT}/lib/functions.sh ] || exit 0
+. ${IPKG_INSTROOT}/lib/functions.sh
+export root="${IPKG_INSTROOT}"
+export pkgname="luci-i18n-loki-ru"
+add_group_and_user
+default_postinst
+EOF
+
+  cat > "$scripts_dir/i18n-pre-deinstall.sh" <<'EOF'
+#!/bin/sh
+[ -s ${IPKG_INSTROOT}/lib/functions.sh ] || exit 0
+. ${IPKG_INSTROOT}/lib/functions.sh
+export root="${IPKG_INSTROOT}"
+export pkgname="luci-i18n-loki-ru"
+default_prerm
+EOF
+
+  cat > "$scripts_dir/i18n-pre-upgrade.sh" <<'EOF'
+#!/bin/sh
+exit 0
+EOF
+
+  cat > "$scripts_dir/i18n-post-upgrade.sh" <<'EOF'
+#!/bin/sh
+export PKG_UPGRADE=1
+[ "${IPKG_NO_SCRIPT}" = "1" ] && exit 0
+[ -s ${IPKG_INSTROOT}/lib/functions.sh ] || exit 0
+. ${IPKG_INSTROOT}/lib/functions.sh
+export root="${IPKG_INSTROOT}"
+export pkgname="luci-i18n-loki-ru"
+add_group_and_user
+default_postinst
+EOF
+
+  chmod 0755 "$scripts_dir"/i18n-*.sh
+}
+
+build_apk_package() {
+  local apk_bin="$1"
+  local package_name="$2"
+  local package_version="$3"
+  local description="$4"
+  local depends="$5"
+  local files_root="$6"
+  local scripts_dir="$7"
+  local script_prefix="$8"
+  local output_file="$9"
+  local temp_root="$BUILD_DIR/manual/${package_name}.apk-root"
+  local temp_scripts="$BUILD_DIR/manual/${package_name}.apk-scripts"
+  local maintainer="${10}"
+  local package_license="GPL-2.0-or-later"
+  if [[ "$package_name" == "luci-app-loki" ]]; then
+    package_license="GPL-2.0-or-later AND MIT AND Apache-2.0 AND 0BSD AND OFL-1.1 AND ISC"
+  fi
+
+  rm -rf "$temp_root" "$temp_scripts"
+  cp -a "$files_root" "$temp_root"
+  cp -a "$scripts_dir" "$temp_scripts"
+
+  # shellcheck disable=SC2016
+  unshare -r sh -c '
+    set -e
+    chown -R 0:0 "$1" "$2"
+    shift 2
+    exec "$@"
+  ' sh "$temp_root" "$temp_scripts" \
+    "$apk_bin" mkpkg \
+    --files "$temp_root" \
+    --output "$output_file" \
+    -I "name:${package_name}" \
+    -I "version:${package_version}" \
+    -I "description:${description}" \
+    -I "arch:noarch" \
+    -I "license:${package_license}" \
+    -I "origin:loki" \
+    -I "maintainer:${maintainer}" \
+    -I "url:${PROJECT_URL}" \
+    -I "depends:${depends}" \
+    -s "pre-install:${temp_scripts}/${script_prefix}-pre-install.sh" \
+    -s "post-install:${temp_scripts}/${script_prefix}-post-install.sh" \
+    -s "pre-deinstall:${temp_scripts}/${script_prefix}-pre-deinstall.sh" \
+    -s "pre-upgrade:${temp_scripts}/${script_prefix}-pre-upgrade.sh" \
+    -s "post-upgrade:${temp_scripts}/${script_prefix}-post-upgrade.sh"
+}
+
+verify_ipk_metadata() {
+  local package_file="$1"
+  local expected_package="$2"
+  local expected_version="$3"
+  local tmp_dir
+
+  tmp_dir="$(mktemp -d)"
+  tar -xzf "$package_file" -C "$tmp_dir"
+  tar -xzf "$tmp_dir/control.tar.gz" -C "$tmp_dir"
+  grep -q "^Package: ${expected_package}$" "$tmp_dir/control"
+  grep -q "^Version: ${expected_version}$" "$tmp_dir/control"
+  case "$expected_package" in
+    loki)
+      grep -q "^Depends: .*loki-core (>= ${SB_REQUIRED_VERSION})" "$tmp_dir/control"
+      ;;
+    luci-app-loki) grep -q "^Depends: .*loki (>= ${expected_version})" "$tmp_dir/control" ;;
+    luci-i18n-loki-ru) grep -q "^Depends: .*luci-app-loki (>= ${expected_version})" "$tmp_dir/control" ;;
+  esac
+  rm -rf "$tmp_dir"
+}
+
+verify_apk_metadata() {
+  local apk_bin="$1"
+  local package_file="$2"
+  local expected_package="$3"
+  local expected_version="$4"
+  local dump_file
+
+  dump_file="$(mktemp)"
+  "$apk_bin" adbdump "$package_file" > "$dump_file"
+  grep -q "^  name: ${expected_package}$" "$dump_file"
+  grep -q "^  version: ${expected_version}$" "$dump_file"
+  case "$expected_package" in
+    loki)
+      grep -q "^[[:space:]]*- loki-core>=${SB_REQUIRED_VERSION}$" "$dump_file"
+      ;;
+    luci-app-loki) grep -q "^[[:space:]]*- loki>=${expected_version}$" "$dump_file" ;;
+    luci-i18n-loki-ru) grep -q "^[[:space:]]*- luci-app-loki>=${expected_version}$" "$dump_file" ;;
+  esac
+  if ! awk '/^[[:space:]]*(user|group):/ { seen = 1; if ($2 != "root") bad = 1 } END { exit !seen || bad }' "$dump_file"; then
+    rm -f "$dump_file"
+    echo "APK payload contains non-root ownership: $package_file" >&2
+    return 1
+  fi
+  rm -f "$dump_file"
+}
+
+cleanup_work_dir() {
+  rm -rf "$BUILD_DIR/manual" "$BUILD_DIR/ipk-build.log"
+}
+
+# release.json is the release's manifest for install.sh and the Components tab;
+# install.sh documents its fields.
+write_release_files() {
+  local output_dir="$1"
+  local install_command=""
+
+  if [[ -n "${INSTALL_COMMAND:-}" ]]; then
+    install_command="${INSTALL_COMMAND//\\/\\\\}"
+    install_command=",
+  \"install_command\": \"${install_command//\"/\\\"}\""
+  fi
+  install -m 0644 "$ROOT_DIR/install.sh" "$output_dir/install.sh"
+  cat > "$output_dir/release.json" <<EOF
+{
+  "schema": 1,
+  "name": "loki",
+  "version": "${RELEASE_VERSION}",
+  "tag": "${RELEASE_VERSION}",
+  "page": "${PROJECT_URL}/releases/tag/${RELEASE_VERSION}",
+  "requires": { "loki-core": "${SB_REQUIRED_VERSION}" },
+  "min_config_version": "${MIN_CONFIG_VERSION}"${install_command}
+}
+EOF
+  (
+    cd "$output_dir"
+    sha256sum loki_* luci-app-loki_* luci-i18n-loki-ru_* install.sh release.json > SHA256SUMS
+  )
+}
+
+print_summary() {
+  local output_dir="$1"
+
+  echo "Build root: $ROOT_DIR"
+  echo "Output dir: $output_dir"
+  echo "Artifacts:"
+  find "$output_dir" -maxdepth 1 -type f \( -name '*.ipk' -o -name '*.apk' -o -name install.sh \
+    -o -name release.json -o -name SHA256SUMS \) | sort
+}
+
+main() {
+  local output_dir
+  local ipk_archive
+  local apk_archive
+  local ipk_sdk_dir
+  local apk_sdk_dir
+  local po2lmo_bin
+  local ipkg_build_bin
+  local apk_bin
+  local manual_root="$BUILD_DIR/manual"
+  local backend_root="$manual_root/backend-root"
+  local app_root="$manual_root/app-root"
+  local i18n_root="$manual_root/i18n-root"
+  local backend_control="$manual_root/backend-ipk-control"
+  local app_control="$manual_root/app-ipk-control"
+  local i18n_control="$manual_root/i18n-ipk-control"
+  local apk_scripts="$manual_root/apk-scripts"
+  local backend_size
+  local app_size
+  local i18n_size
+
+  ensure_host_deps
+
+  mkdir -p "$BUILD_DIR" "$SDK_CACHE_DIR"
+  exec 9>"$SDK_CACHE_DIR/.build.lock"
+  if ! flock -n 9; then
+    echo "Another LoKi package build is already running" >&2
+    exit 1
+  fi
+  output_dir="$OUTPUT_DIR"
+  mkdir -p "$output_dir"
+  rm -f "$output_dir"/loki_* "$output_dir"/luci-app-loki_* "$output_dir"/luci-i18n-loki-ru_* \
+    "$output_dir/install.sh" "$output_dir/release.json" "$output_dir/SHA256SUMS"
+
+  ipk_archive="$(download_sdk_archive "$IPK_SDK_URL" "$IPK_SDK_SHA256" "$IPK_SDK_BYTES")"
+  apk_archive="$(download_sdk_archive "$APK_SDK_URL" "$APK_SDK_SHA256" "$APK_SDK_BYTES")"
+  ipk_sdk_dir="$(extract_sdk ipk "$ipk_archive" "$IPK_SDK_SHA256")"
+  apk_sdk_dir="$(extract_sdk apk "$apk_archive" "$APK_SDK_SHA256")"
+
+  po2lmo_bin="$(ensure_po2lmo "$ipk_sdk_dir")"
+  ipkg_build_bin="$ipk_sdk_dir/scripts/ipkg-build"
+  apk_bin="$apk_sdk_dir/staging_dir/host/bin/apk"
+  [[ -x "$ipkg_build_bin" ]] || { echo "ipkg-build not found at $ipkg_build_bin" >&2; exit 1; }
+  [[ -x "$apk_bin" ]] || { echo "apk host tool not found at $apk_bin" >&2; exit 1; }
+
+  build_backend_root "$backend_root"
+  build_app_root "$app_root"
+  build_i18n_root "$i18n_root" "$po2lmo_bin"
+
+  backend_size="$(installed_size_bytes "$backend_root")"
+  app_size="$(installed_size_bytes "$app_root")"
+  i18n_size="$(installed_size_bytes "$i18n_root")"
+
+  write_backend_ipk_control "$backend_control" "$backend_size"
+  write_app_ipk_control "$app_control" "$app_size"
+  write_i18n_ipk_control "$i18n_control" "$i18n_size"
+
+  # 1.0.x updaters install <name>_<version>.<ext> by exact name, and opkg reports success when it
+  # skips a file whose dependencies fail; without that name they stop before downloading anything.
+  build_ipk_package \
+    "$ipkg_build_bin" \
+    "loki" \
+    "$backend_root" \
+    "$backend_control" \
+    "$output_dir/loki_${RELEASE_VERSION}_all.ipk"
+
+  build_ipk_package \
+    "$ipkg_build_bin" \
+    "luci-app-loki" \
+    "$app_root" \
+    "$app_control" \
+    "$output_dir/luci-app-loki_${RELEASE_VERSION}_all.ipk"
+
+  build_ipk_package \
+    "$ipkg_build_bin" \
+    "luci-i18n-loki-ru" \
+    "$i18n_root" \
+    "$i18n_control" \
+    "$output_dir/luci-i18n-loki-ru_${RELEASE_VERSION}_all.ipk"
+
+  generate_apk_metadata_files "loki" "$backend_root" "/etc/config/loki"
+  generate_apk_metadata_files "luci-app-loki" "$app_root"
+  generate_apk_metadata_files "luci-i18n-loki-ru" "$i18n_root"
+  write_backend_apk_scripts "$apk_scripts"
+  write_app_apk_scripts "$apk_scripts"
+  write_i18n_apk_scripts "$apk_scripts"
+
+  build_apk_package \
+    "$apk_bin" \
+    "loki" \
+    "$APK_INTERNAL_VERSION" \
+    "$BACKEND_DESCRIPTION" \
+    "$BACKEND_DEPENDS_APK" \
+    "$backend_root" \
+    "$apk_scripts" \
+    "backend" \
+    "$output_dir/loki_${RELEASE_VERSION}_all.apk" \
+    "$MAINTAINER"
+
+  build_apk_package \
+    "$apk_bin" \
+    "luci-app-loki" \
+    "$APK_INTERNAL_VERSION" \
+    "$APP_DESCRIPTION" \
+    "$APP_DEPENDS_APK" \
+    "$app_root" \
+    "$apk_scripts" \
+    "app" \
+    "$output_dir/luci-app-loki_${RELEASE_VERSION}_all.apk" \
+    "$MAINTAINER"
+
+  build_apk_package \
+    "$apk_bin" \
+    "luci-i18n-loki-ru" \
+    "$APK_INTERNAL_VERSION" \
+    "$I18N_DESCRIPTION" \
+    "libc luci-app-loki>=${RELEASE_VERSION}" \
+    "$i18n_root" \
+    "$apk_scripts" \
+    "i18n" \
+    "$output_dir/luci-i18n-loki-ru_${RELEASE_VERSION}_all.apk" \
+    "$MAINTAINER"
+
+  verify_ipk_metadata "$output_dir/loki_${RELEASE_VERSION}_all.ipk" "loki" "$RELEASE_VERSION"
+  verify_ipk_metadata "$output_dir/luci-app-loki_${RELEASE_VERSION}_all.ipk" "luci-app-loki" "$RELEASE_VERSION"
+  verify_ipk_metadata "$output_dir/luci-i18n-loki-ru_${RELEASE_VERSION}_all.ipk" "luci-i18n-loki-ru" "$RELEASE_VERSION"
+  verify_apk_metadata "$apk_bin" "$output_dir/loki_${RELEASE_VERSION}_all.apk" "loki" "$APK_INTERNAL_VERSION"
+  verify_apk_metadata "$apk_bin" "$output_dir/luci-app-loki_${RELEASE_VERSION}_all.apk" "luci-app-loki" "$APK_INTERNAL_VERSION"
+  verify_apk_metadata "$apk_bin" "$output_dir/luci-i18n-loki-ru_${RELEASE_VERSION}_all.apk" "luci-i18n-loki-ru" "$APK_INTERNAL_VERSION"
+
+  write_release_files "$output_dir"
+  cleanup_work_dir
+  print_summary "$output_dir"
+}
+
+main "$@"

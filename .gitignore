@@ -1,0 +1,7 @@
+.idea
+fe-app-loki/node_modules
+fe-app-loki/.yarn/
+fe-app-loki/.env
+.DS_Store
+
+dist/

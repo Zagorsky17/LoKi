@@ -1,0 +1,49 @@
+name: YACD CI
+
+on:
+  pull_request:
+    paths:
+      - 'yacd-loki/**'
+      - 'luci-app-loki/root/usr/share/loki/yacd/**'
+      - '.github/workflows/yacd-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'yacd-loki/**'
+      - 'luci-app-loki/root/usr/share/loki/yacd/**'
+      - '.github/workflows/yacd-ci.yml'
+
+jobs:
+  yacd:
+    name: YACD build and notices
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: yacd-loki
+    steps:
+      - uses: actions/checkout@v5.0.0
+      - name: Prepare pinned Bun
+        shell: bash
+        run: |
+          bun_root="$RUNNER_TEMP/loki-bun"
+          mkdir -p "$bun_root"
+          curl --fail --location --retry 3 --max-time 120 \
+            https://github.com/oven-sh/bun/releases/download/bun-v1.4.0/bun-linux-x64-baseline.zip \
+            --output "$bun_root/bun.zip"
+          echo "184fb4595f0d401a217cf7c78c1bc430ba83314dab7a8b94805babbf7fa7097f  $bun_root/bun.zip" | sha256sum --check --strict
+          unzip -q "$bun_root/bun.zip" -d "$bun_root"
+          echo "33d56b070be6a9e3da0ab013038b43d1645d0534ca811ecdba4472599117eb4b  $bun_root/bun-linux-x64-baseline/bun" | sha256sum --check --strict
+          test "$("$bun_root/bun-linux-x64-baseline/bun" --version)" = '1.4.0'
+          echo "$bun_root/bun-linux-x64-baseline" >> "$GITHUB_PATH"
+          rm "$bun_root/bun.zip"
+      - name: Install locked dependencies
+        run: bun install --frozen-lockfile
+      - name: Check tests, types and lint
+        run: |
+          bun test tests
+          bun run typecheck
+          bun run lint
+      - name: Rebuild and compare assets and notices
+        run: |
+          bun run build
+          bun third-party-notices.mjs

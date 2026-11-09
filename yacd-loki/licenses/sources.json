@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "retrieved": "2026-11-06",
+  "supplements": [
+    {
+      "file": "react-remove-scroll-bar-LICENSE.txt",
+      "source": "https://raw.githubusercontent.com/theKashey/react-remove-scroll-bar/7301c160fda44cb8cf2b9fdfde61efad35736196/LICENSE",
+      "sha256": "a79aae0c0f21990d9d963bb3c5a79cdcea9a46f8523ba55c58d7fe776b6ebc84",
+      "scope": "Later upstream supplement; absent from npm 2.3.8 archive and its gitHead b3b1287aad81def2e2ae707274b74531b61ddbaf"
+    },
+    {
+      "file": "flat-color-icons-LICENSE.md",
+      "source": "https://raw.githubusercontent.com/icons8/flat-color-icons/8eccbbbd8b2af1d2c9593e7cfba5ecb0d68ee378/LICENSE.md",
+      "sha256": "0c029819d69e43042904a3e9d12d25934d08398ba739e4364d61519aa1c2711c",
+      "scope": "Flat Color Icons MIT alternative at the source hash declared by react-icons v5.6.0, commit6501a4156153b396d062deffed5ed2c8eb64a458, packages/react-icons/src/icons/index.ts"
+    },
+    {
+      "file": "MIT-permission.txt",
+      "source": "https://raw.githubusercontent.com/theKashey/react-remove-scroll-bar/7301c160fda44cb8cf2b9fdfde61efad35736196/LICENSE",
+      "sha256": "f9c4c77baa3828004ee54b8a4f2db2e88ed44a6237a493965bf551fac0fcb62d",
+      "scope": "Unchanged permission/warranty paragraphs; attribution is supplied by the original package metadata, no copyright statement invented"
+    }
+  ]
+}

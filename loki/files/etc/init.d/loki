@@ -1,0 +1,115 @@
+#!/bin/sh /etc/rc.common
+# shellcheck shell=dash
+# shellcheck disable=SC2034
+
+START=99
+USE_PROCD=1
+EXTRA_COMMANDS="retry_start_on_wan_up handle_wan_up"
+EXTRA_HELP="        retry_start_on_wan_up Retry failed cold start after WAN comes up\n        handle_wan_up Reload or retry after monitored WAN comes up\n"
+
+: "${initscript:?rc.common must set initscript}"
+script=$(readlink "$initscript")
+NAME="$(basename "${script:-$initscript}")"
+LOKI_BIN="/usr/bin/loki"
+
+boot() {
+    start boot
+}
+
+sync_service_triggers() {
+    _procd_call sync_service_triggers_payload
+}
+
+sync_service_triggers_payload() {
+    json_init
+    json_add_string name "$NAME"
+    service_triggers
+    _procd_ubus_call set >/dev/null 2>&1 || true
+}
+
+start_service() {
+    local retry_token
+    "$LOKI_BIN" initd_start "$1"
+    LOKI_LAST_START_STATUS="$?"
+    if [ "$LOKI_LAST_START_STATUS" -ne 0 ]; then
+        retry_token="$("$LOKI_BIN" initd_retry_token)" || return 1
+        if [ -n "$retry_token" ]; then
+            procd_open_instance "start-retry-$retry_token"
+            procd_set_param command "$LOKI_BIN" initd_retry_monitor "$retry_token"
+            procd_set_param respawn 3600 30 0
+            procd_set_param stderr 1
+            procd_close_instance
+        fi
+    fi
+    return "$LOKI_LAST_START_STATUS"
+}
+
+service_started() {
+    return "${LOKI_LAST_START_STATUS:-0}"
+}
+
+stop_service() {
+    "$LOKI_BIN" initd_stop
+    LOKI_LAST_STOP_STATUS="$?"
+    return "$LOKI_LAST_STOP_STATUS"
+}
+
+# rc.common exits a stop with the status of its service_stopped hook, and with 0
+# when there is none, so a stop that failed would otherwise report success.
+service_stopped() {
+    return "${LOKI_LAST_STOP_STATUS:-0}"
+}
+
+# One tracked operation instead of rc.common's separate stop and start.
+restart() {
+    "$LOKI_BIN" initd_restart
+}
+
+reload_service() {
+    local result status
+
+    result="$("$LOKI_BIN" initd_reload "$1")"
+    status="$?"
+    [ "$result" = "sync" ] && sync_service_triggers
+    return "$status"
+}
+
+status_service() {
+    "$LOKI_BIN" initd_status
+}
+
+retry_start_on_wan_up() {
+    "$LOKI_BIN" initd_retry_start
+}
+
+handle_wan_up() {
+    "$LOKI_BIN" initd_wan_up
+}
+
+service_triggers() {
+    local plan kind event target init action reason
+
+    plan="$("$LOKI_BIN" initd_triggers)" || return 0
+
+    procd_open_trigger
+    while IFS="$(printf '\t')" read -r kind event target init action reason; do
+        case "$kind" in
+        delay)
+            PROCD_RELOAD_DELAY="$event"
+            ;;
+        config)
+            procd_add_config_trigger "$event" "$target" "$init" "$action" "$reason"
+            ;;
+        interface)
+            if [ -n "$reason" ]; then
+                procd_add_interface_trigger "$event" "$target" "$init" "$action" "$reason"
+            else
+                procd_add_interface_trigger "$event" "$target" "$init" "$action"
+            fi
+            ;;
+        esac
+    done << EOF
+$plan
+EOF
+    procd_close_trigger
+}

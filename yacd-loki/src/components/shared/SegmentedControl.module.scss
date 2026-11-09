@@ -1,0 +1,50 @@
+.track {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  min-width: 0;
+  border-radius: 10px;
+  background: var(--color-track);
+  border: 1px solid var(--color-card-border);
+}
+
+.segment {
+  flex: 1;
+  min-width: 0;
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-family: inherit;
+  font-size: 0.8rem;
+  font-weight: 500;
+  line-height: 1;
+  padding: 7px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  // 档位多时宁可截断文字，也不要把弹层顶出横向滚动条
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease,
+    box-shadow 0.15s ease;
+
+  &:hover:not(.selected) {
+    color: var(--color-text);
+    background: var(--color-hover-soft);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--color-focus-blue);
+    outline-offset: -1px;
+  }
+}
+
+.selected {
+  background: var(--color-card);
+  color: var(--color-text-highlight);
+  box-shadow: var(--shadow-segment);
+}

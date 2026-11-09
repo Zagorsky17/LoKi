@@ -1,0 +1,14 @@
+{
+  "admin/services/loki": {
+    "title": "LoKi",
+    "order": 42,
+    "action": {
+      "type": "view",
+      "path": "loki/loki"
+    },
+    "depends": {
+			"acl": [ "luci-app-loki" ],
+			"uci": { "loki": true }
+		}
+  }
+}
