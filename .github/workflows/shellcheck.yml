@@ -9,6 +9,7 @@ on:
     paths:
       - 'build.sh'
       - 'install.sh'
+      - 'install-beta.sh'
       - 'preflight.sh'
       - 'loki/files/etc/init.d/**'
       - 'luci-app-loki/root/etc/uci-defaults/**'
@@ -22,6 +23,7 @@ on:
     paths:
       - 'build.sh'
       - 'install.sh'
+      - 'install-beta.sh'
       - 'preflight.sh'
       - 'loki/files/etc/init.d/**'
       - 'luci-app-loki/root/etc/uci-defaults/**'

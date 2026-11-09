@@ -11,6 +11,7 @@ on:
       - 'tests/**'
       - 'core/**'
       - 'install.sh'
+      - 'install-beta.sh'
       - 'preflight.sh'
       - 'preflight.uc'
       # The packaging checks read the LuCI app's package scripts and bundle.
@@ -30,6 +31,7 @@ on:
       - 'tests/**'
       - 'core/**'
       - 'install.sh'
+      - 'install-beta.sh'
       - 'preflight.sh'
       - 'preflight.uc'
       - 'luci-app-loki/**'
@@ -144,6 +146,7 @@ jobs:
         shell: bash
         run: |
           tests/run.sh
+          python3 -B tests/test_beta_installer.py
           python3 -B tests/test_cold_boot_init.py
           python3 -B tests/test_gateway_bootstrap.py
           python3 -B tests/test_watch_recovery.py
