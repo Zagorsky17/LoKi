@@ -605,6 +605,26 @@ t.test("an existing journal under an unsafe parent is refused without repairing 
     t.eq(uloop.__processes(), []);
 });
 
+t.test("the shared runtime directory can be traversable while the RPC journal stays private", () => {
+    let rpc = fresh();
+    let runtime = common.parent_dir(rpc.paths.temporary) + "/runtime";
+    t.ok(common.ensure_dir(runtime + "/ui-state/service-actions"));
+    fs.chmod(runtime, 0755);
+    rpc.paths.temporary = runtime + "/rpc";
+    let prepared = rpc.prepare(request([ "service_action_async", "start" ]), "rpc_write");
+    t.eq(prepared.success, true, "Start can prepare its RPC journal after bytecode/UI created the runtime parent");
+    t.eq(fs.lstat(runtime).mode & 0777, 0755, "do not change the shared directory's permissions");
+    t.eq(fs.lstat(rpc.paths.temporary).mode & 0777, 0700);
+    t.eq(fs.lstat(rpc.paths.temporary + "/format").mode & 0777, 0600);
+    t.eq(uloop.__processes(), [], "preparing still cannot start the service");
+    for (let mode in [ 0755, 0775, 0777 ]) {
+        let unsafe = fresh();
+        fs.chmod(unsafe.paths.temporary, mode);
+        t.eq(unsafe.prepare(request([ "service_action_async", "start" ]), "rpc_write").success, false,
+            "the RPC directory itself must remain private");
+    }
+});
+
 function directory_read_failure_case(link) {
     let rpc = fresh();
     let marker = rpc.paths.temporary + "/format";

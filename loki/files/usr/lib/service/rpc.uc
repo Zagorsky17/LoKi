@@ -238,7 +238,9 @@ function storage() {
     let parent = common.parent_dir(paths.temporary);
     if (fs.lstat(parent) == null && !fs.mkdir(parent, 0700))
         return false;
-    if (!safe_directory(parent))
+    // Bytecode and UI share this parent; only the journal below it must be private.
+    let directory = fs.lstat(parent);
+    if (directory?.type != "directory" || directory.uid != fs.stat("/proc/self").uid || (directory.mode & 0022) != 0)
         return false;
     if (fs.lstat(paths.temporary) == null && !fs.mkdir(paths.temporary, 0700))
         return false;
