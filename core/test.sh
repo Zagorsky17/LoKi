@@ -17,7 +17,7 @@ unformatted=$(gofmt -l adapter/dns.go dns/router.go common/dialer/resolve*.go lo
     adapter/provider.go adapter/experimental.go adapter/provider/{adapter,graph}.go \
     adapter/provider/{adapter_test.go,identity_test.go,identity_utf8_test.go} experimental/cachefile/{cache.go,selector_state_test.go} \
     protocol/group/{selector.go,selector_identity_test.go,fallback.go,fallback_test.go} experimental/clashapi/proxies.go \
-    adapter/outbound/{manager.go,commit_test.go} provider/remote/*.go \
+    adapter/outbound/{manager.go,commit_test.go} provider/remote/*.go parser/subscription/subscription.go parser/refusal_test.go \
     experimental/cachefile/*.go dns/transport/fakeip/store_cachefile_test.go box.go \
     common/lokicontroller/*.go common/lokigateway/*.go cmd/sing-box/cmd_gateway_linux.go cmd/sing-box/cmd_check*.go cmd/sing-box/cmd_release_fetch*.go \
     experimental/clashapi/common.go experimental/clashapi/common_gateway_test.go \
@@ -27,6 +27,6 @@ if [[ -n "$unformatted" ]]; then
     exit 1
 fi
 tags=$(./build.sh --print-tags --variant base amd64)
-packages=(./common/dialer ./dns/... ./log ./adapter/provider ./adapter/outbound ./provider/remote ./protocol/group ./experimental/cachefile ./experimental/clashapi ./route/rule ./common/lokicontroller ./common/lokigateway ./cmd/sing-box)
+packages=(./common/dialer ./dns/... ./log ./adapter/provider ./adapter/outbound ./provider/remote ./parser/... ./protocol/group ./experimental/cachefile ./experimental/clashapi ./route/rule ./common/lokicontroller ./common/lokigateway ./cmd/sing-box)
 go vet -tags "$tags" "${packages[@]}"
 go test -tags "$tags" -ldflags="$(tr '\n' ' ' < release/LDFLAGS)" "${packages[@]}" "$@"
