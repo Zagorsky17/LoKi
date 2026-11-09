@@ -1,0 +1,56 @@
+diff --git a/common/lokigateway/logging_linux_test.go b/common/lokigateway/logging_linux_test.go
+new file mode 100644
+--- /dev/null
++++ b/common/lokigateway/logging_linux_test.go
+@@ -0,0 +1,51 @@
++package lokigateway
++
++import (
++	"bytes"
++	"context"
++	"errors"
++	"net"
++	"net/http/httptest"
++	"strings"
++	"testing"
++
++	boxlog "github.com/sagernet/sing-box/log"
++)
++
++func TestGatewayRefusalIsLoggedWithoutRequestSecrets(t *testing.T) {
++	var output bytes.Buffer
++	factory := boxlog.NewDefaultFactory(context.Background(), boxlog.Formatter{DisableColors: true}, &output, "", nil, false)
++	if err := factory.Start(); err != nil {
++		t.Fatal(err)
++	}
++	defer factory.Close()
++	previous := boxlog.StdLogger()
++	boxlog.SetStdLogger(factory.Logger())
++	defer boxlog.SetStdLogger(previous)
++	request := httptest.NewRequest("GET", "https://router.example/private-url?token=synthetic-token", nil)
++	request.Header.Set("Cookie", "sysauth_https=synthetic-session")
++	request.Header.Set("Authorization", "Bearer synthetic-key")
++	response := httptest.NewRecorder()
++	(&gateway{}).ServeHTTP(response, request)
++	if response.Code != 403 || !strings.Contains(output.String(), "gateway request refused: origin-not-allowed (HTTP 403)") {
++		t.Fatalf("refusal has no diagnostic: status=%d log=%q", response.Code, output.String())
++	}
++	for _, secret := range []string{"private-url", "synthetic-token", "synthetic-session", "synthetic-key"} {
++		if strings.Contains(output.String(), secret) {
++			t.Fatal("request secret reached the log")
++		}
++	}
++}
++
++func TestGatewayListenerRetainsSystemCause(t *testing.T) {
++	_, identity, _ := fileIdentityForTest(t)
++	listener, err := net.Listen("tcp", "127.0.0.1:0")
++	if err != nil {
++		t.Fatal(err)
++	}
++	listener.Close()
++	err = serveGateway(context.Background(), &gateway{client: controllerClient()}, identity, listener)
++	if !errors.Is(err, errGatewayListener) || !errors.Is(err, net.ErrClosed) {
++		t.Fatalf("listener system cause was lost: %v", err)
++	}
++}
