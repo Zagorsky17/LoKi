@@ -4,7 +4,13 @@ import type { InstallerRunState } from '../installerRun';
 const mocks = vi.hoisted(() => ({
   change: null as ((state: InstallerRunState) => void) | null,
   buttons: [] as Array<{ text: string; disabled?: boolean }>,
-  parts: new Map<string, { replaceChildren: (...nodes: unknown[]) => void }>(),
+  parts: new Map<
+    string,
+    {
+      replaceChildren: (...nodes: unknown[]) => void;
+      append: (...nodes: unknown[]) => void;
+    }
+  >(),
 }));
 
 vi.mock('../../../../icons', async (original) =>
@@ -45,7 +51,7 @@ vi.mock('../../../services/systemInfo.service', () => ({
 }));
 
 it('offers supported package actions while idle and blocks them during service or installer work', async () => {
-  globalThis.E = (() => ({
+  (globalThis as unknown as { E: unknown }).E = (() => ({
     replaceChildren: vi.fn(),
     addEventListener: vi.fn(),
   })) as unknown as typeof E;
@@ -54,14 +60,21 @@ it('offers supported package actions while idle and blocks them during service o
   const { initController } = await import('../initController');
   initController();
   const disabled = (label: string) =>
-    mocks.buttons.filter((button) => button.text === label).at(-1)?.disabled;
+    mocks.buttons.filter((button) => button.text === label).slice(-1)[0]
+      ?.disabled;
   expect(disabled('Check for updates')).toBe(false);
   expect(disabled('Change the build')).toBe(false);
   expect(disabled('Remove LoKi')).toBe(false);
   expect(disabled('Update LoKi')).toBe(true);
 
   const available = {
-    checkResult: { success: true, available: true },
+    checkResult: {
+      schema: 1,
+      success: true,
+      available: true,
+      installed: { app: '2.0.2', core: '1.14.4-r10', variant: 'base' },
+      latest: { app: '2.0.3', core: '1.14.4-r10' },
+    },
   } as InstallerRunState;
   mocks.change!(available);
   expect(disabled('Update LoKi')).toBe(false);
