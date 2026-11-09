@@ -5,6 +5,7 @@ export PATH
 umask 077
 WORK='' DOWNLOAD_PID='' KEEP=0
 DOWNLOAD_SECONDS=35
+BETA_VERSION=2.0.1
 
 fail() { printf '[!] %s\n' "$*" >&2; exit 1; }
 cleanup() {
@@ -97,9 +98,9 @@ main() {
     WORK=$(mktemp -d /tmp/loki-beta.XXXXXX) || fail 'Не удалось создать закрытый временный каталог.'
     trap cleanup EXIT
     trap 'exit 1' HUP INT TERM
-    archive="loki-2.0.0-r10-openwrt-$version-aarch64_cortex-a53-candidate.tar.gz"
-    printf '[1/4] Загрузка LoKi 2.0.0 beta для OpenWrt %s…\n' "$version"
-    fetch_kit "https://github.com/Zagorsky17/LoKi/releases/download/2.0.0/$archive" ||
+    archive="loki-$BETA_VERSION-r10-openwrt-$version-aarch64_cortex-a53-candidate.tar.gz"
+    printf '[1/4] Загрузка LoKi %s beta для OpenWrt %s…\n' "$BETA_VERSION" "$version"
+    fetch_kit "https://github.com/Zagorsky17/LoKi/releases/download/$BETA_VERSION/$archive" ||
         fail 'Загрузка не завершена. Проверьте доступ к GitHub, HTTPS и повторите команду.'
     [ "$(wc -c < "$WORK/kit.tar.gz" | tr -d '[:space:]')" = "$expected_bytes" ] || fail 'Размер загруженного комплекта не совпал.'
     printf '%s  %s\n' "$archive_sha" "$WORK/kit.tar.gz" | sha256sum -c - >/dev/null || fail 'SHA256 комплекта не совпала; установка остановлена.'

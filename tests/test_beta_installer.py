@@ -3,6 +3,7 @@
 import hashlib
 import io
 import os
+import re
 from pathlib import Path
 import shlex
 import shutil
@@ -18,6 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 class BetaInstaller(unittest.TestCase):
     def run_installer(self, *, release='25.12.6', arch='aarch64_cortex-a53', **options):
         source = (ROOT/'install-beta.sh').read_text()
+        beta = re.search(r'^BETA_VERSION=([0-9.]+)$', source, re.M).group(1)
         with tempfile.TemporaryDirectory(prefix='loki-beta-test-') as tmp:
             home = Path(tmp)
             binaries = home/'bin'
@@ -26,17 +28,17 @@ class BetaInstaller(unittest.TestCase):
             (home/'openwrt_release').write_text(f"DISTRIB_RELEASE='{release}'\nDISTRIB_ARCH='{arch}'\n")
             (home/'meminfo').write_text(f"MemAvailable: {options.get('memory', 204800)} kB\n")
             replacements = {}
-            for version, original_hash, original_size in [
-                ('24.10', '87327a8f430e1796624c37e852815603c0e7457078f83f907acc84374f137c52', 25501443),
-                ('25.12', 'c9f1163d5bb9cb7c286802b63ff3660e7c8422852227a5687dea5122980741c9', 25487033),
-            ]:
+            for version in ['24.10', '25.12']:
+                case = source.split('version='+version+'\n', 1)[1].split(';;', 1)[0]
+                original_hash = re.search(r'archive_sha=([a-f0-9]{64})', case).group(1)
+                original_size = int(re.search(r'expected_bytes=([0-9]+)', case).group(1))
                 files = {
                     'preflight.sh': b'#!/bin/sh\nprintf "preflight\\n" >> "$EVENTS"\nprintf "{\\"result\\":\\"checked\\"}\\n"\nexit "${PREFLIGHT_STATUS:-0}"\n',
                     'component-update.sh': b'#!/bin/sh\nprintf "worker:%s\\n" "$1" >> "$EVENTS"\nprintf "{\\"success\\":true}\\n"\nexit "${WORKER_STATUS:-0}"\n',
                     'candidate-manifest.json': b'{"synthetic":true}\n',
                 }
                 files['SHA256SUMS'] = ''.join(hashlib.sha256(body).hexdigest()+'  '+name+'\n' for name, body in sorted(files.items())).encode()
-                name = f'loki-2.0.0-r10-openwrt-{version}-aarch64_cortex-a53-candidate.tar.gz'
+                name = f'loki-{beta}-r10-openwrt-{version}-aarch64_cortex-a53-candidate.tar.gz'
                 archive = home/name
                 with tarfile.open(archive, 'w:gz') as tar:
                     for member, body in files.items():
@@ -49,7 +51,7 @@ class BetaInstaller(unittest.TestCase):
             (binaries/'wget').write_text(f'''#!{sys.executable}
 import os,sys,pathlib
 args=sys.argv[1:]
-assert args[-1].startswith('https://github.com/Zagorsky17/LoKi/releases/download/2.0.0/')
+assert args[-1].startswith('https://github.com/Zagorsky17/LoKi/releases/download/{beta}/')
 with open(os.environ['EVENTS'],'a') as f:f.write('download:'+args[-1].split('/')[-1]+'\\n')
 mode=os.environ.get('DOWNLOAD_CASE','')
 if mode=='fail':sys.exit(8)
