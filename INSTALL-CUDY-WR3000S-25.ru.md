@@ -38,14 +38,14 @@ df -Pk / /tmp
 
 ## 2. Получите комплект на компьютере
 
-В [бета-релизе 2.0.0](https://github.com/Zagorsky17/LoKi/releases/tag/2.0.0) скачайте файл:
+В [бета-релизе 2.0.1](https://github.com/Zagorsky17/LoKi/releases/tag/2.0.1) скачайте файл:
 
-`loki-2.0.0-r10-openwrt-25.12-aarch64_cortex-a53-candidate.tar.gz`
+`loki-2.0.1-r10-openwrt-25.12-aarch64_cortex-a53-candidate.tar.gz`
 
 SHA256 архива:
 
 ```text
-c9f1163d5bb9cb7c286802b63ff3660e7c8422852227a5687dea5122980741c9
+42e7266a238184d415caf029441740cdaf4a8d02ccef9688d69f164e37926a77
 ```
 
 На macOS проверьте его командой `shasum -a 256 ИМЯ_АРХИВА`, на Linux — `sha256sum ИМЯ_АРХИВА`. Результат должен точно совпасть. HTTPS и SHA256 защищают передачу и проверяют согласованность файлов; отдельной цифровой подписи нет, поэтому компрометация самого репозитория остаётся ограничением доверия беты.
@@ -54,7 +54,7 @@ c9f1163d5bb9cb7c286802b63ff3660e7c8422852227a5687dea5122980741c9
 
 ```sh
 ssh root@АДРЕС_РОУТЕРА 'umask 077; mkdir -m 700 /tmp/loki-beta-upload'
-scp -O loki-2.0.0-r10-openwrt-25.12-aarch64_cortex-a53-candidate.tar.gz root@АДРЕС_РОУТЕРА:/tmp/loki-beta-upload/
+scp -O loki-2.0.1-r10-openwrt-25.12-aarch64_cortex-a53-candidate.tar.gz root@АДРЕС_РОУТЕРА:/tmp/loki-beta-upload/
 ```
 
 Первую команду выполните отдельно: при ошибке остановитесь и разберите причину. `scp -O` использует SCP без SFTP, которого может не быть в OpenWrt. Существующий SSH-ключ используйте через свой обычный профиль; проверку ключа сервера не отключайте.
@@ -64,7 +64,7 @@ scp -O loki-2.0.0-r10-openwrt-25.12-aarch64_cortex-a53-candidate.tar.gz root@А�
 Следующие команды выполняются от `root` на роутере. Каждую группу запускайте только после успеха предыдущей.
 
 ```sh
-ARCHIVE=/tmp/loki-beta-upload/loki-2.0.0-r10-openwrt-25.12-aarch64_cortex-a53-candidate.tar.gz
+ARCHIVE=/tmp/loki-beta-upload/loki-2.0.1-r10-openwrt-25.12-aarch64_cortex-a53-candidate.tar.gz
 sha256sum "$ARCHIVE"
 ```
 
@@ -79,7 +79,7 @@ mkdir -m 700 /tmp/loki-beta && tar -xzf "$ARCHIVE" -C /tmp/loki-beta
 
 ```sh
 KIT=/tmp/loki-beta/openwrt-25.12-aarch64_cortex-a53
-MANIFEST_SHA256=60330a1e5a35778af13f4d50fa6944852bcbbd781fffaf0f157ecfeb929de48f
+MANIFEST_SHA256=19f88372de8c3cf71e276026e95322041c619667fb75dec67ce47c11f37f8fd6
 cd "$KIT" && sha256sum -c SHA256SUMS
 ```
 
