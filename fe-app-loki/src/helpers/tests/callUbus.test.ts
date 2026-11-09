@@ -26,6 +26,31 @@ beforeEach(() => {
 });
 
 describe('callUbus', () => {
+  it('logs a transport refusal in the browser without request parameters', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    stubRpc(vi.fn().mockRejectedValue(new Error('Permission denied')));
+    try {
+      await callUbus({
+        object: 'loki',
+        method: 'rpc_write',
+        timeoutMs: 1000,
+        retryUnavailable: false,
+        params: { token: 'synthetic-private-token' },
+      });
+      expect(error).toHaveBeenCalledWith(
+        '[ERROR]',
+        '[RPC]',
+        'loki.rpc_write',
+        'Permission denied',
+      );
+      expect(JSON.stringify(error.mock.calls)).not.toContain(
+        'synthetic-private-token',
+      );
+    } finally {
+      error.mockRestore();
+    }
+  });
+
   it('returns what the object answered', async () => {
     const call = vi.fn().mockResolvedValue({ revision: 3 });
     stubRpc(call);
