@@ -18,7 +18,19 @@ Connect to OpenWrt over SSH as `root` and run:
 
 The same installer supports OpenWrt 24.10/opkg and 25.12/apk. It detects the firmware architecture, downloads individual release packages, checks SHA256, and delegates dependency resolution and the simulated transaction to the native package manager. It does not select devices by brand or model. The fixed 160 MiB threshold and mandatory offline kit are removed.
 
-[Installation, updates and removal (Russian)](INSTALL.ru.md). SSH and LuCI use the same `install.sh`. Updates preserve LoKi configuration and the previous service state. LoKi requires its own `loki-core`; configuration migration from other applications is unsupported. Installation and load on real devices still require owner testing.
+[Installation, updates and removal](INSTALL.md). SSH and LuCI use the same `install.sh`. Updates preserve LoKi configuration and the previous service state. LoKi requires its own `loki-core`; configuration migration from other applications is unsupported. Installation and load on real devices still require owner testing.
+
+## Updating and uninstalling
+
+To update, repeat the installation command or use the Components page in LuCI. LoKi settings and the previous service state are preserved.
+
+To uninstall LoKi while keeping its settings, run over SSH as `root`:
+
+```sh
+(set -o pipefail; wget -O - https://raw.githubusercontent.com/Zagorsky17/LoKi/main/install-loki.sh | sh -s -- --uninstall)
+```
+
+To remove LoKi settings as well, add `--purge` after `--uninstall`. This option deletes the saved configuration; normal removal keeps it.
 
 ## LuCI interface and YACD panel
 
@@ -41,7 +53,7 @@ The application uses `loki`, `luci-app-loki`, `/etc/config/loki` and the dedicat
 ## Features
 
 
-LoKi will retain connection links, subscriptions, routing sections, DNS, monitoring and diagnostics. Hosting VPN/proxy servers on the router has been removed: there is no server tab, server listener generation, client profile issuance, server key generation or server diagnostics. Built-in DNS/TProxy listeners and outbound connections remain. Built-in client VPN tunnels (WireGuard, AmneziaWG, WARP, Tailscale, OpenVPN and OpenConnect) and JSON endpoints have also been removed. Connection links, subscriptions, JSON outbounds and existing network interfaces remain; custom JSON outbounds cannot restore the removed VPN types. Only the framework for future LoKi migrations remains.
+LoKi retains connection links, subscriptions, routing sections, DNS, monitoring and diagnostics. Hosting VPN/proxy servers on the router has been removed: there is no server tab, server listener generation, client profile issuance, server key generation or server diagnostics. Built-in DNS/TProxy listeners and outbound connections remain. Built-in client VPN tunnels (WireGuard, AmneziaWG, WARP, Tailscale, OpenVPN and OpenConnect) and JSON endpoints have also been removed. Connection links, subscriptions, JSON outbounds and existing network interfaces remain; custom JSON outbounds cannot restore the removed VPN types. Only the framework for future LoKi migrations remains.
 
 The target platforms are OpenWrt 24.10 and 25.12. Only LoKi core builds are supported. Stock sing-box and other derivatives are outside the support scope; earlier limited schema comparisons remain diagnostic and regression checks.
 
@@ -97,11 +109,11 @@ Lifecycle actions use a Linux kernel lock released when the owning process exits
 
 LoKi configurations carry `option config_format 'loki'` alongside their schema version. A matching version number alone does not make a Forkop or Podkop configuration compatible. Installation, startup and backup restoration refuse foreign, unsupported or malformed schemas without moving or resetting the file. Intermediate development configurations without the LoKi marker are not converted automatically.
 
-The configuration upload restores LoKi’s own backup as unsaved changes in the current LuCI session; it takes effect after you apply them. Uploads must be regular files of at most 1 MiB. Current configurations require no migration; future LoKi schema updates retain the migration framework and private backups. This does not replace the mandatory environment conflict check. Connection links and subscriptions remain separate supported inputs; global client settings are not imported.
+The configuration upload restores LoKi’s own backup as unsaved changes in the current LuCI session; it takes effect after you apply them. Uploads must be regular files of at most 1 MiB. Current configurations require no migration; future LoKi schema updates retain the migration framework and private backups. LoKi configuration checks still apply before activation. Connection links and subscriptions remain separate supported inputs; global client settings are not imported.
 
-## DNS settings in development
+## DNS settings
 
-The development UI requires an explicit encryption mode for the entire main DNS list: disabled (UDP), or enabled with an explicit choice of DoH or DoT. Addresses must match: `https://dns.example/dns-query` for DoH, `tls://dns.example` for DoT, or an IP address for UDP. Replace the example name `dns.example` with your resolver. Changing the mode does not rewrite addresses or switch protocols when a server fails.
+The UI requires an explicit encryption mode for the entire main DNS list: disabled (UDP), or enabled with an explicit choice of DoH or DoT. Addresses must match: `https://dns.example/dns-query` for DoH, `tls://dns.example` for DoT, or an IP address for UDP. Replace the example name `dns.example` with your resolver. Changing the mode does not rewrite addresses or switch protocols when a server fails.
 
 Bootstrap uses UDP by IP address. Outbound connections without their own resolver use bootstrap; explicit JSON and interface resolver settings are preserved. Fresh configurations retain the existing UDP default. Legacy configurations without the encryption field keep their URI protocols until an explicit mode is selected in the UI. These changes still require testing on laboratory OpenWrt.
 
