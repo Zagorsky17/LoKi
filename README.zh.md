@@ -1,12 +1,46 @@
 # LoKi
 
+LoKi 是面向 OpenWrt 的规则路由应用，使用专用 loki-core 内核。
+
+[![LoKi 稳定版](https://img.shields.io/github/v/release/Zagorsky17/LoKi?label=%E7%89%88%E6%9C%AC&color=178f83&style=flat)](https://github.com/Zagorsky17/LoKi/releases/latest)
+
 [Русский](README.ru.md) · [English](README.md) · 简体中文
+
+[运行要求](#兼容的路由器) · [功能](#功能) · [稳定性](#稳定运行的机制) · [安装](#安装) · [报告问题](https://github.com/Zagorsky17/LoKi/issues)
+
+## 兼容的路由器
+
+LoKi 在 OpenWrt 设备上运行。兼容性取决于固件、处理器架构和可用资源。
+
+| 参数 | 要求 |
+| --- | --- |
+| 固件 | 使用 `opkg` 的 OpenWrt **24.10**，或使用 `apk` 的 **25.12**。 |
+| 处理器 | ARM/ARM64、MIPS/MIPS64、x86/x86-64、RISC-V64 和 LoongArch64，前提是[发行版](https://github.com/Zagorsky17/LoKi/releases/latest)包含与固件精确架构匹配的软件包。 |
+| 内存 | 安装程序以 **128 MB** 为参考；建议 **256 MB 或更多**以保留余量。用量取决于订阅、规则列表和连接数；128 MB 设备上的运行尚未单独验证。 |
+| 闪存 | 需有空间存放应用、内核和依赖。所需容量取决于架构和已安装的软件包，安装程序会在安装前计算。 |
+| 访问条件 | 以 `root` 使用 SSH，通过 LuCI 在浏览器中管理，并能通过 HTTPS 访问 GitHub 和 OpenWrt 软件源。 |
 
 > **LoKi 2.0.5 稳定版。** 已确认在运行 OpenWrt 25.12.6 的 Cudy WR3000S v1 上正常运行、卸载和故障恢复。其他设备和 OpenWrt 24.10 仍需单独测试。
 
-LoKi 是面向 OpenWrt 的规则路由应用，使用专用 loki-core 内核。
+## 功能
 
-项目：[Zagorsky17/LoKi](https://github.com/Zagorsky17/LoKi)。请在 [LoKi Issues](https://github.com/Zagorsky17/LoKi/issues) 报告问题或提出修改建议。
+- **分区路由：** 为域名、子网和设备设置独立规则，支持内置与外部列表。
+- **连接链接：** VLESS、VMess、Trojan、Shadowsocks、Hysteria2、TUIC 及内核支持的其他协议。
+- **订阅：** 链接列表、sing-box/Xray JSON、SIP008 和 Clash YAML；从客户端配置中提取连接参数。
+- **服务器选择：** 手动切换、按延迟选择的 URLTest，以及备用连接 Fallback。
+- **DNS：** UDP、DNS over HTTPS（DoH）、DNS over TLS（DoT）及备用解析器，明确选择加密模式。
+- **监控与日志：** 在 LuCI 中查看流量、连接、设备和路由，提供附加 YACD 面板及秘密信息脱敏的诊断报告。
+- **安装与更新：** 一条 SSH 命令安装，在 LuCI 中更新组件，保留 LoKi 设置及原有服务状态。
+
+## 稳定运行的机制
+
+- **通过 Unix 套接字本地控制。** 后端通过私有文件系统套接字与内核通信，检查所有者、权限及对端 UID；控制器密钥不会发送到浏览器。
+- **通过 WebSocket 传输实时数据。** 流量和连接经 LuCI 授权的安全 WSS 网关传输。连接断开后，界面以递增间隔重连；网关不可用时，仪表盘可通过 RPC 获取快照。
+- **拦截流量前检查。** LoKi 在启用路由前检查配置与内核就绪状态；内核崩溃监视器在恢复期间暂停拦截。
+- **启动失败重试。** 启用开机自启后，LoKi 在启动失败 30 秒后重试；Stop 或 Disable 取消重试。
+- **保留可用订阅。** 错误或截断响应不会替换工作集合。手动选择与连接参数绑定，重命名或重排节点不会改变选择。
+- **串行执行操作。** Start、Apply 和 Stop 使用同一把锁；规则列表工作进程从最近确认应用成功的配置代次恢复。
+- **检查更新并合并重复日志。** 安装程序校验 SHA256 并模拟包管理器操作；内核将完全相同的重复错误合并为摘要，保留首条记录和不同的错误。
 
 ## 安装
 
@@ -16,7 +50,7 @@ LoKi 是面向 OpenWrt 的规则路由应用，使用专用 loki-core 内核。
 (set -o pipefail; wget -O - https://raw.githubusercontent.com/Zagorsky17/LoKi/main/install-loki.sh | sh)
 ```
 
-同一安装程序支持 OpenWrt 24.10/opkg 和 25.12/apk。它识别固件架构，下载独立发布软件包，检查 SHA256，并由原生包管理器解析依赖和模拟安装。不按路由器品牌或型号选择软件包。固定的 160 MiB 门槛及强制离线套件已移除。
+安装程序识别固件架构，从最新发布版本下载匹配的软件包，检查 SHA256，并由原生包管理器解析依赖和模拟安装。
 
 [安装、更新和卸载说明](INSTALL.zh.md)。SSH 和 LuCI 使用同一个 `install.sh`。更新保留 LoKi 配置及原有服务状态。LoKi 使用自身的 `loki-core`，不迁移其他应用配置。真实设备安装与负载仍需由所有者验证。
 
@@ -50,10 +84,9 @@ YACD 显示流量、连接、代理、规则和实时日志。文件位于 `/usr
 
 `preflight.sh` 保留为独立诊断工具，其扩展报告不再是常规安装或启动的强制准入条件。正常流程使用安装程序、包管理器以及 LoKi 的配置与内核检查。
 
-## 功能
+## 订阅与兼容性
 
-
-LoKi 保留连接链接、订阅、路由分区、DNS、监控和诊断。路由器上的 VPN/代理服务器功能已移除：不再有服务器标签页、服务器监听器生成、客户端配置发放、服务器密钥生成或服务器诊断。内置 DNS/TProxy 监听器和出站连接仍然存在。内置客户端 VPN 隧道（WireGuard、AmneziaWG、WARP、Tailscale、OpenVPN、OpenConnect）及 JSON 端点也已移除。连接链接、订阅、JSON 出站连接和现有网络接口仍然支持；自定义 JSON 出站配置不能重新启用被移除的 VPN 类型。只保留未来 LoKi 版本自身的迁移框架。
+支持 JSON 出站连接和现有网络接口。不支持内置客户端 VPN 隧道（WireGuard、AmneziaWG、WARP、Tailscale、OpenVPN、OpenConnect）、JSON 端点及在路由器上运行 VPN/代理服务器。自定义 JSON 出站配置不能启用已移除的 VPN 类型。迁移框架仅用于未来 LoKi 版本。
 
 目标平台为 OpenWrt 24.10 和 25.12。仅支持 LoKi 自己构建的内核；标准 sing-box 和其他派生版本不在支持范围内。早期有限的 schema 比较仅用于诊断和回归测试。
 
