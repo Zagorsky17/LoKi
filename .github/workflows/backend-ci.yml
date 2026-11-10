@@ -12,6 +12,7 @@ on:
       - 'core/**'
       - 'install.sh'
       - 'install-beta.sh'
+      - 'install-loki.sh'
       - 'preflight.sh'
       - 'preflight.uc'
       # The packaging checks read the LuCI app's package scripts and bundle.
@@ -32,6 +33,7 @@ on:
       - 'core/**'
       - 'install.sh'
       - 'install-beta.sh'
+      - 'install-loki.sh'
       - 'preflight.sh'
       - 'preflight.uc'
       - 'luci-app-loki/**'

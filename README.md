@@ -2,18 +2,18 @@
 
 [Русский](README.ru.md) · English · [简体中文](README.zh.md)
 
-> **LoKi 2.0.2 beta.** Software checks have passed on Linux. Initial real-router acceptance and failure recovery still need testing.
+> **LoKi 2.0.5 — stable release.** Operation is confirmed on Cudy WR3000S v1 with OpenWrt 25.12.6. Other devices, OpenWrt 24.10 and failure recovery require separate testing.
 
 Rule-based traffic routing for OpenWrt with the dedicated loki-core engine.
 
 Project: [Zagorsky17/LoKi](https://github.com/Zagorsky17/LoKi). Report bugs and propose changes in [LoKi Issues](https://github.com/Zagorsky17/LoKi/issues).
 
-## Beta installation
+## Installation
 
 Connect to OpenWrt over SSH as `root` and run:
 
 ```sh
-(set -o pipefail; wget -O - https://raw.githubusercontent.com/Zagorsky17/LoKi/main/install-beta.sh | sh)
+(set -o pipefail; wget -O - https://raw.githubusercontent.com/Zagorsky17/LoKi/main/install-loki.sh | sh)
 ```
 
 The same installer supports OpenWrt 24.10/opkg and 25.12/apk. It detects the firmware architecture, downloads individual release packages, checks SHA256, and delegates dependency resolution and the simulated transaction to the native package manager. It does not select devices by brand or model. The fixed 160 MiB threshold and mandatory offline kit are removed.
@@ -57,7 +57,7 @@ The loki-core base is `ushan0v/sing-box-forkop`, pinned in `core/upstream.env`; 
 
 The r10 core adds a bounded HTTPS downloader for public LoKi release inputs. It checks redirect destinations and response limits without reading proxy configuration. Use the common package installer described above.
 
-In r11, subscription responses that report a missing X-HWID or a device limit produce a specific log error and preserve the previous working connections. Servers with unspecified addresses `0.0.0.0` or `::` are excluded from import. If an earlier beta created a subscription entry without HTTP headers, create a new entry using the same link and check for `X-HWID` under Headers before applying. The identifier belongs to the router; the provider may count it as another device. Saved custom headers are not replaced automatically.
+In r11, subscription responses that report a missing X-HWID or a device limit produce a specific log error and preserve the previous working connections. Servers with unspecified addresses `0.0.0.0` or `::` are excluded from import. If an earlier release created a subscription entry without HTTP headers, create a new entry using the same link and check for `X-HWID` under Headers before applying. The identifier belongs to the router; the provider may count it as another device. Saved custom headers are not replaced automatically.
 
 On Linux, `loki-core check` disables process memory dumps before reading configuration. If the kernel refuses that protection, the check fails before reading the file. This guard does not replace filesystem and network isolation; non-Linux configuration checks are refused.
 
@@ -126,7 +126,7 @@ core/build.sh 0.1.0 "$PWD/release" --arch aarch64_cortex-a53 --variant base
 (cd release && sha256sum -c SHA256SUMS)
 ```
 
-`core/build.sh` accepts the inherited builder's variants and targets; without an architecture restriction it builds all of its targets. The full variant may additionally download several gigabytes of Chromium sources and tools. The beta release workflow builds the base core for `aarch64_cortex-a53` and adds its core manifest to the application assets. Building does not publish a release or install packages.
+`core/build.sh` accepts the inherited builder's variants and targets; without an architecture restriction it builds all of its targets. The full variant may additionally download several gigabytes of Chromium sources and tools. The release workflow builds the base core for the supported architecture matrix and adds its core manifest to the application assets. Building does not publish a release or install packages.
 
 The builder also exports `loki-core_VERSION_VARIANT_ARCH.bin`, a standalone binary for bootstrap. Before copying it to the release directory, it verifies its size and SHA-256 against `/usr/bin/loki-core` in each IPK/APK; both formats of the same profile must contain identical bytes. The file has mode `0644` and is included in `SHA256SUMS`. Distribute it with the matching packages, sources and license notices. This file is not an installer; use the complete verified kit.
 
