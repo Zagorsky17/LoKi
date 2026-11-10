@@ -2,7 +2,7 @@
 
 [Русский](README.ru.md) · English · [简体中文](README.zh.md)
 
-> **LoKi 2.0.5 — stable release.** Operation is confirmed on Cudy WR3000S v1 with OpenWrt 25.12.6. Other devices, OpenWrt 24.10 and failure recovery require separate testing.
+> **LoKi 2.0.5 — stable release.** Operation, uninstalling and recovery after a failure are confirmed on Cudy WR3000S v1 with OpenWrt 25.12.6. Other devices and OpenWrt 24.10 require separate testing.
 
 Rule-based traffic routing for OpenWrt with the dedicated loki-core engine.
 
