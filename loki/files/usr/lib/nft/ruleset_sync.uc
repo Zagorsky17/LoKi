@@ -560,7 +560,8 @@ function start_worker(active) {
     if (active == null) return false;
     if (length(active.sections) == 0)
         return stop_worker();
-    return worker_process.start(worker_spec(active.generation));
+    // Stop matches any old generation; readiness still requires the new one.
+    return stop_worker() && worker_process.start(worker_spec(active.generation));
 }
 
 function worker_current(active) {

@@ -134,9 +134,12 @@ t.test("the watcher is a respawning procd service found again by its command lin
 
 t.test("stopping the watcher never signals a pid that is not the watcher", () => {
     fs.writefile(watch.paths.pid, common.own_pid() + "\n");
-    stub.commands([ [ "ubus call service delete", { status: 4 } ], [ "ubus call service list", { stdout: "{\"loki-singbox-watch\":{}}" } ] ]);
+    let logs = [];
+    stub.commands([ [ "ubus call service delete", { status: 4 } ],
+        [ "ubus call service list", { stdout: "{\"loki-singbox-watch\":{}}" } ], stub.logger(logs) ]);
     t.ok(!watch.stop_worker(), "procd still holds the service");
     t.eq(trim(fs.readfile(watch.paths.pid)), common.own_pid(), "the record stays for the next attempt");
+    t.contains(logs, "[error] Worker loki-singbox-watch: procd refused service removal");
 
     stub.commands([ [ "ubus call service delete", { status: 4 } ], [ "ubus call service list", { stdout: "{}" } ] ]);
     t.ok(watch.stop_worker(), "a service already gone");
