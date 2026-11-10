@@ -2,7 +2,7 @@
 
 [Русский](README.ru.md) · [English](README.md) · 简体中文
 
-> **LoKi 2.0.5 稳定版。** 已确认在运行 OpenWrt 25.12.6 的 Cudy WR3000S v1 上正常工作。其他设备、OpenWrt 24.10 和故障恢复仍需单独测试。
+> **LoKi 2.0.5 稳定版。** 已确认在运行 OpenWrt 25.12.6 的 Cudy WR3000S v1 上正常运行、卸载和故障恢复。其他设备和 OpenWrt 24.10 仍需单独测试。
 
 LoKi 是面向 OpenWrt 的规则路由应用，使用专用 loki-core 内核。
 
