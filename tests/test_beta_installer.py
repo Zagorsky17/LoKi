@@ -14,7 +14,7 @@ ROOT=Path(__file__).resolve().parents[1]
 
 
 class BetaInstaller(unittest.TestCase):
-    def invoke(self, download_status=0, installer_status=0):
+    def invoke(self, download_status=0, installer_status=0, entry='install-beta.sh'):
         busybox=shutil.which('busybox');self.assertIsNotNone(busybox)
         with tempfile.TemporaryDirectory(prefix='loki-bootstrap-test-') as directory:
             home=Path(directory);marker=home/'executed';fetch=home/'wget';wrapper=home/'bootstrap.sh'
@@ -27,7 +27,7 @@ p=Path(sys.argv[4]);assert stat.S_IMODE(p.stat().st_mode)==0o600
 p.write_text({payload!r})
 raise SystemExit({download_status})
 ''');fetch.chmod(0o755)
-            source=(ROOT/'install-beta.sh').read_text().replace('wget -T',shlex.quote(str(fetch))+' -T',1).replace('/tmp/loki-bootstrap.XXXXXX',str(home/'download.XXXXXX'))
+            source=(ROOT/entry).read_text().replace('wget -T',shlex.quote(str(fetch))+' -T',1).replace('/tmp/loki-bootstrap.XXXXXX',str(home/'download.XXXXXX'))
             wrapper.write_text(source)
             done=subprocess.run([busybox,'ash',str(wrapper),'--uninstall','--lang','ru'],capture_output=True,text=True,timeout=5)
             result=marker.read_text() if marker.exists() else None
@@ -40,6 +40,14 @@ raise SystemExit({download_status})
 
     def test_failed_download_never_executes_a_partial_script(self):
         status,result=self.invoke(download_status=8)
+        self.assertNotEqual(status,0);self.assertIsNone(result)
+
+    def test_stable_entry_forwards_arguments_and_status(self):
+        for code in [0,7]:
+            with self.subTest(exit=code):self.assertEqual(self.invoke(installer_status=code,entry='install-loki.sh'),(code,'--uninstall\n--lang\nru\n'))
+
+    def test_stable_entry_refuses_a_partial_download(self):
+        status,result=self.invoke(download_status=8,entry='install-loki.sh')
         self.assertNotEqual(status,0);self.assertIsNone(result)
 
 

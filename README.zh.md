@@ -2,18 +2,18 @@
 
 [Русский](README.ru.md) · [English](README.md) · 简体中文
 
-> **LoKi 2.0.2 测试版。** 软件检查已在 Linux 上通过；首次真实路由器验收和故障恢复仍需测试。
+> **LoKi 2.0.5 稳定版。** 已确认在运行 OpenWrt 25.12.6 的 Cudy WR3000S v1 上正常工作。其他设备、OpenWrt 24.10 和故障恢复仍需单独测试。
 
 LoKi 是面向 OpenWrt 的规则路由应用，使用专用 loki-core 内核。
 
 项目：[Zagorsky17/LoKi](https://github.com/Zagorsky17/LoKi)。请在 [LoKi Issues](https://github.com/Zagorsky17/LoKi/issues) 报告问题或提出修改建议。
 
-## 测试版安装
+## 安装
 
 通过 SSH 以 `root` 登录 OpenWrt，执行：
 
 ```sh
-(set -o pipefail; wget -O - https://raw.githubusercontent.com/Zagorsky17/LoKi/main/install-beta.sh | sh)
+(set -o pipefail; wget -O - https://raw.githubusercontent.com/Zagorsky17/LoKi/main/install-loki.sh | sh)
 ```
 
 同一安装程序支持 OpenWrt 24.10/opkg 和 25.12/apk。它识别固件架构，下载独立发布软件包，检查 SHA256，并由原生包管理器解析依赖和模拟安装。不按路由器品牌或型号选择软件包。固定的 160 MiB 门槛及强制离线套件已移除。
@@ -57,7 +57,7 @@ loki-core 以 `core/upstream.env` 固定的 `ushan0v/sing-box-forkop` 为基础�
 
 r10 内核增加了有大小和时间限制的 HTTPS 下载器，用于获取 LoKi 的公开发布文件。它检查重定向目标和响应限制，不读取代理配置。请按通用安装说明操作；内核下载器不能代替软件包安装程序。
 
-r11 在订阅响应报告缺少 X-HWID 或达到设备数量限制时，将具体原因写入日志并保留原有可用连接。地址为 `0.0.0.0` 或 `::` 的节点不会被导入。如果较早的测试版创建了没有 HTTP 请求头的订阅记录，请使用同一链接创建新记录，并在应用前确认“Headers”中存在 `X-HWID`。此标识符属于路由器；服务商可能将其计为另一台设备。已保存的自定义请求头不会被自动替换。
+r11 在订阅响应报告缺少 X-HWID 或达到设备数量限制时，将具体原因写入日志并保留原有可用连接。地址为 `0.0.0.0` 或 `::` 的节点不会被导入。如果较早版本创建了没有 HTTP 请求头的订阅记录，请使用同一链接创建新记录，并在应用前确认“Headers”中存在 `X-HWID`。此标识符属于路由器；服务商可能将其计为另一台设备。已保存的自定义请求头不会被自动替换。
 
 在 Linux 上，`loki-core check` 会在读取配置前禁止进程内存转储。如果内核拒绝启用此保护，检查会在读取文件前失败。此保护不能替代文件系统和网络隔离；非 Linux 系统上的配置检查会被拒绝。
 
@@ -122,7 +122,7 @@ core/build.sh 0.1.0 "$PWD/release" --arch aarch64_cortex-a53 --variant base
 (cd release && sha256sum -c SHA256SUMS)
 ```
 
-`core/build.sh` 接受继承的构建器变体和目标；不指定架构时会构建全部目标。full 变体还可能下载数 GB 的 Chromium 源码和工具。测试版发布工作流构建 `aarch64_cortex-a53` 的 base 内核，并加入单独的内核清单。构建不会发布版本，也不会安装软件包。
+`core/build.sh` 接受继承的构建器变体和目标；不指定架构时会构建全部目标。full 变体还可能下载数 GB 的 Chromium 源码和工具。发布工作流按照支持的架构矩阵构建 base 内核，并加入单独的内核清单。构建不会发布版本，也不会安装软件包。
 
 构建器还会导出用于初始引导（bootstrap）的独立二进制文件 `loki-core_VERSION_VARIANT_ARCH.bin`。复制到输出目录前，会将其大小和 SHA-256 与每个 IPK/APK 中的 `/usr/bin/loki-core` 核对；同一构建配置的两种格式必须包含相同字节。文件权限为 `0644`，并加入 `SHA256SUMS`。应与对应的软件包、源码和许可证声明一起分发。此文件不是安装器；请使用完整校验套件。
 
