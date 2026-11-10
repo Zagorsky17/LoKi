@@ -1,12 +1,46 @@
 # LoKi
 
+Rule-based traffic routing for OpenWrt with the dedicated loki-core engine.
+
+[![LoKi stable release](https://img.shields.io/github/v/release/Zagorsky17/LoKi?label=release&color=178f83&style=flat)](https://github.com/Zagorsky17/LoKi/releases/latest)
+
 [Русский](README.ru.md) · English · [简体中文](README.zh.md)
+
+[Requirements](#compatible-routers) · [Features](#features) · [Stability](#what-supports-stable-operation) · [Installation](#installation) · [Report an issue](https://github.com/Zagorsky17/LoKi/issues)
+
+## Compatible routers
+
+LoKi runs on OpenWrt devices. Compatibility depends on the firmware, CPU architecture and available resources.
+
+| Parameter | Requirement |
+| --- | --- |
+| Firmware | OpenWrt **24.10** with `opkg` or **25.12** with `apk`. |
+| CPU | ARM/ARM64, MIPS/MIPS64, x86/x86-64, RISC-V64 and LoongArch64, provided the [release](https://github.com/Zagorsky17/LoKi/releases/latest) includes a package for the exact firmware architecture. |
+| RAM | The installer uses **128 MB** as a guideline; **256 MB or more** is recommended for headroom. Usage depends on subscriptions, rule lists and connection counts; operation on 128 MB has not been separately verified. |
+| Flash storage | Free space for the application, core and dependencies. The amount depends on the architecture and installed packages; the installer calculates it before installation. |
+| Access | SSH as `root`, LuCI for browser management, and HTTPS access to GitHub and OpenWrt feeds. |
 
 > **LoKi 2.0.5 — stable release.** Operation, uninstalling and recovery after a failure are confirmed on Cudy WR3000S v1 with OpenWrt 25.12.6. Other devices and OpenWrt 24.10 require separate testing.
 
-Rule-based traffic routing for OpenWrt with the dedicated loki-core engine.
+## Features
 
-Project: [Zagorsky17/LoKi](https://github.com/Zagorsky17/LoKi). Report bugs and propose changes in [LoKi Issues](https://github.com/Zagorsky17/LoKi/issues).
+- **Routing sections:** separate rules for domains, subnets and devices, with built-in and external lists.
+- **Connection links:** VLESS, VMess, Trojan, Shadowsocks, Hysteria2, TUIC and other protocols supported by the core.
+- **Subscriptions:** link lists, sing-box/Xray JSON, SIP008 and Clash YAML; client profiles supply connection parameters.
+- **Server selection:** manual switching, URLTest for latency-based selection and Fallback for backup connections.
+- **DNS:** UDP, DNS over HTTPS (DoH), DNS over TLS (DoT) and fallback resolvers. Encryption mode is selected explicitly.
+- **Monitoring and logs:** traffic, connections, devices and routes in LuCI, an additional YACD panel, and diagnostic reports with secret masking.
+- **Installation and updates:** one SSH command, component updates through LuCI, and preservation of LoKi settings and the previous service state.
+
+## What supports stable operation
+
+- **Local control through a Unix socket.** The backend communicates with the core through a private filesystem socket, checking its owner, permissions and peer UID; the controller key is not sent to the browser.
+- **Live data over WebSocket.** Traffic and connections stream through a secure WSS gateway authorized by LuCI. The interface reconnects with increasing delays after a disconnect; the dashboard can use RPC snapshots when the gateway is unavailable.
+- **Checks before traffic interception.** LoKi checks the configuration and core readiness before enabling routing. A core crash watcher pauses interception while the core recovers.
+- **Failed-start retries.** With autostart enabled, LoKi retries a failed start after 30 seconds; Stop or Disable cancels retries.
+- **Preserved working subscriptions.** Invalid or truncated responses do not replace the working set. Manual selection follows connection parameters, so renaming or reordering nodes does not change it.
+- **Serialized operations.** Start, Apply and Stop share a lock; rule-list worker recovery uses the last confirmed applied configuration generation.
+- **Update and log checks.** The installer verifies SHA256 and runs a simulated package-manager transaction. The core summarizes identical repeated errors while keeping the first occurrence and distinct errors visible.
 
 ## Installation
 
@@ -16,7 +50,7 @@ Connect to OpenWrt over SSH as `root` and run:
 (set -o pipefail; wget -O - https://raw.githubusercontent.com/Zagorsky17/LoKi/main/install-loki.sh | sh)
 ```
 
-The same installer supports OpenWrt 24.10/opkg and 25.12/apk. It detects the firmware architecture, downloads individual release packages, checks SHA256, and delegates dependency resolution and the simulated transaction to the native package manager. It does not select devices by brand or model. The fixed 160 MiB threshold and mandatory offline kit are removed.
+The installer detects the firmware architecture, downloads matching packages from the latest published release, checks SHA256, and delegates dependency resolution and the simulated transaction to the native package manager.
 
 [Installation, updates and removal](INSTALL.md). SSH and LuCI use the same `install.sh`. Updates preserve LoKi configuration and the previous service state. LoKi requires its own `loki-core`; configuration migration from other applications is unsupported. Installation and load on real devices still require owner testing.
 
@@ -50,10 +84,9 @@ The application uses `loki`, `luci-app-loki`, `/etc/config/loki` and the dedicat
 
 `preflight.sh` remains available as a separate diagnostic tool. Its extended inventory is not a mandatory admission gate for normal installation or startup. The supported path uses installer and package-manager checks plus LoKi’s regular configuration and core checks.
 
-## Features
+## Subscriptions and compatibility
 
-
-LoKi retains connection links, subscriptions, routing sections, DNS, monitoring and diagnostics. Hosting VPN/proxy servers on the router has been removed: there is no server tab, server listener generation, client profile issuance, server key generation or server diagnostics. Built-in DNS/TProxy listeners and outbound connections remain. Built-in client VPN tunnels (WireGuard, AmneziaWG, WARP, Tailscale, OpenVPN and OpenConnect) and JSON endpoints have also been removed. Connection links, subscriptions, JSON outbounds and existing network interfaces remain; custom JSON outbounds cannot restore the removed VPN types. Only the framework for future LoKi migrations remains.
+JSON outbounds and existing network interfaces are supported. Built-in client VPN tunnels (WireGuard, AmneziaWG, WARP, Tailscale, OpenVPN and OpenConnect), JSON endpoints and hosting VPN/proxy servers on the router are unsupported. Custom JSON outbounds cannot enable the removed VPN types. The migration framework is reserved for future LoKi versions.
 
 The target platforms are OpenWrt 24.10 and 25.12. Only LoKi core builds are supported. Stock sing-box and other derivatives are outside the support scope; earlier limited schema comparisons remain diagnostic and regression checks.
 
