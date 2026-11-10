@@ -49,11 +49,16 @@ function unregistered(worker) {
     return type(services) == "object" && services[worker.name] == null;
 }
 
+function refuse(worker, reason) {
+    exec.log("error", "Worker " + worker.name + ": " + reason);
+    return false;
+}
+
 // procd signals the process when the service goes; one that outlives that is
 // terminated, and killed if it still does not go.
 function stop(worker) {
     if (!unregistered(worker))
-        return false;
+        return refuse(worker, "procd refused service removal");
 
     let pid = recorded_pid(worker);
     if (common.pid_alive(pid) && is_worker(worker, pid)) {
@@ -62,19 +67,25 @@ function stop(worker) {
         if (is_worker(worker, pid)) {
             exec.ok([ "kill", pid ]);
             sleep(1000);
-            if (is_worker(worker, pid))
+            if (is_worker(worker, pid)) {
                 exec.ok([ "kill", "-KILL", pid ]);
+                sleep(1000);
+            }
         }
     }
+    if (is_worker(worker, pid))
+        return refuse(worker, "process did not stop after TERM and KILL");
     fs.unlink(worker.pid_file);
     return true;
 }
 
 function start(worker) {
-    if (!stop(worker) || !common.ensure_dir(common.parent_dir(worker.pid_file)))
+    if (!stop(worker))
         return false;
+    if (!common.ensure_dir(common.parent_dir(worker.pid_file)))
+        return refuse(worker, "pid directory is unavailable");
     if (!exec.ok([ "ubus", "call", "service", "add", sprintf("%J", payload(worker)) ]))
-        return false;
+        return refuse(worker, "procd refused service registration");
 
     for (let i = 0; i < 5; i++) {
         if (is_worker(worker, recorded_pid(worker)))
@@ -82,7 +93,7 @@ function start(worker) {
         sleep(1000);
     }
     stop(worker);
-    return false;
+    return refuse(worker, "process did not announce readiness within 5 seconds");
 }
 
 // Called by the worker process itself once it is up, and on its way out.
