@@ -10,6 +10,21 @@ if (( $# != 1 )) || [[ -e "$1" || -L "$1" ]]; then
     exit 2
 fi
 destination=$1
+patches=("$HERE"/patches/*.patch)
+previous_patch=
+for patch in "${patches[@]}"; do
+    patch_name=${patch##*/}
+    patch_number=${patch_name%%-*}
+    if [[ ! "$patch_number" =~ ^[0-9]{4}$ ]]; then
+        printf 'Invalid core patch number: %s\n' "$patch_name" >&2
+        exit 1
+    fi
+    if [[ "$patch_number" == "${previous_patch%%-*}" ]]; then
+        printf 'Duplicate core patch number %s: %s and %s\n' "$patch_number" "$previous_patch" "$patch_name" >&2
+        exit 1
+    fi
+    previous_patch=$patch_name
+done
 cache=${XDG_CACHE_HOME:-$HOME/.cache}/loki/core
 archive=$cache/$CORE_COMMIT.tar.gz
 mkdir -p -- "$cache"
@@ -25,7 +40,7 @@ fi
 printf '%s  %s\n' "$CORE_ARCHIVE_SHA256" "$archive" | sha256sum --check --status
 mkdir -- "$destination"
 tar -xzf "$archive" --strip-components=1 -C "$destination"
-for patch in "$HERE"/patches/*.patch; do
+for patch in "${patches[@]}"; do
     git -C "$destination" apply --check --whitespace=error-all "$patch"
     git -C "$destination" apply --whitespace=error-all "$patch"
 done

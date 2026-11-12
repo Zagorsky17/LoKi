@@ -1,4 +1,4 @@
-"""Check prepared core data notices and the exact bundled font attribution."""
+"""Check the core patch series, prepared data notices and bundled font attribution."""
 import hashlib
 import io
 import json
@@ -22,6 +22,11 @@ def sha(path):
 
 
 class DataNotices(unittest.TestCase):
+    def test_core_patch_numbers_are_unique(self):
+        numbers = [patch.name.split('-', 1)[0] for patch in (ROOT / 'core/patches').glob('*.patch')]
+        self.assertTrue(numbers)
+        self.assertEqual(len(numbers), len(set(numbers)), 'Core patch numbers must be unique')
+
     def test_reviewed_core_map_requires_exact_mpl_and_psl_notice(self):
         reviewed = json.loads((ROOT / 'core/notice-files.json').read_text())
         self.assertEqual(sha(ROOT / 'core/source-data/MPL-2.0.txt'), MPL_SHA)
@@ -55,6 +60,29 @@ class DataNotices(unittest.TestCase):
         (core / 'upstream.env').write_text('CORE_COMMIT=fixture\nCORE_ARCHIVE_SHA256=' + sha(archive) + '\n')
         environment = dict(os.environ, XDG_CACHE_HOME=str(work / 'cache'))
         return core, environment
+
+    def test_prepare_rejects_duplicate_or_invalid_patch_numbers_before_side_effects(self):
+        for name, error in (('0001-duplicate.patch', 'Duplicate core patch number'),
+                            ('invalid.patch', 'Invalid core patch number')):
+            with self.subTest(name=name), tempfile.TemporaryDirectory(prefix='loki-patch-series-') as directory:
+                work = Path(directory)
+                core, environment = self.prepare_fixture(work)
+                (core / 'patches' / name).write_bytes((core / 'patches/0001-fixture.patch').read_bytes())
+                shutil.rmtree(work / 'cache')
+                binary = work / 'bin'
+                binary.mkdir()
+                curl = binary / 'curl'
+                curl.write_text('#!/bin/sh\necho "Unexpected source download" >&2\nexit 99\n')
+                curl.chmod(0o755)
+                environment['PATH'] = str(binary) + os.pathsep + os.environ['PATH']
+                destination = work / 'prepared'
+                done = subprocess.run(['bash', str(core / 'prepare.sh'), str(destination)],
+                                      env=environment, capture_output=True, text=True, timeout=20)
+                self.assertNotEqual(done.returncode, 0)
+                self.assertIn(error, done.stderr)
+                self.assertIn(name, done.stderr)
+                self.assertFalse(destination.exists())
+                self.assertFalse((work / 'cache').exists())
 
     def test_actual_prepare_copies_data_and_refuses_missing_required_input(self):
         with tempfile.TemporaryDirectory(prefix='loki-data-notice-') as directory:

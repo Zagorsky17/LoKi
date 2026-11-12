@@ -31,6 +31,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5.0.0
+      - name: Check core patch numbers and preparation
+        run: python3 -B tests/packaging/test_data_notices.py
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: core/GO_VERSION
