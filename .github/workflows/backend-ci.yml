@@ -200,4 +200,5 @@ jobs:
       - name: Check update metadata over loopback HTTPS
         run: |
           python3 tests/installer/check_updates.py
+          python3 -B tests/installer/test_error_output.py
           python3 -B tests/installer/native_install.py

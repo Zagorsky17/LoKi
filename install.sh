@@ -128,8 +128,14 @@ fail() { # fail EXIT CODE TEXT [HINT]...
 
 finish() { # finish EXIT [CODE]
 	[ "$MODE" != check ] || check_result "$1" "${2:-}"
+	if [ "$MODE" != check ] && [ "$1" != 0 ] && [ "$LOG" != /dev/null ] && [ -s "$LOG" ]; then
+		say '[!]' "$C_WARN" "$(t 'Installer diagnostics (last log lines):' 'Диагностика установщика (последние строки журнала):')" >&2
+		tail -c 8192 "$LOG" | tail -n 20 | sed -E \
+			-e 's#(https?://)[^/@[:space:]]+@#\1[hidden]@#g' \
+			-e 's#(https?://[^?[:space:]]+)\?[^[:space:]]*#\1?[hidden]#g' >&2
+	fi
 	if [ "$1" = 3 ] || [ "$1" = 4 ] ||
-		{ [ "$1" = 1 ] && contains "${2:-}" "network release checksum migration check package_manager no_memory"; }; then
+		{ [ "$1" = 1 ] && contains "${2:-}" "network rate_limit release checksum migration check package_manager no_memory"; }; then
 		[ -z "$BACKUP" ] || detail "$(t 'The old config is kept as %s' 'Прежний конфиг сохранён как %s' "$BACKUP")" >&2
 		detail "$(t 'Installer log: %s' 'Журнал установщика: %s' "$LOG")" >&2
 	fi
@@ -532,8 +538,9 @@ fetch() { # fetch URL FILE [ACCEPT]: 0; 2 when the server answered with an HTTP 
 	( if [ "$metadata" = 1 ]; then ulimit -f 4096 || exit 1; fi
 	wget -T 30 ${3:+"--header=Accept: $3"} -O "$2" "$1" ) 2>"$WORK/fetch.log"
 	status=$?
-	if [ "$metadata" = 1 ] && [ -f "$2" ] && [ "$(wc -c <"$2")" -gt 2097152 ]; then return 1; fi
+	printf 'wget exit: %s\n' "$status" >>"$WORK/fetch.log"
 	cat "$WORK/fetch.log" >>"$LOG"
+	if [ "$metadata" = 1 ] && [ -f "$2" ] && [ "$(wc -c <"$2")" -gt 2097152 ]; then return 1; fi
 	# uclient-fetch exits 8 when the server answers with an error, which it names unless -q, 4 when it
 	# is not reached; GitHub's API answers 403 or 429 once an address spent its requests
 	if [ "$status" = 8 ]; then
